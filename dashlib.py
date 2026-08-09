@@ -1,0 +1,1827 @@
+#!/usr/bin/env python3
+"""Subagent Dashboard — 共通ロジック
+
+server.py と update_state.py が共有する。プロジェクトの識別・状態ファイルの読み書き・
+孫の自己申告のマージをここに集約している。外部ライブラリは使わない。
+
+ディレクトリ構成:
+    ~/.claude/agent-dashboard/
+    ├─ dashlib.py            このファイル
+    ├─ server.py             配信サーバー
+    ├─ update_state.py       状態更新CLI
+    ├─ public/index.html     画面
+    ├─ missions/
+    │  └─ <slug>/            プロジェクトごとに分離される
+    │     ├─ state.json      いま画面に映すミッション（形は昔から変えていない）
+    │     ├─ agents/         孫の自己申告（1体1ファイル）
+    │     └─ history/        過去のミッション（start のたびに1件増える）
+    │        └─ <runId>/     runId は YYYYMMDD-HHMMSS（そのミッションの開始時刻）
+    │           ├─ state.json
+    │           └─ agents/
+    └─ trash/                削除したプロジェクト・過去の記録の置き場
+                             （フォルダを戻せば復旧できる）
+
+置き場所を差し替える環境変数（**2つある。意味がまったく違う。取り違え注意**）:
+
+    AGENT_DASHBOARD_DATA_HOME … 「記録の置き場」だけを差し替える。
+        これを設定すると missions/ と trash/ がそこに移る。**コード（本体）の
+        場所には一切影響しない。** 試験や一時的な隔離はこちらを使うこと。
+
+    AGENT_DASHBOARD_HOME … 歴史的に2つの意味を兼ねてしまっている。
+        ・dashlib（Python 側）      … 記録の置き場（＝上と同じ意味）
+        ・extension/extension.js の ensureHome() … ダッシュボード本体（コード）の場所
+
+    ⚠️ この取り違えが実際に事故を起こしている。拡張の試験で「記録だけを一時フォルダへ
+       逃がす」つもりで AGENT_DASHBOARD_HOME を設定しても、拡張側ではそれが
+       「本体の場所」の指定として解釈される。結果、記録は逃げないまま
+       **本物の missions/ を読むサーバーが立ち上がり、実データを壊した。**
+       記録だけを移したいときは必ず AGENT_DASHBOARD_DATA_HOME を使うこと。
+       AGENT_DASHBOARD_HOME の既存の意味は変えていない（使っている人がいるため）。
+
+    優先順位: AGENT_DASHBOARD_DATA_HOME → AGENT_DASHBOARD_HOME
+              → ツールと同じディレクトリ → OS 標準のユーザーデータ置き場
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import sys
+import threading
+import unicodedata
+from collections import OrderedDict
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import i18n  # noqa: E402  （文言の翻訳。i18n.py は dashlib を import しない）
+from i18n import t  # noqa: E402
+
+#: read_json_safe が「ファイルが無い」ときに返す説明の**原文**。
+#: 突き合わせは必ず is_not_created() を通すこと。訳文を直に書いて比べると、
+#: 言語を変えた瞬間に判定だけが静かに外れる（「記録が無い」を「壊れている」と
+#: 読み違えて、警告が出っぱなしになる）。
+ERR_NOT_CREATED = "not created yet"
+
+
+def is_not_created(err: str) -> bool:
+    """read_json_safe の説明が「ファイルがまだ無い」か。
+
+    表示用の文を判定に使うのは本来よくないが、read_json_safe の戻り値の形
+    （成功したか, 中身, **説明**）は呼び手が何箇所もあって変えにくい。せめて
+    突き合わせを1箇所に閉じ込めて、訳文が各所に散らばらないようにする。
+    """
+    return err == t(ERR_NOT_CREATED)
+
+COMMAND_ID = "COMMAND"
+MAX_LOG = 300
+MAX_DEPTH = 16  # 世代の探索上限（親子関係が循環しても止まるように）
+STATUSES = ("standby", "running", "done")
+PHASES = ("standby", "running", "done")
+
+ENV_PROJECT = "AGENT_DASHBOARD_PROJECT"
+
+# ENV_HOME は「記録の置き場」と「本体（コード）の場所」の2つの意味を兼ねてしまっている
+# （後者は extension/extension.js の ensureHome()）。ENV_DATA_HOME は前者だけを指す。
+# 記録だけを移したいとき（試験・一時的な隔離）は必ず ENV_DATA_HOME を使うこと。
+# 詳しくはモジュール冒頭の説明を読むこと。
+ENV_HOME = "AGENT_DASHBOARD_HOME"
+ENV_DATA_HOME = "AGENT_DASHBOARD_DATA_HOME"
+
+# 既定の「稼働中とみなす」時間窓（秒）。running のまま放置された記録を
+# いつまでも画面に出し続けないための保険。
+DEFAULT_ACTIVE_WINDOW_SEC = 3 * 60 * 60
+ENV_ACTIVE_WINDOW = "AGENT_DASHBOARD_ACTIVE_WINDOW"
+
+# history/ に残す過去のミッションの件数。超えた分は古い順に trash/ へ移す。
+# 0 にすると退避そのものをしない（履歴を残さない＝昔の動作）。
+DEFAULT_HISTORY_KEEP = 20
+ENV_HISTORY_KEEP = "AGENT_DASHBOARD_HISTORY_KEEP"
+
+# Windows と macOS はパスの大文字小文字を区別しない。スラッグ算出で揃えるため。
+CASE_INSENSITIVE_FS = sys.platform in ("win32", "darwin")
+
+
+# ---------------------------------------------------------------- 置き場所の決定
+
+TOOL_ROOT = Path(__file__).resolve().parent
+PUBLIC_DIR = TOOL_ROOT / "public"
+
+
+def doc_path(stem: str) -> Path:
+    """README / OPERATION の、**いまの表示言語のもの**を返す。
+
+    英語版が `README.md`、他は `README.ja.md` のように接尾辞が付く。
+
+    対応表をここ1箇所に置いているのは、案内する側（install.py が CLAUDE.md に
+    書く手引き、diagnose.py が出す「困ったらこれを読め」）が増えるたびに同じ
+    対応表を書き写すと、言語を足したときに片方だけ直し忘れるため。
+    英語版へ落とすのは、その言語の版が無いときだけでよい。
+    """
+    lang = i18n.get_lang()
+    if lang == "en":
+        return TOOL_ROOT / f"{stem}.md"
+    localized = TOOL_ROOT / f"{stem}.{lang}.md"
+    return localized if localized.exists() else TOOL_ROOT / f"{stem}.md"
+
+
+def claude_config_dir() -> Path:
+    """Claude の設定ディレクトリ（CLAUDE_CONFIG_DIR があればそれを尊重する）。"""
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    if env and env.strip():
+        return Path(env).expanduser().resolve()
+    return (Path.home() / ".claude").resolve()
+
+
+# ------------------------------------------------- CLAUDE.md に書いた運用ルールの版
+#
+# 本体（コード）と CLAUDE.md の運用ルールは**別々に古くなる**。本体は拡張の更新や
+# 上書きコピーで新しくなるが、CLAUDE.md は誰かが install.py を実行し直すまで古いまま
+# 残る（初期設定は一度成功すると自動では二度と走らない）。運用ルールが増えた版では、
+# 増えたぶんが Claude に届かないまま次の作業が始まってしまう。
+#
+# **判定をここに置いているのは、dashlib が必ず配られるため。** 同じことを auto_setup.py に
+# 書くと、開発ディレクトリでは動くのに配布物では動かない（auto_setup.py は .vsix に
+# 同梱しない＝ build_vsix.PAYLOAD_SKIP）。書く側（install.py）もここの定数を使う。
+
+CLAUDE_BLOCK_BEGIN = "<!-- agent-dashboard:begin -->"
+CLAUDE_BLOCK_END = "<!-- agent-dashboard:end -->"
+
+# 版のしるしは囲みの**内側**に置く。BEGIN / END は決して変えない。変えると、それ以前に
+# 書き込んだブロックを見つけられなくなり、差し替えのつもりが二重書き込みになる。
+CLAUDE_BLOCK_VERSION_MARK = "<!-- agent-dashboard:version "
+
+
+def tool_version() -> str:
+    """いま動いている本体の版。読めなければ空文字。"""
+    try:
+        return (TOOL_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def claude_md_text() -> str | None:
+    """CLAUDE.md の中身。読めなければ None。"""
+    target = claude_config_dir() / "CLAUDE.md"
+    if not target.is_file():
+        return None
+    try:
+        return target.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def claude_block_installed() -> bool:
+    """CLAUDE.md に、いま動いているこの本体の運用ルールが書かれているか。
+
+    マーカーだけでなくパスも見る。同じツールのコピーが複数あるとき、CLAUDE.md が別の
+    コピーを指していれば、ここは False でなければならない（記録の書き込み先が分かれる）。
+    """
+    text = claude_md_text()
+    if text is None:
+        return False
+    if CLAUDE_BLOCK_BEGIN not in text or CLAUDE_BLOCK_END not in text:
+        return False
+    us = str(TOOL_ROOT / "update_state.py")
+    return us in text or us.replace("\\", "/") in text
+
+
+def claude_block_version() -> str | None:
+    """CLAUDE.md に書かれているブロックの版。しるしが無ければ None。
+
+    0.4.1 までのブロックにはしるしが無いので、そこから更新すると必ず None になる
+    ＝「古い」と判定される。実際に古いので、これが正しい。
+    """
+    text = claude_md_text()
+    if text is None:
+        return None
+    start = text.find(CLAUDE_BLOCK_BEGIN)
+    if start == -1:
+        return None
+    stop = text.find(CLAUDE_BLOCK_END, start)
+    if stop == -1:
+        return None
+
+    block = text[start:stop]
+    i = block.find(CLAUDE_BLOCK_VERSION_MARK)
+    if i == -1:
+        return None
+    j = block.find("-->", i)
+    if j == -1:
+        return None
+    return block[i + len(CLAUDE_BLOCK_VERSION_MARK):j].strip() or None
+
+
+def stale_block_notice() -> str | None:
+    """運用ルールが本体より古ければ、知らせる文面を返す。古くなければ None。
+
+    文面を返すだけで印字はしない。呼び手（update_state の start / server の起動 /
+    diagnose）で出し方が違うので、ここで print すると出し分けができなくなる。
+
+    まだ設定していない人には None を返す。その人向けの案内は初回セットアップ側が
+    持っていて、ここで重ねると初回の画面が警告だらけになって肝心の手順が埋もれる。
+    """
+    if not claude_block_installed():
+        return None
+
+    current = tool_version()
+    if not current:  # 自分の版が分からないときは黙る。比較の根拠が無い
+        return None
+
+    installed = claude_block_version()
+    if installed == current:
+        return None
+
+    where = t("no version recorded") if installed is None else t("version {v}").format(v=installed)
+    return (
+        t("  ⚠️  The operating rules in CLAUDE.md are older than the tool "
+          "({where} / tool version {current}).").format(where=where, current=current)
+        + "\n"
+        + t("      Updating the tool does not update the rules. Please run:")
+        + "\n"
+        + f"        python {TOOL_ROOT / 'install.py'}\n"
+        + t("      (Only the marked block is replaced. Nothing else is touched.)")
+    )
+
+
+def os_data_home() -> Path:
+    """OS の標準的なユーザーデータ置き場。"""
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or Path.home()
+        return Path(base) / "agent-dashboard"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "agent-dashboard"
+    base = os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
+    return Path(base) / "agent-dashboard"
+
+
+def _is_writable(path: Path) -> bool:
+    """実際に書いて確かめる（Windows では os.access が信頼できないため）。"""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write-probe"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def resolve_data_home() -> Path:
+    """ミッションの保存先（missions/ と trash/ の親）を決める。
+
+    1. 環境変数 AGENT_DASHBOARD_DATA_HOME があればそこ
+       「記録の置き場」だけを指す変数。拡張側（extension.js）はこれを見ないので、
+       本体の場所の判定に影響しない。試験や一時的な隔離はこれを使う。
+    2. 環境変数 AGENT_DASHBOARD_HOME があればそこ
+       昔からある変数。dashlib では 1 と同じ意味だが、extension.js では
+       「本体（コード）の場所」という別の意味で使われている（冒頭の説明を参照）。
+       既存の利用者のために意味は変えず、1 の次に見る。
+    3. ツールと同じディレクトリ（USBメモリなどに置いた持ち運び運用ができる）
+    4. ツール側が書き込み不可なら OS 標準のユーザーデータ置き場
+    """
+    for name in (ENV_DATA_HOME, ENV_HOME):
+        env = os.environ.get(name)
+        if env and env.strip():
+            return Path(env).expanduser().resolve()
+    if _is_writable(TOOL_ROOT):
+        return TOOL_ROOT
+    return os_data_home()
+
+
+DATA_HOME = resolve_data_home()
+MISSIONS_DIR = DATA_HOME / "missions"
+# 削除したプロジェクトの置き場。missions/ の外に置く。
+# 中に作ると list_slugs() がゴミ箱自身を1つのプロジェクトとして拾ってしまう。
+TRASH_DIR = DATA_HOME / "trash"
+
+# 画面に映す唯一のチーム。start だけがここを書き換える。
+# missions/ の中に置いてよい（list_slugs はディレクトリだけを見て、
+# さらに先頭がドットのものを除くので、これを拾うことはない）。
+CURRENT_FILE = MISSIONS_DIR / ".current"
+
+# 説明書やヘルプに出す実行コマンド（環境ごとに違うため）
+PY_CMD = "python" if sys.platform == "win32" else "python3"
+LAUNCHER = "dash.cmd" if sys.platform == "win32" else "./dash"
+
+# ---------------------------------------------------------------- 表示言語
+#
+# 保存先を DATA_HOME に置くのは、記録と同じ場所に置いておけば USB に入れて
+# 持ち運んだときも設定が付いてくるため。**この読み書きは i18n.py には置けない。**
+# あちらは DATA_HOME を知らない（知るには dashlib を import することになり、
+# dashlib が i18n を import しているので循環する）。
+LANG_FILE = DATA_HOME / "lang"
+
+
+def read_lang_setting() -> str | None:
+    """保存された表示言語。無ければ None。**読めなくても落とさない。**"""
+    try:
+        return i18n.normalize(LANG_FILE.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def write_lang_setting(lang: str) -> str:
+    """表示言語を保存して、その場でも切り替える。正規化した言語コードを返す。"""
+    hit = i18n.normalize(lang)
+    if not hit:
+        raise ValueError(
+            i18n.t("unknown language: {lang} (choose from {list})")
+            .format(lang=lang, list=" / ".join(i18n.SUPPORTED))
+        )
+    DATA_HOME.mkdir(parents=True, exist_ok=True)
+    LANG_FILE.write_text(hit + "\n", encoding="utf-8")
+    # 保存値より環境変数のほうが強いが、いま明示的に選んだのだから force で通す。
+    i18n.set_lang(hit, force=True)
+    return hit
+
+
+# 起動時に1回だけ効かせる。環境変数で明示されていればそちらが勝つ（set_lang の既定）。
+_saved_lang = read_lang_setting()
+if _saved_lang:
+    i18n.set_lang(_saved_lang)
+
+
+def use_utf8_stdio() -> None:
+    """Windows のコンソールでも多言語の字が化けないようにする。"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------- 時刻・書式
+
+
+def now_iso(when: datetime | None = None) -> str:
+    """ローカルタイムゾーン付きの ISO8601（秒精度）。例: 2026-07-30T10:30:00+09:00"""
+    return (when or datetime.now()).astimezone().replace(microsecond=0).isoformat()
+
+
+def iso_ago(seconds: float) -> str:
+    return now_iso(datetime.now() - timedelta(seconds=seconds))
+
+
+def elapsed_sec_from(iso: str | None):
+    if not iso:
+        return None
+    try:
+        started = datetime.fromisoformat(iso)
+    except ValueError:
+        return None
+    now = datetime.now(started.tzinfo) if started.tzinfo else datetime.now()
+    return max(0, round((now - started).total_seconds()))
+
+
+def fmt_sec(sec) -> str:
+    if sec is None:
+        return "—"
+    s = max(0, round(sec))
+    h, rem = divmod(s, 3600)
+    m, r = divmod(rem, 60)
+    return f"{h}:{m:02d}:{r:02d}" if h else f"{m:02d}:{r:02d}"
+
+
+def fmt_num(n) -> str:
+    return "—" if n is None else f"{n:,}"
+
+
+def disp_width(s: str) -> int:
+    """全角文字を2桁として数える（表の桁を揃えるため）。"""
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+
+
+def pad(s: str, width: int) -> str:
+    return s + " " * max(0, width - disp_width(s))
+
+
+def clip(s: str, width: int) -> str:
+    """表示幅が width を超える場合は末尾を切って「…」を付ける。"""
+    if disp_width(s) <= width:
+        return s
+    out: list[str] = []
+    used = 0
+    for ch in s:
+        w = 2 if unicodedata.east_asian_width(ch) in "WF" else 1
+        if used + w > width - 1:  # 「…」の1桁分を残す
+            break
+        out.append(ch)
+        used += w
+    return "".join(out) + "…"
+
+
+def cell(s: str, width: int) -> str:
+    """幅 width の列に収める。長すぎるものは切り詰め、列間に2桁の余白を残す。"""
+    return pad(clip(s, width - 2), width)
+
+
+# ---------------------------------------------------------------- 型の詰め直し
+
+
+def as_str(v) -> str:
+    return v if isinstance(v, str) else ""
+
+
+def as_num(v):
+    """数値なら数値、それ以外（None・文字列・bool）は None。"""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    return None
+
+
+def read_json_safe(path: Path) -> tuple[bool, object, str]:
+    """(成功したか, 中身, エラー説明) を返す。例外は投げない。"""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return False, None, t(ERR_NOT_CREATED)
+    except OSError as e:
+        return False, None, str(e)
+    except UnicodeDecodeError as e:
+        # UnicodeDecodeError は ValueError の系統で OSError ではないため、上の except では
+        # 捕まらない。ここで捕まえないと、壊れた1ファイルの巻き添えで /api/state が毎秒
+        # 500 を返し、無関係な稼働中のチームまで画面から消える。
+        return False, None, t("not readable as UTF-8 ({reason})").format(reason=e.reason)
+    if not raw.strip():
+        return False, None, t("empty file")
+    try:
+        return True, json.loads(raw), ""
+    except json.JSONDecodeError as e:
+        return False, None, t(
+            "not readable as JSON ({msg} / line {line}, column {col})"
+        ).format(msg=e.msg, line=e.lineno, col=e.colno)
+
+
+# ---------------------------------------------------------------- プロジェクトの識別
+
+_UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def sanitize_name(name: str) -> str:
+    return _UNSAFE.sub("_", name).strip(". ") or "project"
+
+
+def slug_for_path(path: Path) -> str:
+    """作業ディレクトリから一意なスラッグを作る。
+
+    同名のディレクトリが別の場所にあっても衝突しないよう、フルパスのハッシュ6桁を付ける。
+    大文字小文字を区別しないファイルシステムでは、揃えてから算出する。
+    """
+    p = path.resolve()
+    base = sanitize_name(p.name or p.drive.replace(":", "") or "root")
+    key = str(p).lower() if CASE_INSENSITIVE_FS else str(p)
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:6]
+    return f"{base}-{digest}"
+
+
+def list_slugs() -> list[str]:
+    """missions/ 直下のディレクトリ名＝記録が残っている作業ディレクトリの一覧。
+
+    画面はこの中の1つ（resolve_active_slug が決めるもの）だけを映す。
+    一覧そのものは CLI の projects コマンドと、.current が無いときの
+    フォールバックのために使う。
+
+
+    先頭がドットのものは除く（.git などをプロジェクトと誤認しないため）。
+    スラッグは sanitize_name が先頭のドットを落とすので、正規のものが除外されることはない。
+    """
+    try:
+        return sorted(
+            d.name for d in MISSIONS_DIR.iterdir() if d.is_dir() and not d.name.startswith(".")
+        )
+    except OSError:
+        return []
+
+
+def mission_dir(slug: str) -> Path:
+    return MISSIONS_DIR / slug
+
+
+def state_file(slug: str) -> Path:
+    return MISSIONS_DIR / slug / "state.json"
+
+
+def agents_dir(slug: str) -> Path:
+    return MISSIONS_DIR / slug / "agents"
+
+
+def history_dir(slug: str) -> Path:
+    """過去のミッションの置き場。missions/<slug>/ の中に置く。
+
+    list_slugs() は missions/ 直下しか見ないので、これがプロジェクトと誤認される
+    ことはない（プロジェクトの持ち物なので、remove すれば履歴も一緒に片付く）。
+    """
+    return MISSIONS_DIR / slug / "history"
+
+
+def run_dir(slug: str, run_id: str) -> Path:
+    return MISSIONS_DIR / slug / "history" / run_id
+
+
+def run_state_file(slug: str, run_id: str) -> Path:
+    return run_dir(slug, run_id) / "state.json"
+
+
+def run_agents_dir(slug: str, run_id: str) -> Path:
+    return run_dir(slug, run_id) / "agents"
+
+
+def is_valid_slug(slug: str) -> bool:
+    """外から渡されたスラッグが missions/ 直下の1階層を指しているかだけを検証する。
+
+    スラッグには日本語も空白も入りうる（slug_for_path はディレクトリ名をほぼそのまま使う）ので、
+    文字種の許可リストは作れない。区切り文字が混ざっていないことだけを見る。
+    """
+    if not isinstance(slug, str):
+        return False
+    s = slug.strip()
+    if not s or s in (".", ".."):
+        return False
+    if "\x00" in s or "/" in s or "\\" in s:
+        return False
+    return Path(s).name == s
+
+
+# runId は YYYYMMDD-HHMMSS。同じ秒に2回退避したときだけ -2, -3 … が付く。
+_RUN_ID_RE = re.compile(r"^\d{8}-\d{6}(?:-\d+)?$")
+
+
+def is_valid_run_id(run_id: str) -> bool:
+    """外から渡された runId が history/ 直下の1階層を指しているかを検証する。
+
+    slug と違って runId は自分で作る値なので、書式そのものを許可リストにできる。
+    strip() はしない（前後に空白が付いたものをそのままパスに使わせないため）。
+    """
+    if not isinstance(run_id, str) or not run_id:
+        return False
+    if run_id in (".", ".."):
+        return False
+    if "\x00" in run_id or "/" in run_id or "\\" in run_id:
+        return False
+    if Path(run_id).name != run_id:
+        return False
+    return bool(_RUN_ID_RE.match(run_id))
+
+
+def set_current(slug: str) -> None:
+    """画面に映すチームを差し替える。start からだけ呼ぶ。
+
+    書けなくても致命的ではない（resolve_active_slug が最終更新順に落ちる）ので、
+    失敗は握って進む。ここで止めると、記録は残っているのに start が失敗する。
+    """
+    try:
+        MISSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        CURRENT_FILE.write_text(slug + "\n", encoding="utf-8")
+    except OSError as e:
+        # ここも _warn 経由にする。知らせる処理が例外を投げて start を落とすと、
+        # 「書けなくても致命的ではない」という上の但し書きが嘘になる
+        _warn(
+            t("Failed to write the .current file"),
+            e,
+            t("this mission may not appear on the dashboard"),
+        )
+
+
+def read_current() -> str | None:
+    """記録されているチーム。実体が無くなっていれば None。"""
+    try:
+        slug = CURRENT_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    except UnicodeDecodeError:
+        # OSError では捕まらない系統。ここで漏らすと /api/state が毎秒 500 になる。
+        return None
+    if not is_valid_slug(slug) or not mission_dir(slug).is_dir():
+        return None
+    return slug
+
+
+def clear_current() -> None:
+    try:
+        CURRENT_FILE.unlink()
+    except OSError:
+        pass
+
+
+def _state_mtime(slug: str) -> float:
+    try:
+        return state_file(slug).stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def resolve_active_slug() -> str | None:
+    """画面に映す唯一のチームを決める。
+
+    1. .current（直近の start が書いたもの）
+    2. 無ければ state.json が一番新しいもの
+       （.current を持たない古いインストールから引き継いだ場合のため）
+    3. 記録が1つも無ければ None＝待機画面
+
+    2 で build_state を使わないのは、1秒ごとに全プロジェクトを組み立てる
+    ことになるため。ここでは更新時刻の比較で足りる。
+    """
+    slug = read_current()
+    if slug:
+        return slug
+    slugs = list_slugs()
+    if not slugs:
+        return None
+    return max(slugs, key=_state_mtime)
+
+
+def active_window_sec() -> int:
+    """「稼働中」とみなす時間窓（秒）を決める。
+
+    環境変数で運用ごとに調整できるようにしておく（放置された running 記録を
+    どれだけ長く画面に出し続けるかは現場によって事情が違うため）。
+    正の整数として読めない値は既定値にフォールバックする。
+    """
+    raw = os.environ.get(ENV_ACTIVE_WINDOW, "").strip()
+    if raw:
+        try:
+            n = int(raw)
+            if n > 0:
+                return n
+        except ValueError:
+            pass
+    return DEFAULT_ACTIVE_WINDOW_SEC
+
+
+def _iso_ts(raw) -> float | None:
+    """ISO8601 文字列をエポック秒に。読めないものは None。
+
+    タイムゾーン付きと無しが混在しても比較できるよう、datetime のままでは返さず
+    必ず float に落とす（aware と naive を直接比べると TypeError になる）。
+    """
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw).timestamp()
+    except ValueError:
+        return None
+
+
+def resolve_visible_slugs(current: str | None = ...) -> list[str]:
+    """画面に映すチーム全部を決める（複数チームの並列稼働に対応するため）。
+
+    含めるもの:
+      1. mission.phase == "running" かつ state.json の更新が時間窓内のもの
+      2. .current が指すもの（フェーズや時間窓を問わず必ず含める。完了した
+         チームも次の start までは映し続けたいので）
+      3. 「稼働中のチームが動き始めたあとに完了したチーム」
+         並列稼働の片方が finish したとき、そのチームはもう .current ではないので
+         2 では拾えず、完了した瞬間に画面から消えてサマリーを誰も読めない。
+         一方、順番に作業しているだけの場合（前のチームが終わってから次を start）は
+         「前のチームは表示不要」が要件なので、残してはいけない。ここで落としても
+         過去のミッションは history/ に退避されており list_runs()／read_run() で
+         見返せるので、記録が消えるわけではない。
+         この2つは「完了時刻が、いま稼働しているチームの開始時刻より後か」で分かれる。
+
+    並び順は mission.startedAt の降順（新しく始まったものが先頭）。startedAt が
+    無い／壊れているものは末尾へ。
+
+    1秒ごとに呼ばれるため build_state（孫の自己申告まで読む重い処理）は使わず、
+    各チームの state.json を1回だけ読んで phase と時刻だけ見る。
+
+    current は呼び出し側が既に読んでいれば渡せる（既定は自分で読む）。同じリクエスト内で
+    2回読むと、その間に start が走ったときに返す内容が食い違うため。
+    """
+    if current is ...:
+        current = read_current()
+
+    threshold = datetime.now().timestamp() - active_window_sec()
+
+    started: dict[str, float | None] = {}
+    finished: dict[str, float | None] = {}
+    running: list[str] = []
+    done: list[str] = []
+
+    for slug in list_slugs():
+        ok, value, _ = read_json_safe(state_file(slug))
+        mission = value.get("mission") if ok and isinstance(value, dict) else {}
+        if not isinstance(mission, dict):
+            mission = {}
+        started[slug] = _iso_ts(mission.get("startedAt"))
+        finished[slug] = _iso_ts(mission.get("finishedAt"))
+        phase = mission.get("phase")
+        if phase == "running" and _state_mtime(slug) >= threshold:
+            running.append(slug)
+        elif phase == "done":
+            done.append(slug)
+
+    visible: list[str] = list(running)
+    seen: set[str] = set(visible)
+
+    # 稼働中のうち最も遅く始まったもの。これより後に完了したチームは「並列で
+    # 走っていた片割れ」なので残す。稼働中が居なければ判定できないので誰も残さない。
+    starts = [started[s] for s in running if started[s] is not None]
+    newest_start = max(starts) if starts else None
+    if newest_start is not None:
+        for slug in done:
+            if slug in seen:
+                continue
+            end = finished[slug]
+            if end is not None and end >= newest_start:
+                seen.add(slug)
+                visible.append(slug)
+
+    if current and current not in seen:
+        seen.add(current)
+        visible.append(current)
+        started.setdefault(current, None)  # list_slugs() に無い場合の保険
+
+    # (有効な startedAt を持つか, その値) の順。無効なものは常に後ろへ回したいので
+    # 真偽を先頭に置き、reverse=True で「新しい方が先頭」を実現する。
+    visible.sort(key=lambda s: (started.get(s) is not None, started.get(s) or 0.0), reverse=True)
+    return visible
+
+
+def _rehome_current() -> None:
+    """.current が指していた記録が消えたときの引き継ぎ先を決める。
+
+    単に消すと、まだ動いているチームが finish した瞬間に画面から居なくなる
+    （完了したチームを残す根拠は .current だけなので）。残っている稼働中のうち
+    最も新しく始まったものへ引き継いで、完了報告が読めるようにする。
+    稼働中が居なければ素直に外す＝待機画面へ戻る。
+    """
+    clear_current()
+    running = [s for s in resolve_visible_slugs(None) if s]
+    if running:
+        set_current(running[0])   # resolve_visible_slugs は開始が新しい順
+
+
+def _reserve_trash_dir(base_name: str) -> Path:
+    """trash/<base_name>-<日時>/ の空いている名前を1つ決める（作りはしない）。
+
+    名前が衝突したら連番を足す。フォルダ1つを丸ごと移すときは移動先そのものに、
+    複数のものをまとめて入れるときは入れ物の名前に使う。
+    """
+    TRASH_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = TRASH_DIR / f"{base_name}-{stamp}"
+    n = 2
+    while dest.exists():
+        dest = TRASH_DIR / f"{base_name}-{stamp}-{n}"
+        n += 1
+    return dest
+
+
+def _move_to_trash(target: Path, base_name: str) -> Path:
+    """target を trash/<base_name>-<日時>/ へ移す。名前が衝突したら連番を足す。
+
+    プロジェクトごと消すときも過去の記録1件を消すときも、ゴミ箱の作法は同じにする
+    （フォルダを戻せば復旧できる、という約束を1か所で守るため）。
+    """
+    dest = _reserve_trash_dir(base_name)
+    shutil.move(str(target), str(dest))
+    return dest
+
+
+def delete_project(slug: str, permanent: bool = False) -> dict:
+    """記録を消す＝missions/<slug>/ を無くす。
+
+    既定では trash/<slug>-<日時>/ へ移すだけなので、フォルダを戻せば元に戻る。
+    permanent=True のときだけ本当に消す。
+
+    返り値: {"slug": ..., "permanent": bool, "movedTo": 移動先 or None}
+    """
+    if not is_valid_slug(slug):
+        raise ValueError(t("invalid slug: {slug!r}").format(slug=slug))
+
+    target = mission_dir(slug)
+    if not target.is_dir():
+        raise FileNotFoundError(t("missions/{slug}/ does not exist").format(slug=slug))
+    # シンボリックリンクや .. を経由して missions/ の外を消させない
+    if target.resolve().parent != MISSIONS_DIR.resolve():
+        raise ValueError(t("not directly under missions/: {path}").format(path=target))
+
+    # 消したものを指したままにしない。
+    was_current = read_current() == slug
+
+    if permanent:
+        shutil.rmtree(target)
+        if was_current:
+            _rehome_current()
+        return {"slug": slug, "permanent": True, "movedTo": None}
+
+    dest = _move_to_trash(target, slug)
+    if was_current:
+        _rehome_current()
+    return {"slug": slug, "permanent": False, "movedTo": str(dest)}
+
+
+# ---------------------------------------------------------------- 履歴（過去のミッション）
+#
+# 昔は1プロジェクト1レコードで、同じディレクトリで start すると前のミッションが
+# 痕跡なく消えていた（trash/ にも残らなかった）。start のたびに state.json と
+# agents/ を history/<runId>/ へ丸ごと移して、後から見返せるようにする。
+# state.json の形と場所は変えていないので、既存の読み手はそのまま動く。
+
+# runId を「日時部分」と「同秒衝突の連番」に分けるため（並べ替えに使う）。
+_RUN_ID_PARTS = re.compile(r"^(\d{8}-\d{6})(?:-(\d+))?$")
+
+
+def _warn(what: str, err: object = None, hint: str = "") -> None:
+    """止めずに知らせる。履歴まわりの失敗で start を落とさないため。
+
+    **知らせること自体が失敗しても、それで止めない。** ここは「退避に失敗したが
+    start は続ける」という経路の中から呼ばれる。書き込み先が壊れているときは
+    stderr も道連れになっていることがあり（親がパイプを閉じた後など）、
+    そこで例外を漏らすと「止めないための関数」が start を落とす。
+    """
+    try:
+        print(t("⚠️  Warning: {what}").format(what=what), file=sys.stderr)
+        if err is not None:
+            print(t("   Cause: {err}").format(err=err), file=sys.stderr)
+        if hint:
+            print(f"   {hint}", file=sys.stderr)
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def history_keep() -> int:
+    """history/ に残す件数。環境変数 AGENT_DASHBOARD_HISTORY_KEEP、既定 20。
+
+    0 は「履歴を残さない」＝退避しない（昔の動作）。負の数や数字でない値は既定値。
+    """
+    raw = os.environ.get(ENV_HISTORY_KEEP, "").strip()
+    if raw:
+        try:
+            n = int(raw)
+            if n >= 0:
+                return n
+        except ValueError:
+            pass
+    return DEFAULT_HISTORY_KEEP
+
+
+def _run_key(run_id: str) -> tuple[str, int]:
+    """runId の並べ替えキー。同じ秒の -2, -10 を数値として比べるため。"""
+    m = _RUN_ID_PARTS.match(run_id)
+    if not m:
+        return (run_id, 0)
+    return (m.group(1), int(m.group(2) or 1))
+
+
+def _all_run_ids(slug: str) -> list[str]:
+    """history/ にある runId を新しい順に。書式に合わない名前は無視する。
+
+    無視したものは間引きの対象にもしない（人が置いたフォルダを勝手に捨てないため）。
+    """
+    try:
+        names = [
+            d.name for d in history_dir(slug).iterdir() if d.is_dir() and is_valid_run_id(d.name)
+        ]
+    except OSError:
+        return []
+    return sorted(names, key=_run_key, reverse=True)
+
+
+# ---------------------------------------------------------------- 空の殻（中身の無い履歴）
+#
+# 退避は _move_current_to_history() が dest.mkdir() → shutil.move() の順で行う。
+# mkdir に成功したあとで move が失敗すると、history/<runId>/ が中身の無い
+# フォルダとして残る。これを「殻」と呼ぶ。
+#
+# 殻を保持枠（直近 N 件）に数えると、殻は常に新しい runId を持つため間引きで
+# 生き残り、代わりに本物の古い記録が捨てられる。「直近20件」のはずが本物は
+# 20件未満しか残らない、という壊れ方をしていた。
+#
+# 判定は3つに分ける。**迷ったら必ず「中身がある」側に倒す。**
+#   record … state.json が「在る」。読めるかどうかは問わない。壊れた JSON も
+#            人が直せる記録なので、絶対に殻扱いしない。
+#   orphan … state.json は無いが、フォルダの中に何かファイルが残っている
+#            （agents/ の自己申告など）。中身がある以上は記録として扱い、
+#            保持枠に数え、溢れたら trash/ へ退避する＝消さずに残す。
+#   shell  … state.json も無く、入れ子も含めてファイルが1つも無い。これだけを殻とする。
+#
+# 片付けは os.rmdir だけで行う（_rmdir_tree）。os.rmdir は空のディレクトリに
+# しか成功しないので、**万一 shell の判定を誤っても、ファイルが消えることは
+# 原理的に起こりえない。** 消えるのは 0 バイトのフォルダだけなので trash/ へ
+# 退避する意味も無く（戻すものが無い）、そのまま取り除く。
+
+_RUN_RECORD = "record"
+_RUN_ORPHAN = "orphan"
+_RUN_SHELL = "shell"
+
+# 殻を片付けるまでの猶予（秒）。他プロセスが退避の途中
+# （dest.mkdir() 済み・shutil.move() 前）で、その一瞬だけ殻に見えるものを
+# 巻き込まないため。退避は一瞬で終わるので、これだけあれば十分に安全側。
+SHELL_GRACE_SEC = 60
+
+
+def _has_any_file(root: Path) -> bool:
+    """root の下（入れ子も含めて）にファイルが1つでもあるか。
+
+    判断がつかないとき（読めない・権限が無い等）は True を返す。「中身がある」側へ
+    倒すことで、その履歴は殻の判定から外れ、片付けの対象にならない。
+    シンボリックリンクは辿らず、それ自体を「中身」として数える。
+    """
+    try:
+        for entry in os.scandir(root):
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    if _has_any_file(Path(entry.path)):
+                        return True
+                else:
+                    return True  # ファイル・リンク・その他は中身とみなす
+            except OSError:
+                return True
+    except OSError:
+        return True
+    return False
+
+
+def _rmdir_tree(root: Path) -> bool:
+    """空のディレクトリだけを取り除く。**ファイルは1つも消さない。**
+
+    使うのは os.rmdir だけ。os.rmdir は中身が空のディレクトリにしか成功しないので、
+    呼び出し側が判定を誤って中身のあるフォルダを渡しても、ファイルが失われることは
+    起こりえない（途中で失敗して False を返すだけ）。
+    """
+    try:
+        for entry in os.scandir(root):
+            if not entry.is_dir(follow_symlinks=False):
+                return False  # ファイルかリンクがある＝殻ではない。何もせず引き返す
+            if not _rmdir_tree(Path(entry.path)):
+                return False
+    except OSError:
+        return False
+    try:
+        os.rmdir(root)
+        return True
+    except OSError:
+        return False
+
+
+def _stat_fingerprint(st) -> tuple:
+    """state.json の「変わっていないこと」を判定する鍵。
+
+    mtime を秒で見ると同一秒内の書き換えを取りこぼすので ns で見る
+    （NTFS は 100ns、ext4 は ns 精度）。さらに、このツールが state.json を置く経路は
+    write_state() の os.replace と _move_current_to_history() の shutil.move で、
+    どちらも「別の場所で作ったファイルの名前を差し替える」＝ mtime は元ファイルのものが
+    そのまま引き継がれる。つまり mtime だけでは「中身が入れ替わったのに mtime が同じ」を
+    見逃しうる。そこで実体が変わったことを直接示す st_ino（Windows でもファイル
+    インデックスが入る）と st_dev を鍵に混ぜる。
+    """
+    return (st.st_mtime_ns, st.st_size, st.st_ino, st.st_dev)
+
+
+def _classify_run(slug: str, run_id: str) -> tuple[str, tuple | None]:
+    """履歴1件が record / orphan / shell のどれかを返す（指紋つき）。"""
+    try:
+        st = run_state_file(slug, run_id).stat()
+    except FileNotFoundError:
+        # state.json が無い。中身が本当に空のときだけ殻。
+        if _has_any_file(run_dir(slug, run_id)):
+            return _RUN_ORPHAN, None
+        return _RUN_SHELL, None
+    except OSError:
+        # 読めない理由が分からない（権限など）。中身がある可能性を否定できないので
+        # 記録として扱う＝殻にはしない。
+        return _RUN_RECORD, None
+    return _RUN_RECORD, _stat_fingerprint(st)
+
+
+def _scan_runs(slug: str) -> list[tuple[str, str, tuple | None]]:
+    """history/ を1回走査して (runId, 種別, 指紋) を新しい順に返す。"""
+    return [(run_id, *_classify_run(slug, run_id)) for run_id in _all_run_ids(slug)]
+
+
+def _existing_run_ids(slug: str) -> list[str]:
+    """保持枠（直近 N 件）に数える runId を新しい順に。**空の殻は数えない。**
+
+    殻を数えると、殻は常に新しい runId を持つため間引きで生き残り、本物の
+    古い記録を追い出してしまう（上の説明を参照）。中身のある orphan は数える。
+    """
+    return [r for r, kind, _ in _scan_runs(slug) if kind != _RUN_SHELL]
+
+
+def sweep_empty_runs(slug: str) -> list[str]:
+    """history/ に溜まった空の殻を取り除く。取り除いた runId の一覧を返す。
+
+    **書き込み系の経路からだけ呼ぶこと。** list_runs() は画面から1秒ごとに
+    叩かれる読み取り経路なので、そこから消しに行ってはいけない
+    （他プロセスが退避の途中で作ったばかりのフォルダを壊しうる）。
+    """
+    swept: list[str] = []
+    base = history_dir(slug)
+    try:
+        base_real = base.resolve()
+    except OSError:
+        return swept
+    cutoff = datetime.now().timestamp() - SHELL_GRACE_SEC
+
+    for run_id, kind, _ in _scan_runs(slug):
+        if kind != _RUN_SHELL:
+            continue
+        target = run_dir(slug, run_id)
+        # シンボリックリンクや .. を経由して history/ の外を触らせない
+        try:
+            if target.resolve().parent != base_real:
+                continue
+            # 出来たばかりのものは触らない（他プロセスが退避の最中かもしれない）
+            if target.stat().st_mtime > cutoff:
+                continue
+        except OSError:
+            continue
+        if _rmdir_tree(target):  # 空のフォルダしか消さない
+            swept.append(run_id)
+    return swept
+
+
+def _run_id_for_current(slug: str) -> str:
+    """いまの state.json を退避するときの runId を決める。
+
+    そのミッションの開始時刻（mission.startedAt）から作る。無い／壊れているときは
+    state.json の更新時刻を使う。それも取れなければ現在時刻。
+    """
+    path = state_file(slug)
+    ok, value, _ = read_json_safe(path)
+    started = None
+    if ok and isinstance(value, dict) and isinstance(value.get("mission"), dict):
+        started = value["mission"].get("startedAt")
+    ts = _iso_ts(started)
+    if ts is None:
+        try:
+            ts = path.stat().st_mtime
+        except OSError:
+            ts = datetime.now().timestamp()
+    try:
+        return datetime.fromtimestamp(ts).strftime("%Y%m%d-%H%M%S")
+    except (OSError, OverflowError, ValueError):
+        return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def _move_current_to_history(slug: str) -> str:
+    """state.json と agents/ を history/<runId>/ へ移して runId を返す（失敗時は例外）。"""
+    base = _run_id_for_current(slug)
+    hdir = history_dir(slug)
+    hdir.mkdir(parents=True, exist_ok=True)
+
+    dest = hdir / base
+    n = 2
+    while dest.exists():
+        dest = hdir / f"{base}-{n}"
+        n += 1
+    # 先に場所を取る。存在確認と移動の間に他プロセスが同じ名前を作るのを防ぐ
+    # （mkdir は既にあれば FileExistsError で失敗するので、上書きにはならない）。
+    dest.mkdir()
+
+    shutil.move(str(state_file(slug)), str(dest / "state.json"))
+    src_agents = agents_dir(slug)
+    if src_agents.is_dir():
+        shutil.move(str(src_agents), str(dest / "agents"))
+        # 孫の置き場は空で作り直す。昔の start は agents/ の中の *.json だけを消して
+        # フォルダ自体は残していた。孫は「このパスに1ファイル書く」と指示されており、
+        # 親フォルダを自分で作らない書き方もあるので、無くしてしまうと申告できなくなる。
+        try:
+            src_agents.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass  # 作れなくても退避自体は成功している
+    return dest.name
+
+
+def prune_history(slug: str, keep: int | None = None) -> list[str]:
+    """history/ が保持件数を超えていたら古い順に trash/ へ移す。
+
+    返り値: trash/ へ移した runId の一覧（古い順）。
+
+    先に空の殻（退避が途中で落ちた跡の、中身の無いフォルダ）を取り除く。殻を
+    残したままにすると保持枠を食い、本物の記録を追い出してしまうため。殻の片付けは
+    os.rmdir だけで行うので、記録が失われることはない（sweep_empty_runs を参照）。
+
+    keep=0（＝履歴を残さない設定）のときは間引きはしない。既にある記録を設定変更だけで
+    掃除してしまわないため。殻の片付けだけは行う（消えるのは0バイトのフォルダだけ）。
+    """
+    try:
+        sweep_empty_runs(slug)
+    except OSError:
+        pass  # 片付けに失敗しても間引きは続ける（保持枠の勘定からは既に外れている）
+
+    n = history_keep() if keep is None else keep
+    if n <= 0:
+        return []
+
+    doomed = _existing_run_ids(slug)[n:]  # 新しい順に並んでいるので、溢れるのは後ろ＝古い方
+    moved: list[str] = []
+    base = history_dir(slug)
+    for run_id in reversed(doomed):  # 古い方から片付ける
+        target = run_dir(slug, run_id)
+        # シンボリックリンクや .. を経由して history/ の外を消させない
+        if target.resolve().parent != base.resolve():
+            continue
+        _move_to_trash(target, f"{slug}-{run_id}")
+        moved.append(run_id)
+    return moved
+
+
+def is_unstarted_state(state) -> bool:
+    """まだ一度も start していない、器だけの state か（reset の直後がこれ）。
+
+    phase と機体の有無の両方を見る。start 直後は指令塔しか居らず「機体0体」に
+    見えるが、そちらは phase が running なので未開始とは別物になる。
+    """
+    if not isinstance(state, dict):
+        return False
+    mission = state.get("mission")
+    if not isinstance(mission, dict) or mission.get("phase") != "standby":
+        return False
+    return not state.get("agents")
+
+
+def archive_current_run(slug: str) -> dict:
+    """いまの state.json と agents/ を history/ へ退避する。start の write_state() 直前に呼ぶ。
+
+    返り値: {"runId": 退避した runId or None, "pruned": trash へ移した runId の一覧}
+
+    例外は投げない（set_current と同じ方針）。記録が残っているのに start が落ちるのが
+    一番困るので、失敗しても警告だけ出して呼び出し側を進ませる。
+    """
+    result: dict = {"runId": None, "pruned": []}
+
+    if history_keep() <= 0:  # 履歴を残さない設定＝昔どおり上書きさせる
+        return result
+    if not state_file(slug).is_file():  # 初回の start。退避するものが無い。
+        return result
+
+    # 未開始の器（reset の直後）は退避しない。中身が無いので残す値が無いうえに、
+    # 退避すると history/ に「待機中・機体0体」の記録が生まれ、押しても何も出ない
+    # タブが並ぶ。しかもそれは runId を持つため、画面側の未開始タブの間引き
+    # （server._is_unstarted_tab は runId の無い現在のタブだけを見る）では
+    # 降ろせず、以後ずっと残り続ける。
+    # 読めなければ退避する側に倒す。中身のある記録を「読めなかった」だけで
+    # 捨てるほうが、空の履歴が1件増えるよりはるかに損害が大きい。
+    ok, current, _ = read_json_safe(state_file(slug))
+    if ok and is_unstarted_state(current):
+        return result
+
+    try:
+        result["runId"] = _move_current_to_history(slug)
+    except OSError as e:
+        _warn(
+            t("Could not move the previous mission into history/"),
+            e,
+            t("this start will overwrite the previous record (the mission still begins)"),
+        )
+        return result
+
+    try:
+        result["pruned"] = prune_history(slug)
+    except OSError as e:
+        _warn(t("Could not move old records from history/ into trash/"), e)
+    return result
+
+
+# ---------------------------------------------------------------- 履歴の要約キャッシュ
+#
+# /api/state は画面から1秒ごとに叩かれ、その中で build_tabs() が全プロジェクトの
+# list_runs() を呼ぶ。素直に書くと history/ の state.json を毎秒すべて開いて
+# JSON パースすることになり、プロジェクトが増えるほど1秒の予算を食い潰す
+# （実測: 20プロジェクト×履歴20件で中央値 322ms＝ポーリング間隔の3割）。
+#
+# 過去の記録は history/ へ退避されたら基本的に変わらないので、1件ずつ
+# 「そのファイルが変わっていなければ前回の要約を使い回す」形にする。
+#
+# 【毎回必ずやり直すこと】＝「速いが古い」を起こさない根拠
+#   * history/ 直下の一覧を取り直す      → 記録の増減は必ずその場で見える
+#   * 各 state.json の os.stat を取り直す → 変更は指紋の不一致として必ず見える
+#   省くのは read_text と json.loads だけ。読み込みが要るかどうかの判断そのものは
+#   毎回ファイルシステムに問い合わせているので、キャッシュがあってもなくても
+#   list_runs() が返す内容は同じになる。
+#
+# 【指紋】_stat_fingerprint を参照（mtime を ns で見て、さらに st_ino を混ぜる）。
+#
+# 【スレッド安全】server.py は ThreadingHTTPServer なので複数スレッドから同時に
+#   呼ばれる。辞書の操作は必ずロックの中で行い、ファイルの読み込みはロックの外で
+#   行う（読み込みは何度やっても同じ結果なので、同じ記録を2スレッドが同時に
+#   読んで両方が書き戻しても壊れない。逆にロックを持ったまま読むと、
+#   1件の遅いファイルが全スレッドを待たせる）。
+#   呼び出し側へは必ず複製を返す（受け取った側が書き換えてもキャッシュは汚れない）。
+#
+# 【上限】LRU で件数を固定する。プロジェクトと履歴がいくら増えても、
+#   保持するのは最近使われた RUN_CACHE_MAX 件だけなのでメモリは頭打ちになる。
+
+# 1件あたり数百バイト程度の要約。既定の保持件数20なら25プロジェクト分に相当する。
+RUN_CACHE_MAX = 512
+
+_run_cache: "OrderedDict[tuple[str, str], tuple[tuple, dict]]" = OrderedDict()
+_run_cache_lock = threading.Lock()
+
+
+def _run_cache_get(key: tuple[str, str], fingerprint: tuple | None) -> dict | None:
+    """指紋が一致したときだけ前回の要約の複製を返す。"""
+    if fingerprint is None:  # 指紋を取れないものは毎回読み直す（古い内容を返さないため）
+        return None
+    with _run_cache_lock:
+        hit = _run_cache.get(key)
+        if hit is None or hit[0] != fingerprint:
+            return None
+        _run_cache.move_to_end(key)  # 直近に使ったものとして扱う
+        return dict(hit[1])
+
+
+def _run_cache_put(key: tuple[str, str], fingerprint: tuple | None, summary: dict) -> None:
+    if fingerprint is None:
+        return
+    with _run_cache_lock:
+        _run_cache[key] = (fingerprint, dict(summary))
+        _run_cache.move_to_end(key)
+        while len(_run_cache) > RUN_CACHE_MAX:
+            _run_cache.popitem(last=False)  # 一番長く使われていないものから捨てる
+
+
+def clear_run_cache() -> None:
+    """要約キャッシュを空にする。正しさのためには不要（指紋で必ず検証している）。
+
+    試験や、置き場ごと差し替えたときの後始末のために用意しておく。
+    """
+    with _run_cache_lock:
+        _run_cache.clear()
+
+
+def run_cache_stats() -> dict:
+    """いま何件抱えているか（上限が効いていることの確認用）。"""
+    with _run_cache_lock:
+        return {"entries": len(_run_cache), "max": RUN_CACHE_MAX}
+
+
+def _summarize_run(slug: str, run_id: str) -> tuple[dict | None, bool]:
+    """履歴1件の state.json を読んで軽い要約を作る。
+
+    返り値: (要約 or None, その要約をキャッシュしてよいか)
+
+    **読み込みに失敗した結果は決してキャッシュしない。** 失敗の中には
+    「そのとき限り」のものがある。とくに Windows では、他のプロセスが os.replace で
+    state.json を差し替えている一瞬に読むと PermissionError になることがある
+    （旧実装でも同じように起きていた。read_json_safe はこれを握って既定値の要約に
+    落とすので、画面ではタイトルが一瞬「（無題のミッション）」に見える）。
+    これを指紋つきで覚えてしまうと、次にファイルが変わるまでその誤った要約を
+    返し続けることになる＝「速いが古い」。覚えるのは JSON として読み切れたものだけにする。
+    """
+    ok, value, err = read_json_safe(run_state_file(slug, run_id))
+    if not ok and is_not_created(err):
+        # state.json の無いフォルダ（退避が途中で落ちた跡）は記録として出さない
+        return None, False
+
+    mission: dict = {}
+    agents: list = []
+    if ok and isinstance(value, dict):
+        if isinstance(value.get("mission"), dict):
+            mission = value["mission"]
+        if isinstance(value.get("agents"), list):
+            agents = value["agents"]
+
+    return {
+        "runId": run_id,
+        "title": as_str(mission.get("title")) or t("(untitled mission)"),
+        "phase": mission.get("phase") if mission.get("phase") in PHASES else "standby",
+        "startedAt": as_str(mission.get("startedAt")) or None,
+        "finishedAt": as_str(mission.get("finishedAt")) or None,
+        "agentCount": sum(
+            1
+            for a in agents
+            if isinstance(a, dict) and as_str(a.get("id")) and a.get("id") != COMMAND_ID
+        ),
+    }, ok
+
+
+def list_runs(slug: str) -> list[dict]:
+    """history/ にある過去の記録の軽い一覧。新しい順。
+
+    各要素: {"runId", "title", "phase", "startedAt", "finishedAt", "agentCount"}
+
+    1秒ごとに呼ばれても平気なように build_state は使わない。各 run の state.json は
+    「前回から変わっていなければ」読まずに前回の要約を使う（上のキャッシュの説明を参照）。
+    孫の自己申告は数えない＝agentCount は state.json に登録された機体数から
+    指令塔を除いた数。
+
+    ここは読み取り経路なので、空の殻を見つけても消しには行かない（一覧から外すだけ）。
+    片付けは書き込み系の prune_history() / archive_current_run() が行う。
+    """
+    runs: list[dict] = []
+    for run_id, kind, fingerprint in _scan_runs(slug):
+        if kind != _RUN_RECORD:  # 殻も orphan も state.json が無い＝記録として出さない
+            continue
+
+        key = (slug, run_id)
+        summary = _run_cache_get(key, fingerprint)
+        if summary is None:
+            summary, cacheable = _summarize_run(slug, run_id)
+            if summary is None:
+                # stat と読み込みの間に消えた。古い内容を出すより出さない方が正しい。
+                continue
+            if cacheable:  # 読めなかったものは覚えない（_summarize_run の説明を参照）
+                _run_cache_put(key, fingerprint, summary)
+        runs.append(summary)
+    return runs
+
+
+def delete_run(slug: str, run_id: str) -> dict:
+    """過去の記録1件を trash/ へ移す（フォルダを戻せば復旧できる）。
+
+    返り値: {"slug": ..., "runId": ..., "movedTo": 移動先}
+    """
+    if not is_valid_slug(slug):
+        raise ValueError(t("invalid slug: {slug!r}").format(slug=slug))
+    if not is_valid_run_id(run_id):
+        raise ValueError(t("invalid runId: {run_id!r}").format(run_id=run_id))
+
+    target = run_dir(slug, run_id)
+    if not target.is_dir():
+        raise FileNotFoundError(t("missions/{slug}/history/{run_id}/ does not exist")
+                                .format(slug=slug, run_id=run_id))
+    # シンボリックリンクや .. を経由して missions/ の外を消させない。
+    # プロジェクト自体が missions/ 直下であることと、run が その history/ 直下で
+    # あることの2段で確かめる。
+    if mission_dir(slug).resolve().parent != MISSIONS_DIR.resolve():
+        raise ValueError(t("not directly under missions/: {path}").format(path=mission_dir(slug)))
+    if target.resolve().parent != history_dir(slug).resolve():
+        raise ValueError(t("not directly under history/: {path}").format(path=target))
+
+    dest = _move_to_trash(target, f"{slug}-{run_id}")
+    return {"slug": slug, "runId": run_id, "movedTo": str(dest)}
+
+
+def delete_current_run(slug: str) -> dict:
+    """完了した「現在のミッション」（state.json と agents/）を trash/ へ移す。
+
+    history/ へ移されるのは次の start が走ったときだけなので、1度きりのミッションは
+    完了しても state.json の枠に残り続ける。画面で「完了」と出ているものを片付ける
+    手段が無くなるため、delete_run とは別にこの経路を用意する。
+
+    まだ終わっていないもの（phase が done 以外）は消さない。稼働中の記録を画面の
+    ボタン1つで消せるようにはしない。state.json が読めないものも done と確かめられない
+    ので消さない（画面でも「完了」とは出ない）。
+
+    history/ に記録が1件も残らない場合は、空の入れ物を残さずプロジェクトごと trash/ へ
+    移す（結果は delete_project と同じ）。
+
+    返り値: {"slug", "runId": None, "movedTo": 移動先, "removedProject": bool}
+    """
+    if not is_valid_slug(slug):
+        raise ValueError(t("invalid slug: {slug!r}").format(slug=slug))
+
+    target = mission_dir(slug)
+    path = state_file(slug)
+    if not path.is_file():
+        raise FileNotFoundError(t("missions/{slug}/state.json does not exist").format(slug=slug))
+    # シンボリックリンクや .. を経由して missions/ の外を消させない
+    if target.resolve().parent != MISSIONS_DIR.resolve():
+        raise ValueError(t("not directly under missions/: {path}").format(path=target))
+
+    ok, value, err = read_json_safe(path)
+    phase = None
+    if ok and isinstance(value, dict) and isinstance(value.get("mission"), dict):
+        phase = value["mission"].get("phase")
+    if phase != "done":
+        if not ok:
+            raise ValueError(t("cannot read state.json ({err})").format(err=err))
+        raise ValueError(t("a mission that has not finished cannot be deleted"))
+
+    # 消したものを指したままにしない（delete_project と同じ後始末）。
+    was_current = read_current() == slug
+
+    # history/ が空になるなら、中身の無いプロジェクトのフォルダだけが残らないようにする。
+    if not _existing_run_ids(slug):
+        dest = _move_to_trash(target, slug)
+        if was_current:
+            _rehome_current()
+        return {"slug": slug, "runId": None, "movedTo": str(dest), "removedProject": True}
+
+    dest = _reserve_trash_dir(f"{slug}-current")
+    dest.mkdir(parents=True)
+    shutil.move(str(path), str(dest / "state.json"))
+
+    src_agents = agents_dir(slug)
+    if src_agents.is_dir():
+        shutil.move(str(src_agents), str(dest / "agents"))
+        # 孫の置き場は空で作り直す（_move_current_to_history と同じ理由。孫は
+        # 「このパスに1ファイル書く」と指示されており、親フォルダを自分で作らない
+        # 書き方もあるので、無くしてしまうと申告できなくなる）。
+        try:
+            src_agents.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass  # 作れなくても削除自体は成功している
+
+    if was_current:
+        _rehome_current()
+    return {"slug": slug, "runId": None, "movedTo": str(dest), "removedProject": False}
+
+
+def read_project_info(slug: str) -> dict:
+    ok, value, _ = read_json_safe(state_file(slug))
+    if ok and isinstance(value, dict) and isinstance(value.get("project"), dict):
+        return value["project"]
+    return {}
+
+
+def resolve_project(explicit: str | None = None) -> dict:
+    """どのプロジェクトを対象にするかを決める。
+
+    優先順位: --project 指定 → 環境変数 AGENT_DASHBOARD_PROJECT → カレントディレクトリ
+
+    返り値: {"slug": ..., "name": 表示名, "path": 元のパス}
+    """
+    hint = (explicit or os.environ.get(ENV_PROJECT) or "").strip()
+
+    if hint:
+        matches = [s for s in list_slugs() if s == hint or s.startswith(hint + "-")]
+        if len(matches) == 1:
+            slug = matches[0]
+            info = read_project_info(slug)
+            return {
+                "slug": slug,
+                "name": info.get("name") or slug,
+                "path": info.get("path") or "",
+            }
+        if len(matches) > 1:
+            raise ValueError(
+                t("the project hint \"{hint}\" matches {n} projects: {list}")
+                .format(hint=hint, n=len(matches), list=", ".join(matches))
+            )
+        # 既存に無い場合は名前指定として新規作成する
+        return {"slug": sanitize_name(hint), "name": hint, "path": ""}
+
+    cwd = Path.cwd().resolve()
+    return {"slug": slug_for_path(cwd), "name": cwd.name, "path": str(cwd)}
+
+
+# ---------------------------------------------------------------- 状態ファイル
+
+
+def empty_state(project: dict | None = None) -> dict:
+    return {
+        "version": 2,
+        "project": dict(project) if project else {"slug": "", "name": "", "path": ""},
+        "updatedAt": None,
+        "mission": {
+            "phase": "standby",
+            "title": t("(no mission started)"),
+            "startedAt": None,
+            "finishedAt": None,
+            "summary": None,
+        },
+        "agents": [],
+        "log": [],
+    }
+
+
+def write_state(slug: str, state: dict) -> None:
+    """一時ファイルに書いてから差し替える。読み込み側が書きかけのJSONを読むことがない。"""
+    state["updatedAt"] = now_iso()
+    state["log"] = state["log"][-MAX_LOG:]
+    mission_dir(slug).mkdir(parents=True, exist_ok=True)
+    target = state_file(slug)
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, target)
+
+
+# ---------------------------------------------------------------- 正規化とマージ
+
+#: 0.4.3 までの update_state.py が「モデル未指定」を表すために書き込んでいた値。
+#: 当時は表示語をそのまま保存していた。読み取り側で空に寄せて、過去の記録でも
+#: 読み手の言語で「不明」が出るようにする。
+_LEGACY_UNKNOWN_MODEL = "不明"
+
+
+def _model_value(raw) -> str:
+    """モデル名を**言語に依存しない形**で返す。未指定なら空文字。
+
+    ここで t("unknown") を返してはいけない。この値は server.py が JSON にして
+    ブラウザへ渡すが、**画面の言語はブラウザ側が決める**ので、サーバーの言語で
+    訳した語を入れると「サーバーは日本語・画面は韓国語」のときにそこだけ日本語で
+    出る。訳すのは表示の直前（index.html 側）の仕事。
+    """
+    text = as_str(raw)
+    return "" if text == _LEGACY_UNKNOWN_MODEL else text
+
+
+def normalize_agent(a, source: str):
+    """素の dict を画面が期待する形に整える。壊れていれば None を返して捨てる。"""
+    if not isinstance(a, dict) or not as_str(a.get("id")):
+        return None
+
+    status = a.get("status") if a.get("status") in STATUSES else "running"
+
+    result = None
+    r = a.get("result")
+    if isinstance(r, dict):
+        result = {
+            "elapsedSec": as_num(r.get("elapsedSec")),
+            "tokens": as_num(r.get("tokens")),
+            "toolCalls": as_num(r.get("toolCalls")),
+            "headline": as_str(r.get("headline")),
+        }
+
+    return {
+        "id": as_str(a.get("id")),
+        "name": as_str(a.get("name")) or as_str(a.get("id")),
+        "parentId": as_str(a.get("parentId")) or None,
+        "generation": 0,  # 下の assign_generations で必ず上書きする
+        "model": _model_value(a.get("model")),
+        "mission": as_str(a.get("mission")),
+        "status": status,
+        "waiting": False,  # 下の assign_waiting で必ず上書きする（読み取り側の導出）
+        "startedAt": as_str(a.get("startedAt")) or None,
+        "finishedAt": as_str(a.get("finishedAt")) or None,
+        "result": result,
+        "source": source,  # 'main' = state.json / 'self' = 孫の自己申告
+    }
+
+
+def normalize_log_entry(e, fallback_who: str = ""):
+    if not isinstance(e, dict):
+        return None
+    text = as_str(e.get("text"))
+    if not text:
+        return None
+    return {
+        "at": as_str(e.get("at")) or None,
+        "who": as_str(e.get("who")) or fallback_who or "?",
+        "text": text,
+    }
+
+
+def assign_generations(agents: list[dict]) -> None:
+    """世代（何列目か）を parentId から実測で算出する。
+
+    自己申告ファイルが generation を間違えて書いても画面は壊れない。
+    """
+    by_id = {a["id"]: a for a in agents}
+    for a in agents:
+        # 親IDが指定されているのに実体が居ない「孤児」は、指令塔直下（1列目）として扱う
+        if a["parentId"] and a["parentId"] not in by_id:
+            a["generation"] = 1
+            continue
+        depth = 0
+        cur = a
+        seen = {a["id"]}
+        while cur["parentId"] and cur["parentId"] in by_id and depth < MAX_DEPTH:
+            cur = by_id[cur["parentId"]]
+            if cur["id"] in seen:  # 循環
+                break
+            seen.add(cur["id"])
+            depth += 1
+        a["generation"] = depth
+
+
+def assign_waiting(agents: list[dict]) -> None:
+    """「報告待ち」を親子関係から導出する。稼働中の子を1体以上持つ稼働中の親が該当。
+
+    書き込み側（update_state.py）には対応するコマンドが無い。これは state.json に
+    記録される事実ではなく、記録された事実からの導出だからである。ダッシュボードへの
+    書き込みは「起動直後」と「完了通知時」の2点だけ、という設計を崩さずに済む。
+
+    ただし「子が動いている」は事実でも「親が待っている」は推測である点に注意。
+    親が子と並行して自分の作業を進めていることはあり、そのときは実態とズレる。
+    トークン数のような実測値と違い、外れても数字の捏造にはならないので導出で出すが、
+    ラベルは status とは別扱いにして「稼働中」を上書きしない（status は 'running' のまま）。
+
+    親の判定は画面側の effectiveParentId() と揃える。parentId が実在しない孤児は
+    どの親にも数えない（画面でも指令塔の子ではなく根として並ぶため）。
+    """
+    ids = {a["id"] for a in agents}
+    has_running_child: set[str] = set()
+    for a in agents:
+        if a["status"] != "running":
+            continue
+        pid = a["parentId"]
+        if pid and pid in ids and pid != a["id"]:
+            has_running_child.add(pid)
+    for a in agents:
+        a["waiting"] = a["status"] == "running" and a["id"] in has_running_child
+
+
+def extract_from_self_report(value) -> tuple[list, list]:
+    """孫の自己申告1ファイル分を読む。単体 dict・リスト・{agents,log} の3形式を受け付ける。"""
+    agents: list = []
+    log: list = []
+    if isinstance(value, list):
+        agents.extend(value)
+    elif isinstance(value, dict):
+        if isinstance(value.get("agents"), list):
+            agents.extend(value["agents"])
+        if isinstance(value.get("log"), list):
+            log.extend(value["log"])
+        if as_str(value.get("id")):  # 単体エージェントとして書かれている
+            agents.append(value)
+    return agents, log
+
+
+def _log_sort_key(e: dict):
+    """時刻順に並べる。時刻が無い／読めないものは末尾へ。"""
+    if not e["at"]:
+        return (1, 0.0)
+    try:
+        return (0, datetime.fromisoformat(e["at"]).timestamp())
+    except ValueError:
+        return (1, 0.0)
+
+
+def _build_state(slug: str, state_path: Path, agents_path: Path) -> dict:
+    """state.json と agents/*.json をマージして1つの状態にする（置き場所は引数で受ける）。
+
+    現在のミッション（missions/<slug>/）と過去の記録（history/<runId>/）を
+    まったく同じ形に組み立てるため、実体はここ1つにしてある。画面は同じ描画機構で
+    どちらも描く。
+    """
+    warnings: list[str] = []
+
+    ok, base, err = read_json_safe(state_path)
+    if not ok or not isinstance(base, dict):
+        if not ok and not is_not_created(err):
+            warnings.append(t("cannot read state.json ({err})").format(err=err))
+        base = empty_state()
+
+    # --- state.json 側のエージェント（ID衝突時はこちらが優先）
+    merged: dict[str, dict] = {}
+    for raw in base.get("agents") if isinstance(base.get("agents"), list) else []:
+        a = normalize_agent(raw, "main")
+        if a and a["id"] not in merged:
+            merged[a["id"]] = a
+
+    logs: list[dict] = []
+    for raw in base.get("log") if isinstance(base.get("log"), list) else []:
+        e = normalize_log_entry(raw)
+        if e:
+            logs.append(e)
+
+    # --- 孫（自己申告）の取り込み
+    self_files: list[Path] = []
+    try:
+        self_files = sorted(p for p in agents_path.iterdir() if p.suffix.lower() == ".json")
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        warnings.append(t("cannot read agents/ ({err})").format(err=e))
+
+    for path in self_files:
+        ok_self, value, err_self = read_json_safe(path)
+        if not ok_self:
+            warnings.append(t("cannot read agents/{name} ({err})")
+                            .format(name=path.name, err=err_self))
+            continue
+        raw_agents, raw_log = extract_from_self_report(value)
+        for raw in raw_agents:
+            a = normalize_agent(raw, "self")
+            if a is None:
+                warnings.append(t("agents/{name} contains an invalid agent definition")
+                                .format(name=path.name))
+                continue
+            if a["id"] in merged:  # ID衝突は state.json 側の勝ち
+                continue
+            merged[a["id"]] = a
+        for raw in raw_log:
+            e = normalize_log_entry(raw, path.stem)
+            if e:
+                logs.append(e)
+
+    agents = list(merged.values())
+    assign_generations(agents)
+    assign_waiting(agents)   # 孫の取り込み後に走らせる。孫だけが動いている親を取りこぼさないため
+    logs.sort(key=_log_sort_key)
+
+    mission = base.get("mission") if isinstance(base.get("mission"), dict) else empty_state()["mission"]
+    summary = mission.get("summary")
+    project = base.get("project") if isinstance(base.get("project"), dict) else {}
+
+    return {
+        "version": 2,
+        "serverTime": now_iso(),  # 画面側の時計ズレを補正するため
+        "updatedAt": as_str(base.get("updatedAt")) or None,
+        "project": {
+            "slug": slug,
+            "name": as_str(project.get("name")) or slug,
+            "path": as_str(project.get("path")),
+        },
+        "mission": {
+            "phase": mission.get("phase") if mission.get("phase") in PHASES else "standby",
+            "title": as_str(mission.get("title")) or t("(untitled mission)"),
+            "startedAt": as_str(mission.get("startedAt")) or None,
+            "finishedAt": as_str(mission.get("finishedAt")) or None,
+            "summary": {
+                "agentCount": as_num(summary.get("agentCount")),
+                "totalTokens": as_num(summary.get("totalTokens")),
+                "elapsedSec": as_num(summary.get("elapsedSec")),
+                "headline": as_str(summary.get("headline")),
+            }
+            if isinstance(summary, dict)
+            else None,
+        },
+        "agents": agents,
+        "log": logs[-MAX_LOG:],
+        "sources": {
+            "main": ok,
+            "selfReports": len(self_files),
+            "warnings": warnings,
+        },
+    }
+
+
+def build_state(slug: str) -> dict:
+    """いま画面に映すミッションの状態。"""
+    return _build_state(slug, state_file(slug), agents_dir(slug))
+
+
+def read_run(slug: str, run_id: str) -> dict:
+    """過去の記録1件の完全な状態。build_state(slug) と同じ形を返す。
+
+    孫の自己申告も、その run に一緒に退避された agents/ の方を読む。
+    記録が無ければ FileNotFoundError。
+    """
+    if not is_valid_slug(slug):
+        raise ValueError(t("invalid slug: {slug!r}").format(slug=slug))
+    if not is_valid_run_id(run_id):
+        raise ValueError(t("invalid runId: {run_id!r}").format(run_id=run_id))
+
+    path = run_state_file(slug, run_id)
+    if not path.is_file():
+        raise FileNotFoundError(t("missions/{slug}/history/{run_id}/state.json does not exist")
+                                .format(slug=slug, run_id=run_id))
+    return _build_state(slug, path, run_agents_dir(slug, run_id))
+
+
+def summarize_project(slug: str) -> dict:
+    """CLI の一覧・起動ログ用の要約。稼働中の数を出すため孫も含めて数える。"""
+    s = build_state(slug)
+    workers = [a for a in s["agents"] if a["id"] != COMMAND_ID]
+    return {
+        "slug": slug,
+        "name": s["project"]["name"],
+        "path": s["project"]["path"],
+        "phase": s["mission"]["phase"],
+        "title": s["mission"]["title"],
+        "updatedAt": s["updatedAt"],
+        "running": sum(1 for a in workers if a["status"] == "running"),
+        "done": sum(1 for a in workers if a["status"] == "done"),
+        "total": len(workers),
+    }
+
+
+#: ホームディレクトリを伏せるときの置き換え文字列。
+#:
+#: **ここは訳さない。** この値は取扱説明書（manual.html）にも埋め込まれるが、
+#: 説明書の言語を決めているのは**ブラウザ側**（localStorage）で、こちらを訳すと
+#: サーバーの言語で決まってしまう。韓国語で読んでいる人の画面に日本語の
+#: 「(ご自身のユーザーフォルダ)」が1か所だけ混ざる、という食い違いが起きる。
+#: `<home>` なら、どの言語で読んでいても同じ意味に読めて、実際のパスとも
+#: 見分けが付く（コマンド例には使わないので、実行できる必要はない）。
+HOME_MASK = "<home>"
+
+
+def _display_path(path) -> str:
+    """説明書の「参考情報」欄に出すパス。ホームディレクトリ部分を `<home>` に
+    置き換えて、画面越しにユーザー名が見えてしまわないようにする。
+    コマンド例（コピペして実行する箇所）には使わない — 実行できなくなるため。
+    """
+    text = str(path)
+    home = str(Path.home())
+    if text == home or text.startswith(home + os.sep):
+        return HOME_MASK + text[len(home):]
+    return text
+
+
+def render_template(text: str) -> str:
+    """HTML 内のプレースホルダを実際の環境の値に差し替える。
+
+    説明書に環境ごとのパスを埋め込むために使う。これにより配布物には
+    特定PCのパスを一切含めなくて済む。
+    """
+    return (
+        text.replace("{{TOOL_ROOT}}", _display_path(TOOL_ROOT))
+        .replace("{{MISSIONS_DIR}}", _display_path(MISSIONS_DIR))
+        .replace("{{DATA_HOME}}", _display_path(DATA_HOME))
+        .replace("{{CLAUDE_MD}}", _display_path(claude_config_dir() / "CLAUDE.md"))
+        .replace("{{SERVER_PY}}", str(TOOL_ROOT / "server.py"))
+        .replace("{{UPDATE_PY}}", str(TOOL_ROOT / "update_state.py"))
+        .replace("{{LAUNCHER_PATH}}", str(TOOL_ROOT / LAUNCHER.lstrip("./")))
+        .replace("{{PY}}", PY_CMD)
+        .replace("{{LAUNCHER}}", LAUNCHER)
+    )
+
+
+def list_projects() -> list[dict]:
+    """更新が新しい順に並べる。表示名が重複する場合は親ディレクトリ名を前に付ける。"""
+    items = [summarize_project(s) for s in list_slugs()]
+
+    counts: dict[str, int] = {}
+    for p in items:
+        counts[p["name"]] = counts.get(p["name"], 0) + 1
+    for p in items:
+        if counts.get(p["name"], 0) > 1 and p["path"]:
+            parent = Path(p["path"]).parent.name
+            if parent:
+                p["name"] = f"{parent}/{p['name']}"
+
+    items.sort(key=lambda p: (p["updatedAt"] or ""), reverse=True)
+    return items

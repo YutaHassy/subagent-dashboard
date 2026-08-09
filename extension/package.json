@@ -1,0 +1,227 @@
+{
+  "name": "agent-dashboard",
+  "displayName": "%ext.displayName%",
+  "description": "%ext.description%",
+  "version": "0.5.1",
+  "publisher": "YutaHassy",
+  "license": "SEE LICENSE IN README.md",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "subagent",
+    "dashboard",
+    "Subagent Dashboard",
+    "管制室"
+  ],
+  "icon": "media/icon.png",
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onWebviewPanel:agentDashboard.panel"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": true,
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "%ext.untrustedWorkspaces.description%"
+    }
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentDashboard",
+          "title": "%viewsContainer.activitybar.title%",
+          "icon": "media/activity-bar.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentDashboard": [
+        {
+          "type": "webview",
+          "id": "agentDashboard.view",
+          "name": "%view.agentDashboard.name%"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentDashboard.open",
+          "when": "view == agentDashboard.view",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentDashboard.restartServer",
+          "when": "view == agentDashboard.view",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentDashboard.openExternal",
+          "when": "view == agentDashboard.view",
+          "group": "1_other@1"
+        },
+        {
+          "command": "agentDashboard.stopServer",
+          "when": "view == agentDashboard.view",
+          "group": "1_other@2"
+        },
+        {
+          "command": "agentDashboard.deploy",
+          "when": "view == agentDashboard.view",
+          "group": "1_other@3"
+        },
+        {
+          "command": "agentDashboard.runSetup",
+          "when": "view == agentDashboard.view",
+          "group": "1_other@4"
+        },
+        {
+          "command": "agentDashboard.resetOnboarding",
+          "when": "view == agentDashboard.view",
+          "group": "1_other@5"
+        },
+        {
+          "command": "agentDashboard.showLog",
+          "when": "view == agentDashboard.view",
+          "group": "1_other@6"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentDashboard.open",
+        "title": "%cmd.open.title%",
+        "category": "%cmd.category%",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "agentDashboard.openExternal",
+        "title": "%cmd.openExternal.title%",
+        "category": "%cmd.category%",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "agentDashboard.restartServer",
+        "title": "%cmd.restartServer.title%",
+        "category": "%cmd.category%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentDashboard.stopServer",
+        "title": "%cmd.stopServer.title%",
+        "category": "%cmd.category%",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "agentDashboard.deploy",
+        "title": "%cmd.deploy.title%",
+        "category": "%cmd.category%",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "agentDashboard.runSetup",
+        "title": "%cmd.runSetup.title%",
+        "category": "%cmd.category%",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "agentDashboard.resetOnboarding",
+        "title": "%cmd.resetOnboarding.title%",
+        "category": "%cmd.category%",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "agentDashboard.showLog",
+        "title": "%cmd.showLog.title%",
+        "category": "%cmd.category%",
+        "icon": "$(output)"
+      }
+    ],
+    "configuration": {
+      "title": "%config.title%",
+      "properties": {
+        "agentDashboard.port": {
+          "type": "number",
+          "default": 3939,
+          "minimum": 1024,
+          "maximum": 65535,
+          "markdownDescription": "%config.port.markdownDescription%"
+        },
+        "agentDashboard.home": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "%config.home.markdownDescription%"
+        },
+        "agentDashboard.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "%config.pythonPath.markdownDescription%"
+        },
+        "agentDashboard.openIn": {
+          "type": "string",
+          "default": "webview",
+          "enum": [
+            "webview",
+            "simpleBrowser",
+            "external"
+          ],
+          "enumDescriptions": [
+            "%config.openIn.enum.webview%",
+            "%config.openIn.enum.simpleBrowser%",
+            "%config.openIn.enum.external%"
+          ],
+          "description": "%config.openIn.description%"
+        },
+        "agentDashboard.sidebarBehavior": {
+          "type": "string",
+          "default": "openInTab",
+          "enum": [
+            "openInTab",
+            "embed"
+          ],
+          "enumDescriptions": [
+            "%config.sidebarBehavior.enum.openInTab%",
+            "%config.sidebarBehavior.enum.embed%"
+          ],
+          "markdownDescription": "%config.sidebarBehavior.markdownDescription%"
+        },
+        "agentDashboard.autoStartServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.autoStartServer.description%"
+        },
+        "agentDashboard.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.showStatusBar.description%"
+        },
+        "agentDashboard.stopServerOnExit": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.stopServerOnExit.markdownDescription%"
+        },
+        "agentDashboard.runSetupOnFirstRun": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.runSetupOnFirstRun.markdownDescription%"
+        },
+        "agentDashboard.autoUpdateOnNewVersion": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.autoUpdateOnNewVersion.markdownDescription%"
+        }
+      }
+    }
+  }
+}

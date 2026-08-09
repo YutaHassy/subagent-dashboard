@@ -1,0 +1,70 @@
+<svg viewBox="0 0 120 166" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<defs>
+  <!-- 胴と頭を兼ねる卵。上半分は縦半径78で細く、下半分は48で丸い非対称の卵 -->
+  <linearGradient id="rbEggGrad" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#ffffff"/>
+    <stop offset="0.5"  stop-color="#f4f8fc"/>
+    <stop offset="1"    stop-color="#dbe5f1"/>
+  </linearGradient>
+  <!-- 手は左右対称に見せるため縦方向のグラデーションにする -->
+  <linearGradient id="rbLimbGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff"/>
+    <stop offset="1" stop-color="#dbe5f1"/>
+  </linearGradient>
+  <linearGradient id="rbVisorGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#0e1724"/>
+    <stop offset="1" stop-color="#1b2739"/>
+  </linearGradient>
+  <linearGradient id="rbScanGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0"   stop-color="#3ee0ff" stop-opacity=".7"/>
+    <stop offset="1"   stop-color="#3ee0ff" stop-opacity="0"/>
+  </linearGradient>
+  <radialGradient id="rbEyeGrad" cx="0.4" cy="0.34" r="0.72">
+    <stop offset="0"   stop-color="#ffffff"/>
+    <stop offset="0.4" stop-color="#8af2ff"/>
+    <stop offset="1"   stop-color="#24cdf0"/>
+  </radialGradient>
+  <radialGradient id="rbBulbGrad" cx="0.36" cy="0.3" r="0.75">
+    <stop offset="0"    stop-color="#ffd8e7"/>
+    <stop offset="0.45" stop-color="#ff8ab5"/>
+    <stop offset="1"    stop-color="#ff5197"/>
+  </radialGradient>
+  <linearGradient id="rbShadeGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+    <stop offset="0" stop-color="#e8eef7" stop-opacity="0"/>
+    <stop offset="1" stop-color="#a8b7cc" stop-opacity=".16"/>
+  </linearGradient>
+  <clipPath id="rbEggClip"><path d="M14 106 A46 78 0 0 1 106 106 A46 48 0 0 1 14 106 Z"/></clipPath>
+  <clipPath id="rbVisorClip"><rect x="33" y="56" width="54" height="30" rx="15"/></clipPath>
+</defs>
+<g class="rb-figure">
+  <!-- アンテナ -->
+  <g class="rb-antenna">
+    <path class="rb-rod" d="M52 36 L43 17" fill="none" stroke="#c9d4e2" stroke-width="2.8" stroke-linecap="round"/>
+    <circle class="rb-bulb" cx="43" cy="16" r="5" fill="url(#rbBulbGrad)" filter="drop-shadow(0 0 5px rgba(255,107,157,.75))"/>
+  </g>
+  <!-- 腕 -->
+  <circle class="rb-arm rb-arm-l" cx="21" cy="112" r="13" fill="url(#rbLimbGrad)"/>
+  <circle class="rb-arm rb-arm-r" cx="99" cy="112" r="13" fill="url(#rbLimbGrad)"/>
+  <!-- 卵（胴体と頭） -->
+  <path class="rb-egg" d="M14 106 A46 78 0 0 1 106 106 A46 48 0 0 1 14 106 Z" fill="url(#rbEggGrad)"/>
+  <!-- 卵の陰 -->
+  <g clip-path="url(#rbEggClip)">
+    <ellipse class="rb-egg-shade" cx="88" cy="130" rx="34" ry="32" fill="url(#rbShadeGrad)"/>
+  </g>
+  <!-- 胸部ライト（待機中） -->
+  <circle class="rb-socket" cx="60" cy="126" r="6.4" fill="#ccd8e6"/>
+  <circle class="rb-chest-standby" cx="60" cy="126" r="4.4" fill="#b9c6d6"/>
+  <!-- ビジョンパネル -->
+  <rect class="rb-bezel" x="30" y="53" width="60" height="36" rx="18" fill="#c9d5e3"/>
+  <rect class="rb-visor" x="33" y="56" width="54" height="30" rx="15" fill="url(#rbVisorGrad)"/>
+  <!-- グロス -->
+  <rect class="rb-visor-gloss" x="36" y="58" width="48" height="9" rx="4.5" fill="#ffffff" opacity=".07"/>
+  <!-- 目（待機中） -->
+  <g class="rb-g-eye">
+    <circle class="rb-eye rb-eye-l" cx="46" cy="71" r="6" fill="url(#rbEyeGrad)"/>
+    <circle class="rb-eye rb-eye-r" cx="74" cy="71" r="6" fill="url(#rbEyeGrad)"/>
+  </g>
+  <!-- 口（待機中：ピンク色の小さな矩形） -->
+  <rect class="rb-mouth-standby" x="52" y="92" width="16" height="7" rx="3.5" fill="#ff7fae"/>
+</g>
+</svg>

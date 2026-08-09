@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+# Launcher for the agent dashboard (macOS / Linux, also works in Git Bash on Windows).
+#
+# We do not trust "command -v python3" alone: on Windows the Microsoft Store stub
+# named python3.exe exists but only prints an advert and exits with code 49.
+# So each candidate is actually executed once to confirm it is a working Python 3.
+set -eu
+
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+for candidate in python3 python py; do
+    if ! command -v "$candidate" >/dev/null 2>&1; then
+        continue
+    fi
+    if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 9) else 1)' \
+        >/dev/null 2>&1; then
+        exec "$candidate" "$DIR/dash.py" "$@"
+    fi
+done
+
+echo "[dash] No working Python 3.9+ interpreter was found on PATH." >&2
+echo "[dash] Install Python 3.9 or later and try again." >&2
+exit 1

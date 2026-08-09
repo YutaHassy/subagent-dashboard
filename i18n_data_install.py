@@ -1,0 +1,861 @@
+#!/usr/bin/env python3
+"""初期設定（install.py）の出力の翻訳表。
+
+**鍵は英語の原文そのもの**（i18n.py の t() を参照）。原文を書き換えたら、ここの
+鍵も一緒に書き換えること。合っていない鍵は「訳が無い」と見なされて英語で出る
+——静かに落ちるのではなく、英語で出たら訳し漏れ、と読めるようにしてある。
+
+i18n_data.py に既にある原文はここに書かない。合成時は先に読んだ表が勝つので、
+両方に書くと「どちらが出ているのか」を追えなくなる。
+
+`{name}` の差し込みは呼び手が .format() で行う。**訳文でも同じ名前を残すこと。**
+
+外部ライブラリは使いません（Python 標準ライブラリのみ）。
+"""
+
+from __future__ import annotations
+
+# ------------------------------------------------------------ CLAUDE.md 本文
+#
+# CLAUDE.md に書き込む運用ルールの本文。長いので定数に出してある（鍵は英語の原文
+# そのものなので、EN を鍵・各言語を値として下の表に並べる）。
+# 差し込み {py} {us} {sv} {op} は install.py 側で .format() する。
+# BEGIN / END / VERSION_MARK の行はこの本文には含めない（機械が読むしるしなので訳さない）。
+
+BLOCK_EN = """## Subagent Dashboard
+
+Whenever you launch subagents, always reflect what is happening on the dashboard.
+The target project is detected automatically from the current directory, so the same commands work in any project.
+
+```bash
+# once, before the mission starts
+{py} {us} start --title "<name of the work>"
+
+# right after you launch each subagent, one at a time
+{py} {us} add --id SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
+
+# every time you receive a completion report
+{py} {us} done --id SCOUT-A --sec <seconds> --tokens <number> --tools <number> --headline "<one-line result summary>"
+
+# once, when every unit is back
+{py} {us} finish --headline "<one-line overall summary>"
+```
+
+- **Do not forget `finish`.** Nothing breaks when you forget, which is exactly why nobody notices. The screen keeps saying "running", and the next time you `start`, that record is left behind as "unfinished" - **it can never be marked complete afterwards**. A reminder to run `finish` appears the moment you mark the last unit `done`, so close the mission when you see it.
+- **Leave out any number that was not in the completion report (`--tokens` / `--tools` / `--sec`); do not estimate it.** Leaving it out shows "—" on the screen, and that is the correct state. Writing an estimate defeats the whole purpose of this dashboard.
+- **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you write it and shown on the screen exactly as recorded - nothing is translated afterwards. Follow the language of these instructions, not the language of the conversation.
+- To watch the screen, start one `{py} {sv}` and open <http://127.0.0.1:3939/>. Every `start` adds one tab, and **past work stays viewable as tabs** (the 20 most recent per project; older ones move to the trash automatically). Finished tabs can be deleted from the screen.
+- **Use the `update_state.py` at the path above.** If a copy sits somewhere else, running that one splits the `missions/` that gets written, and nothing appears on the screen.
+- For the details (grandchild agents, `--project`, helper commands), see `{op}`.
+
+### When you run two or more missions at once in the same directory (required)
+
+Mission records are kept **one per project (= per working directory)**. If you type a second
+`start` in the same directory, the first one is pushed into the history tabs while it is still
+running, and every `done` for that first one after that fails with "does not exist". **There is
+no way to mark a pushed-out record as finished later on.** Separating the records in advance is
+the only remedy.
+
+When you run missions in parallel in the same directory, give each `start` a unique name with
+`--project` (passing a name that does not exist creates a new project under that name).
+
+```bash
+{py} {us} start --project <a unique name> --title "<name of the work>"
+{py} {us} add --project <a unique name> --id SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
+{py} {us} done --project <a unique name> --id SCOUT-A --headline "<one-line result summary>"
+{py} {us} finish --project <a unique name> --headline "<one-line overall summary>"
+```
+
+- **Put `--project` on all four commands.** Miss it on even one, and that one command writes to
+  the record of the current directory = the other team's record.
+- Missions that run in different directories have separate records to begin with, so they do not
+  need `--project`.
+"""
+
+BLOCK_JA = """## Subagent Dashboard
+
+サブエージェントを起動する作業では、必ず状況をダッシュボードに反映してください。
+対象プロジェクトはカレントディレクトリから自動判定されるので、どのプロジェクトでも同じコマンドで動きます。
+
+```bash
+# ミッション開始前に1回
+{py} {us} start --title "<作業の名前>"
+
+# サブエージェントを起動した直後に、1体ずつ
+{py} {us} add --id SCOUT-A --name "<読みやすい名前>" --model <モデルID> --mission "<任務内容>"
+
+# 完了通知を受け取ったら、その都度
+{py} {us} done --id SCOUT-A --sec <秒> --tokens <数> --tools <数> --headline "<結果の一行要約>"
+
+# 全員完了したら1回
+{py} {us} finish --headline "<全体の一行要約>"
+```
+
+- **`finish` を忘れないでください。** 打ち忘れても何も壊れないので気づけません。画面には「稼働中」と出続け、次に `start` したときその記録は「未完」として残り、**あとから完了にはできません**。最後の1体を `done` にした時点で `finish` の催促が出るので、それを見たら締めてください。
+- **完了通知に含まれていなかった数値（`--tokens` / `--tools` / `--sec`）は推定せず省略してください。** 省略すれば画面に「—」と表示され、それが正しい状態です。推定値を書くのはこのダッシュボードの目的を壊す行為です。
+- **自由記述は日本語で書いてください**（`--title` / `--name` / `--mission` / `--headline`）。書いたとおりに記録され、記録したとおりに画面へ出ます——あとから翻訳はされません。会話の言語ではなく、この指示の言語に合わせてください。
+- 画面は `{py} {sv}` を1つ起動して <http://127.0.0.1:3939/> で見ます。`start` するたびに1タブ増え、**過去の作業もタブで見返せます**（プロジェクトごとに直近20件。古いものから自動でゴミ箱へ移ります）。完了したタブは画面から削除できます。
+- **`update_state.py` は上のパスのものを使ってください。** 別の場所にコピーがある場合、そちらを実行すると書き込み先の `missions/` が分かれてしまい、画面に何も出ません。
+- 詳細（孫エージェントの扱い、`--project` 指定、補助コマンド）は `{op}` を参照してください。
+
+### 同じディレクトリで2本以上を同時に走らせるとき（必須）
+
+ミッションの記録先は**プロジェクト（＝作業ディレクトリ）ごとに1つ**です。同じディレクトリで
+2本目の `start` を打つと、1本目は稼働中のまま履歴タブへ押し出され、以後その1本目に対する
+`done` は「存在しません」というエラーになります。**押し出された記録をあとから完了に直す手段は
+ありません。** 事前に記録先を分けることが唯一の対策です。
+
+同じディレクトリで並行させるときは、`start` に `--project` で一意な名前を付けて分けてください
+（存在しない名前を渡せば、その名前で新しいプロジェクトが作られます）。
+
+```bash
+{py} {us} start --project <一意な名前> --title "<作業の名前>"
+{py} {us} add --project <一意な名前> --id SCOUT-A --name "<読みやすい名前>" --model <モデルID> --mission "<任務内容>"
+{py} {us} done --project <一意な名前> --id SCOUT-A --headline "<結果の一行要約>"
+{py} {us} finish --project <一意な名前> --headline "<全体の一行要約>"
+```
+
+- **`--project` は4コマンドすべてに付けてください。** 1つでも付け忘れると、そのコマンドだけ
+  カレントディレクトリ側の記録＝もう一方のチームに書き込まれます。
+- 別々のディレクトリで走るミッション同士は記録先がもともと別なので、`--project` は要りません。
+"""
+
+BLOCK_ZH = """## Subagent Dashboard
+
+在启动子代理的工作中，务必把状况反映到面板上。
+目标项目会从当前目录自动判定，所以在任何项目里都用同样的命令。
+
+```bash
+# 任务开始前执行一次
+{py} {us} start --title "<工作的名称>"
+
+# 启动子代理之后立刻，一体一体地登记
+{py} {us} add --id SCOUT-A --name "<好读的名字>" --model <模型ID> --mission "<任务内容>"
+
+# 每次收到完成通知时
+{py} {us} done --id SCOUT-A --sec <秒> --tokens <数> --tools <数> --headline "<结果的一行摘要>"
+
+# 全员完成后执行一次
+{py} {us} finish --headline "<整体的一行摘要>"
+```
+
+- **请不要忘记 `finish`。** 忘了敲也不会坏掉任何东西，所以察觉不到。画面上会一直显示「运行中」，下次 `start` 时那条记录会作为「未完成」留下，**事后无法再改成完成**。把最后一体置为 `done` 的时点会出现 `finish` 的催促，看到它就请收尾。
+- **完成通知里没有的数值（`--tokens` / `--tools` / `--sec`）请不要估算，直接省略。** 省略后画面上会显示「—」，那才是正确的状态。写上估算值是破坏这个面板目的的行为。
+- **自由文本请用中文书写**（`--title` / `--name` / `--mission` / `--headline`）。会照你写下的样子记录，照记录的样子显示在画面上——事后不会翻译。请对齐这份指示的语言，而不是对话的语言。
+- 画面是启动一个 `{py} {sv}`，然后在 <http://127.0.0.1:3939/> 上看。每 `start` 一次就多一个标签页，**过去的工作也能用标签页回看**（每个项目保留最近 20 条。旧的会自动移入回收站）。已完成的标签页可以从画面上删除。
+- **请使用上面那个路径的 `update_state.py`。** 如果别的地方有副本，执行那一个会让写入的 `missions/` 分家，画面上就什么都不出现。
+- 详细内容（孙代理的处理、`--project` 指定、辅助命令）请参照 `{op}`。
+
+### 在同一个目录里同时跑两个以上时（必须）
+
+任务的记录位置是**每个项目（＝工作目录）一个**。在同一个目录里敲第二个
+`start`，第一个就会在运行中的状态下被挤进历史标签页，此后针对第一个的
+`done` 会报「不存在」的错误。**被挤出去的记录事后没有办法改成完成。**
+事先把记录位置分开是唯一的对策。
+
+在同一个目录里并行时，请给 `start` 加上 `--project` 起一个唯一的名字来区分
+（传一个不存在的名字，就会用那个名字新建一个项目）。
+
+```bash
+{py} {us} start --project <唯一的名字> --title "<工作的名称>"
+{py} {us} add --project <唯一的名字> --id SCOUT-A --name "<好读的名字>" --model <模型ID> --mission "<任务内容>"
+{py} {us} done --project <唯一的名字> --id SCOUT-A --headline "<结果的一行摘要>"
+{py} {us} finish --project <唯一的名字> --headline "<整体的一行摘要>"
+```
+
+- **`--project` 请加在全部四个命令上。** 哪怕漏掉一个，那一个命令就只会写进
+  当前目录一侧的记录＝另一支队伍那边。
+- 在不同目录里跑的任务，记录位置本来就是分开的，所以不需要 `--project`。
+"""
+
+BLOCK_KO = """## Subagent Dashboard
+
+서브에이전트를 띄우는 작업에서는 반드시 상황을 대시보드에 반영하세요.
+대상 프로젝트는 현재 디렉터리에서 자동으로 판정되므로, 어느 프로젝트에서든 같은 명령으로 움직입니다.
+
+```bash
+# 미션 시작 전에 한 번
+{py} {us} start --title "<작업의 이름>"
+
+# 서브에이전트를 띄운 직후에, 한 대씩
+{py} {us} add --id SCOUT-A --name "<읽기 쉬운 이름>" --model <모델ID> --mission "<임무 내용>"
+
+# 완료 보고를 받을 때마다
+{py} {us} done --id SCOUT-A --sec <초> --tokens <수> --tools <수> --headline "<결과의 한 줄 요약>"
+
+# 전원 완료되면 한 번
+{py} {us} finish --headline "<전체의 한 줄 요약>"
+```
+
+- **`finish` 를 잊지 마세요.** 잊고 치지 않아도 아무것도 망가지지 않기 때문에 알아챌 수 없습니다. 화면에는 계속 「가동 중」이라고 나오고, 다음에 `start` 했을 때 그 기록은 「미완」으로 남으며, **나중에 완료로 만들 수는 없습니다**. 마지막 한 대를 `done` 으로 만든 시점에 `finish` 를 재촉하는 안내가 나오므로, 그것을 보면 마무리하세요.
+- **완료 보고에 들어 있지 않던 수치(`--tokens` / `--tools` / `--sec`)는 추정하지 말고 생략하세요.** 생략하면 화면에 「—」로 표시되며, 그것이 올바른 상태입니다. 추정값을 적는 것은 이 대시보드의 목적을 망가뜨리는 행위입니다.
+- **자유 기술은 한국어로 쓰세요**(`--title` / `--name` / `--mission` / `--headline`). 적은 그대로 기록되고, 기록된 그대로 화면에 나옵니다——나중에 번역되지 않습니다. 대화의 언어가 아니라 이 지시의 언어에 맞추세요.
+- 화면은 `{py} {sv}` 를 하나 띄우고 <http://127.0.0.1:3939/> 에서 봅니다. `start` 할 때마다 탭이 하나 늘고, **지난 작업도 탭으로 되돌아볼 수 있습니다**(프로젝트마다 최근 20건. 오래된 것부터 자동으로 휴지통으로 옮겨집니다). 완료된 탭은 화면에서 삭제할 수 있습니다.
+- **`update_state.py` 는 위 경로의 것을 쓰세요.** 다른 곳에 복사본이 있는 경우, 그쪽을 실행하면 기록되는 `missions/` 가 갈라져 화면에 아무것도 나오지 않습니다.
+- 자세한 내용(손자 에이전트의 취급, `--project` 지정, 보조 명령)은 `{op}` 를 참조하세요.
+
+### 같은 디렉터리에서 두 개 이상을 동시에 돌릴 때 (필수)
+
+미션의 기록 위치는 **프로젝트(= 작업 디렉터리)마다 하나**입니다. 같은 디렉터리에서
+두 번째 `start` 를 치면, 첫 번째는 가동 중인 채로 이력 탭으로 밀려나고, 이후 그 첫 번째에 대한
+`done` 은 「존재하지 않습니다」라는 오류가 됩니다. **밀려난 기록을 나중에 완료로 고치는 수단은
+없습니다.** 미리 기록 위치를 나누는 것이 유일한 대책입니다.
+
+같은 디렉터리에서 병행할 때는 `start` 에 `--project` 로 고유한 이름을 붙여 나누세요
+(존재하지 않는 이름을 넘기면 그 이름으로 새 프로젝트가 만들어집니다).
+
+```bash
+{py} {us} start --project <고유한 이름> --title "<작업의 이름>"
+{py} {us} add --project <고유한 이름> --id SCOUT-A --name "<읽기 쉬운 이름>" --model <모델ID> --mission "<임무 내용>"
+{py} {us} done --project <고유한 이름> --id SCOUT-A --headline "<결과의 한 줄 요약>"
+{py} {us} finish --project <고유한 이름> --headline "<전체의 한 줄 요약>"
+```
+
+- **`--project` 는 네 명령 모두에 붙이세요.** 하나라도 빠뜨리면 그 명령만
+  현재 디렉터리 쪽의 기록 = 다른 한쪽 팀에 기록됩니다.
+- 서로 다른 디렉터리에서 도는 미션끼리는 기록 위치가 원래 다르므로 `--project` 는 필요 없습니다.
+"""
+
+CATALOG: dict[str, dict[str, str]] = {}
+
+# ============================================================ 日本語
+CATALOG["ja"] = {
+    # ---- install: CLAUDE.md に書き込む本文
+    BLOCK_EN: BLOCK_JA,
+
+    # ---- install: CLAUDE.md の差し替え
+    "the markers ({begin} / {end}) are not paired":
+        "マーカー（{begin} / {end}）が対になっていません",
+    "  ✓ CLAUDE.md was created.": "  ✓ CLAUDE.md を新規作成しました",
+    "  ✓ The settings were appended to CLAUDE.md.": "  ✓ CLAUDE.md に追記しました",
+    "  ✓ CLAUDE.md was updated.": "  ✓ CLAUDE.md を更新しました",
+    "  ✓ CLAUDE.md was updated (also tidied up {n} duplicated old blocks).":
+        "  ✓ CLAUDE.md を更新しました（重複していた古いブロック {n} 個も整理）",
+    "    (only the marked block is updated; anything already there is kept)":
+        "    （マーカーで囲まれた範囲のみ更新。既存の記述は保持されます）",
+
+    # ---- install: keybindings.json の読み書き
+    "the contents are not an array (VSCode's keybindings.json is an array)":
+        "中身が配列ではありません（VSCode の keybindings.json は配列）",
+    "the closing bracket of the array was not found":
+        "配列の閉じ括弧が見つかりません",
+    "cannot create {path} ({err})": "{path} を作れません（{err}）",
+    "cannot read {path} ({err})": "{path} を読めません（{err}）",
+    "{path} cannot be rewritten ({err})": "{path} は書き換えられません（{err}）",
+    "cannot write to {path} ({err})": "{path} に書き込めません（{err}）",
+    "the structure of {path} could not be read fully "
+    "(nothing was changed, to be safe)":
+        "{path} の構造を読み切れませんでした（安全のため変更していません）",
+
+    # ---- install: キーバインドの登録
+    "the VSCode settings folder was not found ({path}). VSCode may not be "
+    "installed, or you may be using Insiders / VSCodium":
+        "VSCode の設定フォルダが見つかりません（{path}）。"
+        "VSCode が未インストールか、Insiders / VSCodium をお使いの可能性があります",
+    "created the file and registered the binding": "作成して登録しました",
+    "it is registered, but a different binding further down ({names}) takes "
+    "precedence, so Ctrl+Shift+D does not open it":
+        "登録はされていますが、後ろにある別の割り当て（{names}）が"
+        "優先されるため、Ctrl+Shift+D では開きません",
+    "already registered (no change)": "既に登録されています（変更なし）",
+    "{key} is already bound to a different command ({names}). It was not "
+    "registered, so as not to overwrite your own setting":
+        "{key} は既に別のコマンド（{names}）に割り当てられています。"
+        "利用者の設定を上書きしないため、登録していません",
+    "removed the old-style entry": "古い形式のエントリを取り除きました",
+    "replaced the old-style entry with the current one":
+        "古い形式のエントリを今の形式に置き換えました",
+    "registered": "登録しました",
+
+    # ---- install: キーバインドの取り消し
+    "the file does not exist (nothing was done)":
+        "ファイルがありません（何もしていません）",
+    "there are no entries from this tool (nothing was done)":
+        "このツールのエントリはありません（何もしていません）",
+    "removed {n} entries": "{n} 個のエントリを取り除きました",
+
+    # ---- install: 環境チェック
+    "Warning: could not make ./dash executable ({err})":
+        "警告: ./dash に実行権限を付けられませんでした（{err}）",
+    "Python 3.9 or newer is required (this is {v})":
+        "Python 3.9 以降が必要です（いま {v}）",
+    "the following files were not found (the package may be incomplete): {list}":
+        "次のファイルが見つかりません（ファイルが揃っていない可能性があります）: {list}",
+    "cannot write to the mission storage ({path} / {reason})":
+        "ミッション保存先に書き込めません（{path} / {reason}）",
+    "cannot write to Claude's config folder ({path} / {reason})":
+        "Claude の設定フォルダに書き込めません（{path} / {reason}）",
+
+    # ---- install: 見出しと --print
+    "  Subagent Dashboard — installer":
+        "  Subagent Dashboard — インストーラー",
+    "  What would be written (--print, so nothing is actually changed)":
+        "  書き込む内容（--print なので実際には変更しません）",
+    "What will be added to CLAUDE.md ({path}):":
+        "CLAUDE.md（{path}）に追記する内容:",
+    "The entry that will be added to keybindings.json ({path}):":
+        "keybindings.json（{path}）に追加するエントリ:",
+    "* The old location ({path}) still holds":
+        "※ 古い場所（{path}）に、このツールが以前書いた",
+    "  {n} invalid entries written earlier by this tool. Running this removes them.":
+        "  無効なエントリが {n} 個残っています。実行すると取り除きます。",
+
+    # ---- install: ステップ 1（環境チェック）
+    "Step 1/4: Environment check": "ステップ 1/4: 環境チェック",
+    "  ✗ The following problems were found:": "  ✗ 次の問題が見つかりました:",
+    "    - {problem}": "    ・{problem}",
+    "  Please solve these problems and run this again.":
+        "  これらの問題を解決してから再度実行してください。",
+    "Platform": "プラットフォーム",
+    "Write permission": "書き込み権限",
+    "Tool location": "ツールの場所",
+    "VSCode keybinding": "VSCode キーバインド",
+    "OK ({n} files, all present)": "OK（{n} 件すべて確認）",
+    "OK ({missions} / {claude})": "OK（{missions} / {claude}）",
+    "OK ({path})": "OK（{path}）",
+    "cannot write ({reason})": "書き込めません（{reason}）",
+    "the settings folder was not found ({path})":
+        "設定フォルダが見つかりません（{path}）",
+    "  ⚠ You are running this from inside the distribution (under dist/).":
+        "  ⚠ 配布物の中（dist/ の下）から実行しています。",
+    "     If you go on, records will be stored in {path}.":
+        "     このまま進めると、記録の保存先が {path} になります。",
+    "     Move the unpacked folder outside dist/ before running this.":
+        "     配布物を展開したフォルダを、dist/ の外へ移してから実行してください。",
+
+    # ---- install: ステップ 2（自動検出）
+    "Step 2/4: Automatic detection of the environment":
+        "ステップ 2/4: 環境の自動検出",
+    "Dashboard location": "ダッシュボードの場所",
+    "Python command": "Python 実行コマンド",
+    "Claude config file": "Claude 設定ファイル",
+    "  (leftovers in the old location: {path} / {n})":
+        "  （古い場所に残骸あり: {path} / {n} 個）",
+
+    # ---- install: ステップ 3（書き込み）
+    "Step 3/4: Writing to the config files": "ステップ 3/4: 設定ファイルへの書き込み",
+    "  ✗ Error: cannot read {path} ({err})":
+        "  ✗ エラー: {path} を読めません（{err}）",
+    "  ✗ Error: {path} cannot be touched ({err})":
+        "  ✗ エラー: {path} に手を出せません（{err}）",
+    "    Writing now would wipe out your own text the next time --uninstall runs.":
+        "    このまま書くと、次に --uninstall したとき利用者の記述まで消えます。",
+    "    Pair up the markers in {path}, then run this again.":
+        "    {path} のマーカーを対にしてから、もう一度実行してください。",
+    "  ✗ Error: cannot write to {path} ({err})":
+        "  ✗ エラー: {path} に書き込めません（{err}）",
+    "  ✓ CLAUDE.md is already up to date (no change)":
+        "  ✓ CLAUDE.md は既に最新です（変更なし）",
+    "  ✓ keybindings.json was updated ({msg})":
+        "  ✓ keybindings.json を更新しました（{msg}）",
+    "    (Ctrl+Shift+D → agentDashboard.open. "
+    "It works once the extension is installed.)":
+        "    （Ctrl+Shift+D → agentDashboard.open。拡張機能を入れると効きます）",
+    "  ✓ keybindings.json needed no change ({msg})":
+        "  ✓ keybindings.json は変更不要でした（{msg}）",
+    "  ⚠ Ctrl+Shift+D does not work ({msg})":
+        "  ⚠ Ctrl+Shift+D は効きません（{msg}）",
+    "  ⚠ Ctrl+Shift+D was not registered ({msg})":
+        "  ⚠ Ctrl+Shift+D は登録しませんでした（{msg}）",
+    "    Open {path} and either drop that binding, or bind another key":
+        "    {path} を開いて、その割り当てを外すか、別のキーに",
+    '    with {{"key": "<the key you like>", "command": "{cmd}"}}.':
+        '    {{"key": "<好きなキー>", "command": "{cmd}"}} を書いてください。',
+    "  ⚠ Warning: keybindings.json could not be updated ({msg})":
+        "  ⚠ 警告: keybindings.json を更新できませんでした（{msg}）",
+    "  ✓ Cleaned up the dead entries in the old location ({msg})":
+        "  ✓ 古い場所の無効なエントリを片付けました（{msg}）",
+    "    (VSCode does not read this location. Other entries were left alone.)":
+        "    （VSCode はこの場所を読みません。他のエントリは残しています）",
+    "  ⚠ {n} dead entries remain in the old location: {path}":
+        "  ⚠ 古い場所に無効なエントリが {n} 個残っています: {path}",
+    "    They could not be cleaned up ({msg}). Deleting them by hand is fine.":
+        "    片付けられませんでした（{msg}）。手で消しても問題ありません。",
+    "  ⚠ The file in the old location could not be read: {path}":
+        "  ⚠ 古い場所のファイルを読めませんでした: {path}",
+    "    Dead entries written earlier by this tool may still be there.":
+        "    このツールが以前書いた無効なエントリが残っている可能性があります。",
+    "  ✓ Made the launcher executable: ./dash":
+        "  ✓ ランチャに実行権限を付けました: ./dash",
+
+    # ---- install: ステップ 4（完了）
+    "Step 4/4: Setup complete!": "ステップ 4/4: セットアップ完了！",
+    "  🎉 The installation is complete!": "  🎉 インストールが完了しました！",
+    "  The installation is complete (Ctrl+Shift+D was not registered).":
+        "  インストールが完了しました（Ctrl+Shift+D の登録は見送りました）。",
+    "  You can open the dashboard in these ways:":
+        "  次の方法でダッシュボードを開けます:",
+    "  [Option 1] Start it from the command line (recommended)":
+        "  【方法1】コマンドから起動（推奨）",
+    "  [Option 2] A VSCode keyboard shortcut":
+        "  【方法2】VSCode のキーボードショートカット",
+    "    Press Ctrl+Shift+D (it works once you install the extension below)":
+        "    Ctrl+Shift+D を押す（下の拡張機能を入れてから効きます）",
+    "  [Option 2] A VSCode keyboard shortcut → not registered this time":
+        "  【方法2】VSCode のキーボードショートカット → 今回は登録していません",
+    "    See the ⚠ above for why. Options 1 and 3 work as they are.":
+        "    上の ⚠ の理由を見てください。方法1と方法3はそのまま使えます。",
+    "  [Option 3] The VSCode extension (more convenient)":
+        "  【方法3】VSCode 拡張機能（より便利）",
+    "    then click the robot icon at the far left":
+        "    を実行してから、左端のロボットアイコンをクリック",
+    "  📖 The manual (it opens once the server is running)":
+        "  📖 取扱説明書（起動後に開きます）",
+    "  🔍 If something goes wrong, run the diagnostics script":
+        "  🔍 問題が起きたら診断スクリプトを実行",
+
+    # ---- install: --uninstall
+    "Config file": "設定ファイル",
+    "Keybinding settings": "キーバインド設定",
+    "(the old location)": "（古い場所）",
+    "  CLAUDE.md does not exist.": "  CLAUDE.md がありません。",
+    "Error: cannot read {path} ({err})": "エラー: {path} を読めません（{err}）",
+    "Error: cannot write to {path} ({err})": "エラー: {path} に書き込めません（{err}）",
+    "  Removed the settings from CLAUDE.md (anything else was left alone).":
+        "  CLAUDE.md から設定を削除しました（他の記述は残しています）。",
+    "  CLAUDE.md has no settings from this tool.":
+        "  CLAUDE.md にはこのツールの設定がありません。",
+    "the keybindings.json in the old location": "古い場所の keybindings.json",
+    "  Removed the settings from {label} ({msg}).":
+        "  {label} から設定を削除しました（{msg}）。",
+    "    (other entries written by you were left alone)":
+        "    （利用者が書いた他のエントリは残しています）",
+    "  Warning: deleting from {label} failed ({msg})":
+        "  警告: {label} の削除に失敗しました（{msg}）",
+    "  Nothing was deleted.": "  何も削除されませんでした。",
+    "  The mission records are still there: {path}":
+        "  ミッションの記録は残っています: {path}",
+
+    # ---- install: 引数
+    "First-time setup for the Subagent Dashboard":
+        "Subagent Dashboard の初期設定",
+    "only show what would be written (changes nothing)":
+        "書き込む内容を表示するだけ（何も変更しない）",
+    "undo the settings that were written": "書き込んだ設定を取り消す",
+}
+
+# ============================================================ 中文（简体）
+CATALOG["zh"] = {
+    # ---- install: CLAUDE.md に書き込む本文
+    BLOCK_EN: BLOCK_ZH,
+
+    # ---- install: CLAUDE.md の差し替え
+    "the markers ({begin} / {end}) are not paired":
+        "标记（{begin} / {end}）没有成对",
+    "  ✓ CLAUDE.md was created.": "  ✓ 已新建 CLAUDE.md",
+    "  ✓ The settings were appended to CLAUDE.md.": "  ✓ 已向 CLAUDE.md 追加写入",
+    "  ✓ CLAUDE.md was updated.": "  ✓ 已更新 CLAUDE.md",
+    "  ✓ CLAUDE.md was updated (also tidied up {n} duplicated old blocks).":
+        "  ✓ 已更新 CLAUDE.md（顺便整理了重复的 {n} 个旧块）",
+    "    (only the marked block is updated; anything already there is kept)":
+        "    （只更新标记包围的范围。已有的记述会保留）",
+
+    # ---- install: keybindings.json の読み書き
+    "the contents are not an array (VSCode's keybindings.json is an array)":
+        "内容不是数组（VSCode 的 keybindings.json 是数组）",
+    "the closing bracket of the array was not found":
+        "找不到数组的右方括号",
+    "cannot create {path} ({err})": "无法创建 {path}（{err}）",
+    "cannot read {path} ({err})": "无法读取 {path}（{err}）",
+    "{path} cannot be rewritten ({err})": "无法改写 {path}（{err}）",
+    "cannot write to {path} ({err})": "无法写入 {path}（{err}）",
+    "the structure of {path} could not be read fully "
+    "(nothing was changed, to be safe)":
+        "没能完整读懂 {path} 的结构（为安全起见没有做任何修改）",
+
+    # ---- install: キーバインドの登録
+    "the VSCode settings folder was not found ({path}). VSCode may not be "
+    "installed, or you may be using Insiders / VSCodium":
+        "找不到 VSCode 的配置文件夹（{path}）。"
+        "可能是没有安装 VSCode，或者用的是 Insiders / VSCodium",
+    "created the file and registered the binding": "已创建文件并完成注册",
+    "it is registered, but a different binding further down ({names}) takes "
+    "precedence, so Ctrl+Shift+D does not open it":
+        "虽然已经注册，但后面还有另一个绑定（{names}）优先，"
+        "所以按 Ctrl+Shift+D 打不开",
+    "already registered (no change)": "已经注册过了（无变更）",
+    "{key} is already bound to a different command ({names}). It was not "
+    "registered, so as not to overwrite your own setting":
+        "{key} 已经绑定到别的命令（{names}）。"
+        "为了不覆盖使用者的设置，没有进行注册",
+    "removed the old-style entry": "已移除旧格式的条目",
+    "replaced the old-style entry with the current one":
+        "已把旧格式的条目换成现在的格式",
+    "registered": "已注册",
+
+    # ---- install: キーバインドの取り消し
+    "the file does not exist (nothing was done)": "文件不存在（什么都没做）",
+    "there are no entries from this tool (nothing was done)":
+        "没有这个工具写的条目（什么都没做）",
+    "removed {n} entries": "已移除 {n} 个条目",
+
+    # ---- install: 環境チェック
+    "Warning: could not make ./dash executable ({err})":
+        "警告: 无法给 ./dash 加上执行权限（{err}）",
+    "Python 3.9 or newer is required (this is {v})":
+        "需要 Python 3.9 以上（现在是 {v}）",
+    "the following files were not found (the package may be incomplete): {list}":
+        "找不到以下文件（可能是文件不齐全）: {list}",
+    "cannot write to the mission storage ({path} / {reason})":
+        "无法写入任务保存位置（{path} / {reason}）",
+    "cannot write to Claude's config folder ({path} / {reason})":
+        "无法写入 Claude 的配置文件夹（{path} / {reason}）",
+
+    # ---- install: 見出しと --print
+    "  Subagent Dashboard — installer":
+        "  Subagent Dashboard — 安装程序",
+    "  What would be written (--print, so nothing is actually changed)":
+        "  将要写入的内容（因为带了 --print，实际上不做任何修改）",
+    "What will be added to CLAUDE.md ({path}):":
+        "要追加写入 CLAUDE.md（{path}）的内容:",
+    "The entry that will be added to keybindings.json ({path}):":
+        "要添加到 keybindings.json（{path}）的条目:",
+    "* The old location ({path}) still holds":
+        "※ 旧的位置（{path}）里，还留着这个工具以前写的",
+    "  {n} invalid entries written earlier by this tool. Running this removes them.":
+        "  无效条目 {n} 个。执行之后会被移除。",
+
+    # ---- install: ステップ 1（環境チェック）
+    "Step 1/4: Environment check": "步骤 1/4: 环境检查",
+    "  ✗ The following problems were found:": "  ✗ 发现了以下问题:",
+    "    - {problem}": "    ・{problem}",
+    "  Please solve these problems and run this again.":
+        "  请解决这些问题之后再执行一次。",
+    "Platform": "平台",
+    "Write permission": "写入权限",
+    "Tool location": "本体的位置",
+    "VSCode keybinding": "VSCode 键绑定",
+    "OK ({n} files, all present)": "OK（{n} 个全部确认）",
+    "OK ({missions} / {claude})": "OK（{missions} / {claude}）",
+    "OK ({path})": "OK（{path}）",
+    "cannot write ({reason})": "无法写入（{reason}）",
+    "the settings folder was not found ({path})":
+        "找不到配置文件夹（{path}）",
+    "  ⚠ You are running this from inside the distribution (under dist/).":
+        "  ⚠ 正在从分发包内部（dist/ 之下）执行。",
+    "     If you go on, records will be stored in {path}.":
+        "     就这样继续的话，记录的保存位置会变成 {path}。",
+    "     Move the unpacked folder outside dist/ before running this.":
+        "     请把解压分发包得到的文件夹移到 dist/ 之外，然后再执行。",
+
+    # ---- install: ステップ 2（自動検出）
+    "Step 2/4: Automatic detection of the environment": "步骤 2/4: 环境的自动检测",
+    "Dashboard location": "面板的位置",
+    "Python command": "Python 执行命令",
+    "Claude config file": "Claude 配置文件",
+    "  (leftovers in the old location: {path} / {n})":
+        "  （旧的位置有残留: {path} / {n} 个）",
+
+    # ---- install: ステップ 3（書き込み）
+    "Step 3/4: Writing to the config files": "步骤 3/4: 写入配置文件",
+    "  ✗ Error: cannot read {path} ({err})": "  ✗ 错误: 无法读取 {path}（{err}）",
+    "  ✗ Error: {path} cannot be touched ({err})":
+        "  ✗ 错误: 不能碰 {path}（{err}）",
+    "    Writing now would wipe out your own text the next time --uninstall runs.":
+        "    就这样写下去的话，下次执行 --uninstall 时会连使用者自己写的内容一起删掉。",
+    "    Pair up the markers in {path}, then run this again.":
+        "    请把 {path} 里的标记配成对，然后再执行一次。",
+    "  ✗ Error: cannot write to {path} ({err})": "  ✗ 错误: 无法写入 {path}（{err}）",
+    "  ✓ CLAUDE.md is already up to date (no change)":
+        "  ✓ CLAUDE.md 已经是最新的了（无变更）",
+    "  ✓ keybindings.json was updated ({msg})":
+        "  ✓ 已更新 keybindings.json（{msg}）",
+    "    (Ctrl+Shift+D → agentDashboard.open. "
+    "It works once the extension is installed.)":
+        "    （Ctrl+Shift+D → agentDashboard.open。装上扩展之后就会生效）",
+    "  ✓ keybindings.json needed no change ({msg})":
+        "  ✓ keybindings.json 无需改动（{msg}）",
+    "  ⚠ Ctrl+Shift+D does not work ({msg})":
+        "  ⚠ Ctrl+Shift+D 不会生效（{msg}）",
+    "  ⚠ Ctrl+Shift+D was not registered ({msg})":
+        "  ⚠ 没有注册 Ctrl+Shift+D（{msg}）",
+    "    Open {path} and either drop that binding, or bind another key":
+        "    请打开 {path}，去掉那个绑定，或者换一个键写上",
+    '    with {{"key": "<the key you like>", "command": "{cmd}"}}.':
+        '    {{"key": "<你喜欢的键>", "command": "{cmd}"}}。',
+    "  ⚠ Warning: keybindings.json could not be updated ({msg})":
+        "  ⚠ 警告: 无法更新 keybindings.json（{msg}）",
+    "  ✓ Cleaned up the dead entries in the old location ({msg})":
+        "  ✓ 已清理旧位置的无效条目（{msg}）",
+    "    (VSCode does not read this location. Other entries were left alone.)":
+        "    （VSCode 不会读取这个位置。其他条目都保留着）",
+    "  ⚠ {n} dead entries remain in the old location: {path}":
+        "  ⚠ 旧的位置里还留着 {n} 个无效条目: {path}",
+    "    They could not be cleaned up ({msg}). Deleting them by hand is fine.":
+        "    没能清理掉（{msg}）。手动删除也没有问题。",
+    "  ⚠ The file in the old location could not be read: {path}":
+        "  ⚠ 无法读取旧位置的文件: {path}",
+    "    Dead entries written earlier by this tool may still be there.":
+        "    那里可能还留着这个工具以前写的无效条目。",
+    "  ✓ Made the launcher executable: ./dash":
+        "  ✓ 已给启动器加上执行权限: ./dash",
+
+    # ---- install: ステップ 4（完了）
+    "Step 4/4: Setup complete!": "步骤 4/4: 安装完成！",
+    "  🎉 The installation is complete!": "  🎉 安装已经完成！",
+    "  The installation is complete (Ctrl+Shift+D was not registered).":
+        "  安装已经完成（这次没有注册 Ctrl+Shift+D）。",
+    "  You can open the dashboard in these ways:":
+        "  可以用以下方法打开面板:",
+    "  [Option 1] Start it from the command line (recommended)":
+        "  【方法1】从命令行启动（推荐）",
+    "  [Option 2] A VSCode keyboard shortcut":
+        "  【方法2】VSCode 的键盘快捷键",
+    "    Press Ctrl+Shift+D (it works once you install the extension below)":
+        "    按 Ctrl+Shift+D（装上下面的扩展之后才会生效）",
+    "  [Option 2] A VSCode keyboard shortcut → not registered this time":
+        "  【方法2】VSCode 的键盘快捷键 → 这次没有注册",
+    "    See the ⚠ above for why. Options 1 and 3 work as they are.":
+        "    请看上面 ⚠ 的理由。方法1和方法3照样能用。",
+    "  [Option 3] The VSCode extension (more convenient)":
+        "  【方法3】VSCode 扩展（更方便）",
+    "    then click the robot icon at the far left":
+        "    执行之后，点击最左边的机器人图标",
+    "  📖 The manual (it opens once the server is running)":
+        "  📖 使用手册（启动之后打开）",
+    "  🔍 If something goes wrong, run the diagnostics script":
+        "  🔍 出问题时请执行诊断脚本",
+
+    # ---- install: --uninstall
+    "Config file": "配置文件",
+    "Keybinding settings": "键绑定设置",
+    "(the old location)": "（旧的位置）",
+    "  CLAUDE.md does not exist.": "  没有 CLAUDE.md。",
+    "Error: cannot read {path} ({err})": "错误: 无法读取 {path}（{err}）",
+    "Error: cannot write to {path} ({err})": "错误: 无法写入 {path}（{err}）",
+    "  Removed the settings from CLAUDE.md (anything else was left alone).":
+        "  已从 CLAUDE.md 删除设置（其他记述都保留着）。",
+    "  CLAUDE.md has no settings from this tool.":
+        "  CLAUDE.md 里没有这个工具的设置。",
+    "the keybindings.json in the old location": "旧位置的 keybindings.json",
+    "  Removed the settings from {label} ({msg}).":
+        "  已从 {label} 删除设置（{msg}）。",
+    "    (other entries written by you were left alone)":
+        "    （使用者自己写的其他条目都保留着）",
+    "  Warning: deleting from {label} failed ({msg})":
+        "  警告: 从 {label} 删除失败（{msg}）",
+    "  Nothing was deleted.": "  什么都没有删除。",
+    "  The mission records are still there: {path}":
+        "  任务的记录还留着: {path}",
+
+    # ---- install: 引数
+    "First-time setup for the Subagent Dashboard": "Subagent Dashboard 的初始设置",
+    "only show what would be written (changes nothing)":
+        "只显示将要写入的内容（不做任何修改）",
+    "undo the settings that were written": "取消已经写入的设置",
+}
+
+# ============================================================ 한국어
+CATALOG["ko"] = {
+    # ---- install: CLAUDE.md に書き込む本文
+    BLOCK_EN: BLOCK_KO,
+
+    # ---- install: CLAUDE.md の差し替え
+    "the markers ({begin} / {end}) are not paired":
+        "마커({begin} / {end})가 짝을 이루고 있지 않습니다",
+    "  ✓ CLAUDE.md was created.": "  ✓ CLAUDE.md 를 새로 만들었습니다",
+    "  ✓ The settings were appended to CLAUDE.md.": "  ✓ CLAUDE.md 에 추가로 기록했습니다",
+    "  ✓ CLAUDE.md was updated.": "  ✓ CLAUDE.md 를 갱신했습니다",
+    "  ✓ CLAUDE.md was updated (also tidied up {n} duplicated old blocks).":
+        "  ✓ CLAUDE.md 를 갱신했습니다 (중복되어 있던 오래된 블록 {n} 개도 정리)",
+    "    (only the marked block is updated; anything already there is kept)":
+        "    (마커로 둘러싸인 범위만 갱신합니다. 기존의 기술은 유지됩니다)",
+
+    # ---- install: keybindings.json の読み書き
+    "the contents are not an array (VSCode's keybindings.json is an array)":
+        "내용이 배열이 아닙니다 (VSCode 의 keybindings.json 은 배열)",
+    "the closing bracket of the array was not found":
+        "배열의 닫는 괄호를 찾을 수 없습니다",
+    "cannot create {path} ({err})": "{path} 를 만들 수 없습니다 ({err})",
+    "cannot read {path} ({err})": "{path} 를 읽을 수 없습니다 ({err})",
+    "{path} cannot be rewritten ({err})": "{path} 는 고쳐 쓸 수 없습니다 ({err})",
+    "cannot write to {path} ({err})": "{path} 에 쓸 수 없습니다 ({err})",
+    "the structure of {path} could not be read fully "
+    "(nothing was changed, to be safe)":
+        "{path} 의 구조를 끝까지 읽지 못했습니다 (안전을 위해 변경하지 않았습니다)",
+
+    # ---- install: キーバインドの登録
+    "the VSCode settings folder was not found ({path}). VSCode may not be "
+    "installed, or you may be using Insiders / VSCodium":
+        "VSCode 의 설정 폴더를 찾을 수 없습니다 ({path}). "
+        "VSCode 가 설치되어 있지 않거나, Insiders / VSCodium 을 쓰고 계실 수 있습니다",
+    "created the file and registered the binding": "파일을 만들어 등록했습니다",
+    "it is registered, but a different binding further down ({names}) takes "
+    "precedence, so Ctrl+Shift+D does not open it":
+        "등록은 되어 있지만, 뒤쪽에 있는 다른 할당({names})이 "
+        "우선하므로 Ctrl+Shift+D 로는 열리지 않습니다",
+    "already registered (no change)": "이미 등록되어 있습니다 (변경 없음)",
+    "{key} is already bound to a different command ({names}). It was not "
+    "registered, so as not to overwrite your own setting":
+        "{key} 는 이미 다른 명령({names})에 할당되어 있습니다. "
+        "사용자의 설정을 덮어쓰지 않기 위해 등록하지 않았습니다",
+    "removed the old-style entry": "옛 형식의 항목을 제거했습니다",
+    "replaced the old-style entry with the current one":
+        "옛 형식의 항목을 지금의 형식으로 바꿨습니다",
+    "registered": "등록했습니다",
+
+    # ---- install: キーバインドの取り消し
+    "the file does not exist (nothing was done)":
+        "파일이 없습니다 (아무것도 하지 않았습니다)",
+    "there are no entries from this tool (nothing was done)":
+        "이 도구의 항목은 없습니다 (아무것도 하지 않았습니다)",
+    "removed {n} entries": "{n} 개의 항목을 제거했습니다",
+
+    # ---- install: 環境チェック
+    "Warning: could not make ./dash executable ({err})":
+        "경고: ./dash 에 실행 권한을 주지 못했습니다 ({err})",
+    "Python 3.9 or newer is required (this is {v})":
+        "Python 3.9 이상이 필요합니다 (지금은 {v})",
+    "the following files were not found (the package may be incomplete): {list}":
+        "다음 파일을 찾을 수 없습니다 (파일이 갖춰져 있지 않을 수 있습니다): {list}",
+    "cannot write to the mission storage ({path} / {reason})":
+        "미션 저장 위치에 쓸 수 없습니다 ({path} / {reason})",
+    "cannot write to Claude's config folder ({path} / {reason})":
+        "Claude 의 설정 폴더에 쓸 수 없습니다 ({path} / {reason})",
+
+    # ---- install: 見出しと --print
+    "  Subagent Dashboard — installer":
+        "  Subagent Dashboard — 설치 프로그램",
+    "  What would be written (--print, so nothing is actually changed)":
+        "  기록할 내용 (--print 이므로 실제로는 변경하지 않습니다)",
+    "What will be added to CLAUDE.md ({path}):":
+        "CLAUDE.md ({path}) 에 추가로 기록할 내용:",
+    "The entry that will be added to keybindings.json ({path}):":
+        "keybindings.json ({path}) 에 추가할 항목:",
+    "* The old location ({path}) still holds":
+        "※ 옛 위치({path}) 에 이 도구가 이전에 기록한",
+    "  {n} invalid entries written earlier by this tool. Running this removes them.":
+        "  무효한 항목이 {n} 개 남아 있습니다. 실행하면 제거합니다.",
+
+    # ---- install: ステップ 1（環境チェック）
+    "Step 1/4: Environment check": "단계 1/4: 환경 점검",
+    "  ✗ The following problems were found:": "  ✗ 다음 문제가 발견되었습니다:",
+    "    - {problem}": "    ・{problem}",
+    "  Please solve these problems and run this again.":
+        "  이 문제들을 해결한 뒤 다시 실행하세요.",
+    "Platform": "플랫폼",
+    "Write permission": "쓰기 권한",
+    "Tool location": "도구의 위치",
+    "VSCode keybinding": "VSCode 키 바인딩",
+    "OK ({n} files, all present)": "OK ({n} 건 모두 확인)",
+    "OK ({missions} / {claude})": "OK ({missions} / {claude})",
+    "OK ({path})": "OK ({path})",
+    "cannot write ({reason})": "쓸 수 없습니다 ({reason})",
+    "the settings folder was not found ({path})":
+        "설정 폴더를 찾을 수 없습니다 ({path})",
+    "  ⚠ You are running this from inside the distribution (under dist/).":
+        "  ⚠ 배포물 안(dist/ 아래)에서 실행하고 있습니다.",
+    "     If you go on, records will be stored in {path}.":
+        "     이대로 진행하면 기록의 저장 위치가 {path} 가 됩니다.",
+    "     Move the unpacked folder outside dist/ before running this.":
+        "     배포물을 푼 폴더를 dist/ 밖으로 옮긴 뒤 실행하세요.",
+
+    # ---- install: ステップ 2（自動検出）
+    "Step 2/4: Automatic detection of the environment": "단계 2/4: 환경 자동 검출",
+    "Dashboard location": "대시보드의 위치",
+    "Python command": "Python 실행 명령",
+    "Claude config file": "Claude 설정 파일",
+    "  (leftovers in the old location: {path} / {n})":
+        "  (옛 위치에 잔재 있음: {path} / {n} 개)",
+
+    # ---- install: ステップ 3（書き込み）
+    "Step 3/4: Writing to the config files": "단계 3/4: 설정 파일에 기록",
+    "  ✗ Error: cannot read {path} ({err})":
+        "  ✗ 오류: {path} 를 읽을 수 없습니다 ({err})",
+    "  ✗ Error: {path} cannot be touched ({err})":
+        "  ✗ 오류: {path} 에 손을 댈 수 없습니다 ({err})",
+    "    Writing now would wipe out your own text the next time --uninstall runs.":
+        "    이대로 기록하면 다음에 --uninstall 했을 때 사용자가 쓴 내용까지 지워집니다.",
+    "    Pair up the markers in {path}, then run this again.":
+        "    {path} 의 마커를 짝으로 맞춘 뒤 다시 실행하세요.",
+    "  ✗ Error: cannot write to {path} ({err})":
+        "  ✗ 오류: {path} 에 쓸 수 없습니다 ({err})",
+    "  ✓ CLAUDE.md is already up to date (no change)":
+        "  ✓ CLAUDE.md 는 이미 최신입니다 (변경 없음)",
+    "  ✓ keybindings.json was updated ({msg})":
+        "  ✓ keybindings.json 을 갱신했습니다 ({msg})",
+    "    (Ctrl+Shift+D → agentDashboard.open. "
+    "It works once the extension is installed.)":
+        "    (Ctrl+Shift+D → agentDashboard.open. 확장을 설치하면 작동합니다)",
+    "  ✓ keybindings.json needed no change ({msg})":
+        "  ✓ keybindings.json 은 고칠 필요가 없었습니다 ({msg})",
+    "  ⚠ Ctrl+Shift+D does not work ({msg})":
+        "  ⚠ Ctrl+Shift+D 는 듣지 않습니다 ({msg})",
+    "  ⚠ Ctrl+Shift+D was not registered ({msg})":
+        "  ⚠ Ctrl+Shift+D 는 등록하지 않았습니다 ({msg})",
+    "    Open {path} and either drop that binding, or bind another key":
+        "    {path} 를 열어 그 할당을 없애거나, 다른 키에",
+    '    with {{"key": "<the key you like>", "command": "{cmd}"}}.':
+        '    {{"key": "<원하는 키>", "command": "{cmd}"}} 를 적어 주세요.',
+    "  ⚠ Warning: keybindings.json could not be updated ({msg})":
+        "  ⚠ 경고: keybindings.json 을 갱신하지 못했습니다 ({msg})",
+    "  ✓ Cleaned up the dead entries in the old location ({msg})":
+        "  ✓ 옛 위치의 무효한 항목을 정리했습니다 ({msg})",
+    "    (VSCode does not read this location. Other entries were left alone.)":
+        "    (VSCode 는 이 위치를 읽지 않습니다. 다른 항목은 그대로 두었습니다)",
+    "  ⚠ {n} dead entries remain in the old location: {path}":
+        "  ⚠ 옛 위치에 무효한 항목이 {n} 개 남아 있습니다: {path}",
+    "    They could not be cleaned up ({msg}). Deleting them by hand is fine.":
+        "    정리하지 못했습니다 ({msg}). 직접 지워도 문제없습니다.",
+    "  ⚠ The file in the old location could not be read: {path}":
+        "  ⚠ 옛 위치의 파일을 읽지 못했습니다: {path}",
+    "    Dead entries written earlier by this tool may still be there.":
+        "    이 도구가 이전에 기록한 무효한 항목이 남아 있을 수 있습니다.",
+    "  ✓ Made the launcher executable: ./dash":
+        "  ✓ 런처에 실행 권한을 주었습니다: ./dash",
+
+    # ---- install: ステップ 4（完了）
+    "Step 4/4: Setup complete!": "단계 4/4: 설치 완료!",
+    "  🎉 The installation is complete!": "  🎉 설치가 완료되었습니다!",
+    "  The installation is complete (Ctrl+Shift+D was not registered).":
+        "  설치가 완료되었습니다 (Ctrl+Shift+D 등록은 보류했습니다).",
+    "  You can open the dashboard in these ways:":
+        "  다음 방법으로 대시보드를 열 수 있습니다:",
+    "  [Option 1] Start it from the command line (recommended)":
+        "  【방법1】명령으로 시작 (권장)",
+    "  [Option 2] A VSCode keyboard shortcut":
+        "  【방법2】VSCode 의 키보드 단축키",
+    "    Press Ctrl+Shift+D (it works once you install the extension below)":
+        "    Ctrl+Shift+D 를 누른다 (아래의 확장을 설치해야 작동합니다)",
+    "  [Option 2] A VSCode keyboard shortcut → not registered this time":
+        "  【방법2】VSCode 의 키보드 단축키 → 이번에는 등록하지 않았습니다",
+    "    See the ⚠ above for why. Options 1 and 3 work as they are.":
+        "    위의 ⚠ 이유를 봐 주세요. 방법1과 방법3은 그대로 쓸 수 있습니다.",
+    "  [Option 3] The VSCode extension (more convenient)":
+        "  【방법3】VSCode 확장 (더 편리)",
+    "    then click the robot icon at the far left":
+        "    를 실행한 뒤, 맨 왼쪽의 로봇 아이콘을 클릭",
+    "  📖 The manual (it opens once the server is running)":
+        "  📖 사용 설명서 (시작한 뒤에 열립니다)",
+    "  🔍 If something goes wrong, run the diagnostics script":
+        "  🔍 문제가 생기면 진단 스크립트를 실행",
+
+    # ---- install: --uninstall
+    "Config file": "설정 파일",
+    "Keybinding settings": "키 바인딩 설정",
+    "(the old location)": "(옛 위치)",
+    "  CLAUDE.md does not exist.": "  CLAUDE.md 가 없습니다.",
+    "Error: cannot read {path} ({err})": "오류: {path} 를 읽을 수 없습니다 ({err})",
+    "Error: cannot write to {path} ({err})": "오류: {path} 에 쓸 수 없습니다 ({err})",
+    "  Removed the settings from CLAUDE.md (anything else was left alone).":
+        "  CLAUDE.md 에서 설정을 삭제했습니다 (다른 기술은 남겨 두었습니다).",
+    "  CLAUDE.md has no settings from this tool.":
+        "  CLAUDE.md 에는 이 도구의 설정이 없습니다.",
+    "the keybindings.json in the old location": "옛 위치의 keybindings.json",
+    "  Removed the settings from {label} ({msg}).":
+        "  {label} 에서 설정을 삭제했습니다 ({msg}).",
+    "    (other entries written by you were left alone)":
+        "    (사용자가 쓴 다른 항목은 남겨 두었습니다)",
+    "  Warning: deleting from {label} failed ({msg})":
+        "  경고: {label} 에서 삭제에 실패했습니다 ({msg})",
+    "  Nothing was deleted.": "  아무것도 삭제되지 않았습니다.",
+    "  The mission records are still there: {path}":
+        "  미션의 기록은 남아 있습니다: {path}",
+
+    # ---- install: 引数
+    "First-time setup for the Subagent Dashboard":
+        "Subagent Dashboard 의 초기 설정",
+    "only show what would be written (changes nothing)":
+        "기록할 내용을 표시만 한다 (아무것도 변경하지 않는다)",
+    "undo the settings that were written": "기록한 설정을 취소한다",
+}

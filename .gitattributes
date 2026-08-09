@@ -1,0 +1,5 @@
+# 改行コードを Git に一切変換させない。
+# このリポジトリは CRLF と LF が意図的に混在していて（RESTORE_NOTES.md 参照）、
+# build_vsix.py が原本 .vsix とバイト単位で一致する成果物を作れることが前提。
+# core.autocrlf=true の環境で clone すると、この指定がないと中身が書き換わる。
+* -text

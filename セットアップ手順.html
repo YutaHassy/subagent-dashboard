@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>配布後のセットアップ手順</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #1a1a1a;
+      --fg-secondary: #666666;
+      --border: #e0e0e0;
+      --accent: #0066cc;
+      --accent-light: #f0f7ff;
+      --code-bg: #f5f5f5;
+      --code-fg: #2e2e2e;
+      --success: #1b7c3a;
+      --warning: #a67c00;
+      --info: #0066cc;
+
+      font-size: 16px;
+      line-height: 1.6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", sans-serif;
+      color: var(--fg);
+      background-color: var(--bg);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e1e1e;
+        --fg: #e0e0e0;
+        --fg-secondary: #a0a0a0;
+        --border: #333333;
+        --accent: #5eb3f6;
+        --accent-light: #1a3a4d;
+        --code-bg: #2d2d2d;
+        --code-fg: #d4d4d4;
+        --success: #4ade80;
+        --warning: #fbbf24;
+        --info: #5eb3f6;
+      }
+    }
+
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --fg: #1a1a1a;
+      --fg-secondary: #666666;
+      --border: #e0e0e0;
+      --accent: #0066cc;
+      --accent-light: #f0f7ff;
+      --code-bg: #f5f5f5;
+      --code-fg: #2e2e2e;
+      --success: #1b7c3a;
+      --warning: #a67c00;
+    }
+
+    :root[data-theme="dark"] {
+      --bg: #1e1e1e;
+      --fg: #e0e0e0;
+      --fg-secondary: #a0a0a0;
+      --border: #333333;
+      --accent: #5eb3f6;
+      --accent-light: #1a3a4d;
+      --code-bg: #2d2d2d;
+      --code-fg: #d4d4d4;
+      --success: #4ade80;
+      --warning: #fbbf24;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--fg);
+      transition: background-color 0.2s, color 0.2s;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .version-badge {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      background-color: var(--accent-light);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background-color: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: var(--fg-secondary);
+      transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    .theme-toggle:hover {
+      background-color: var(--accent-light);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .note {
+      background-color: var(--accent-light);
+      border-left: 4px solid var(--accent);
+      padding: 1rem;
+      margin: 1.5rem 0;
+      border-radius: 4px;
+      font-size: 0.95rem;
+    }
+
+    .note strong {
+      color: var(--accent);
+    }
+
+    .note.warn {
+      background-color: transparent;
+      border-left-color: var(--warning);
+    }
+
+    .note.warn strong {
+      color: var(--warning);
+    }
+
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+      padding-top: 1rem;
+      border-top: 2px solid var(--border);
+    }
+
+    h2:first-child {
+      border-top: none;
+      padding-top: 0;
+      margin-top: 0;
+    }
+
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-top: 1.5rem;
+      margin-bottom: 0.75rem;
+      color: var(--fg);
+    }
+
+    h4 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
+      color: var(--fg);
+    }
+
+    p {
+      margin-bottom: 1rem;
+      color: var(--fg);
+      max-width: 65ch;
+    }
+
+    ul, ol {
+      margin: 1rem 0;
+      padding-left: 2rem;
+    }
+
+    li {
+      margin-bottom: 0.5rem;
+      color: var(--fg);
+    }
+
+    li:last-child {
+      margin-bottom: 0;
+    }
+
+    code {
+      font-family: "Consolas", "Monaco", "Courier New", monospace;
+      font-size: 0.9em;
+      background-color: var(--code-bg);
+      color: var(--code-fg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+      word-break: break-word;
+    }
+
+    pre {
+      background-color: var(--code-bg);
+      color: var(--code-fg);
+      padding: 1rem;
+      border-radius: 6px;
+      margin: 1rem 0;
+      overflow-x: auto;
+      font-family: "Consolas", "Monaco", "Courier New", monospace;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      border: 1px solid var(--border);
+    }
+
+    pre code {
+      background-color: transparent;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+    }
+
+    .dialog-box {
+      background-color: var(--accent-light);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 1rem;
+      margin: 1rem 0;
+      font-family: monospace;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: var(--code-fg);
+    }
+
+    .dialog-buttons {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px dashed var(--accent);
+      font-size: 0.85rem;
+      color: var(--fg-secondary);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background-color: var(--code-bg);
+      font-weight: 700;
+    }
+
+    td code {
+      white-space: nowrap;
+    }
+
+    .qa {
+      margin: 1.5rem 0;
+    }
+
+    .qa h4 {
+      margin-top: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .qa-q {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .qa-a {
+      color: var(--fg-secondary);
+      font-weight: 700;
+    }
+
+    .qa-content {
+      margin-left: 1rem;
+      margin-top: 0.5rem;
+    }
+
+    strong {
+      font-weight: 700;
+      color: var(--fg);
+    }
+
+    em {
+      font-style: italic;
+    }
+
+    .change-list {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .change-list li {
+      padding-left: 1.5rem;
+      position: relative;
+      margin-bottom: 0.75rem;
+    }
+
+    .change-list li:before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: var(--success);
+      font-weight: bold;
+    }
+
+    .change-list li.feature:before {
+      content: "✨";
+    }
+
+    .change-list li.fix:before {
+      content: "🐛";
+    }
+
+    .change-list li.check:before {
+      content: "✅";
+    }
+
+    hr {
+      border: none;
+      height: 1px;
+      background-color: var(--border);
+      margin: 2rem 0;
+    }
+
+    .flow-diagram {
+      background-color: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      margin: 1rem 0;
+      font-family: monospace;
+      font-size: 0.9rem;
+      text-align: center;
+      color: var(--code-fg);
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+
+    a:hover {
+      border-bottom-color: var(--accent);
+    }
+
+    @media (max-width: 640px) {
+      .container {
+        padding: 1.5rem 1rem;
+      }
+
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+      }
+
+      h2 {
+        font-size: 1.25rem;
+      }
+
+      .theme-toggle {
+        align-self: flex-end;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>Subagent Dashboard<br>配布後のセットアップ手順</h1>
+        <span class="version-badge">現行版 v0.4.2</span>
+      </div>
+      <button class="theme-toggle" id="themeToggle">🌙 Dark</button>
+    </div>
+
+    <div class="note">
+      <strong>vsix をインストールするだけで、あとは画面の確認に答えるだけです。</strong>
+      手動でコマンドを打つ必要はありません。ダッシュボード本体は拡張機能の中に入っているので、別途の準備も要りません。
+    </div>
+
+    <h2>必要なもの</h2>
+
+    <ul>
+      <li><strong>Visual Studio Code 1.74.0 以降</strong></li>
+      <li><strong>Python 3.9 以降</strong> — コマンドプロンプトで <code>python --version</code> が動けば大丈夫です</li>
+    </ul>
+
+    <hr>
+
+    <h2>1. vsix をインストール</h2>
+
+    <h4>方法：VSCode の拡張機能パネルから</h4>
+
+    <ol>
+      <li>VSCode を開く</li>
+      <li><strong>Ctrl+Shift+X</strong> で拡張機能パネルを開く</li>
+      <li>パネル右上の <strong>…</strong> メニューをクリック</li>
+      <li><strong>「VSIX からのインストール...」</strong> を選択（英語表示のときは Install from VSIX...）</li>
+      <li><code>agent-dashboard-0.4.2.vsix</code> を選択</li>
+      <li>「…が正常にインストールされました」と出たら完了。求められたら VSCode を再読み込みしてください</li>
+    </ol>
+
+    <h4>代替方法（コマンドライン）：</h4>
+    <pre><code>code --install-extension "agent-dashboard-0.4.2.vsix"</code></pre>
+
+    <div class="note warn">
+      <strong>添付が別の拡張子に変えられて届いた場合。</strong>
+      <code>.vsix</code> は中身が ZIP なので、社内のメール関門に止められて拡張子を変えられることがあります。
+      ファイル名を <code>agent-dashboard-0.4.2.vsix</code> に戻してからインストールしてください。
+    </div>
+
+    <hr>
+
+    <h2>2. 初回起動 — 確認は2つ出ます</h2>
+
+    <p>左端の縦並びアイコンに<strong>ロボットの顔</strong>が増えているので、押してください。順に2つの確認が出ます。</p>
+
+    <div class="flow-diagram">ロボットのアイコンを押す　→　❶ 本体の配置　→　❷ 初期設定　→　Subagent Dashboard が表示される</div>
+
+    <h3>❶ 本体をどこに置くか</h3>
+
+    <div class="dialog-box">Subagent Dashboard の本体をこの場所に置きます:
+C:\Users\&lt;あなたの名前&gt;\.claude\agent-dashboard
+
+（拡張に同梱しているファイルをコピーします。以後の記録もここに溜まります）<div class="dialog-buttons">ボタン: 「配置する」</div></div>
+
+    <p><strong>「配置する」を押してください。</strong> 置き場所は次のとおりです。ここは拡張機能の更新に巻き込まれないので、作業の記録が消えません。</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>Windows</th><td><code>C:\Users\&lt;あなたの名前&gt;\.claude\agent-dashboard</code></td></tr>
+        <tr><th>macOS / Linux</th><td><code>~/.claude/agent-dashboard</code></td></tr>
+      </table>
+    </div>
+
+    <p>環境変数 <code>AGENT_DASHBOARD_DEPLOY_DIR</code> を設定すると、この置き場所を差し替えられます。</p>
+
+    <h3>❷ 初期設定をしてよいか</h3>
+
+    <p>配置に続けて、次のダイアログが出ます。ファイルのパスは実際の場所が入ります。</p>
+
+    <div class="dialog-box">Subagent Dashboard の初期設定を行います。よろしいですか？
+
+次の2つのファイルに設定を書き込みます。
+
+1. C:\Users\&lt;あなたの名前&gt;\.claude\CLAUDE.md
+   Claude Code に Subagent Dashboard の使い方を教える文章です。目印で囲んだ範囲だけを
+   書き換えるので、いま書かれている他の内容は消えません。
+
+2. C:\Users\&lt;あなたの名前&gt;\AppData\Roaming\Code\User\keybindings.json
+   Ctrl+Shift+D で Subagent Dashboard を開けるようにします。同じキーが既にあれば触りません。
+
+元に戻すには: python "...\install.py" --uninstall<div class="dialog-buttons">ボタン: 「設定する」「今後たずねない」</div></div>
+
+    <p><strong>「設定する」を押してください。</strong> 実行されるのは次のとおりです。</p>
+
+    <ul class="change-list">
+      <li class="check">Python の起動コマンドを実測で判定（<code>python</code> / <code>python3</code> / <code>py -3</code>）</li>
+      <li class="check">CLAUDE.md に運用ルールを書き込む（目印で囲んだ範囲だけなので、既存の記述は壊れません）</li>
+      <li class="check">VSCode のユーザーキーバインドに <strong>Ctrl+Shift+D</strong> を登録する</li>
+      <li class="check">macOS / Linux ではランチャ <code>./dash</code> に実行権限を付ける</li>
+      <li class="check">書き込み先の確認と動作チェック</li>
+    </ul>
+
+    <div class="note warn">
+      <strong>ダッシュボードサーバーはここでは起動しません。</strong>
+      サーバーは、サイドバーを開いたときや「タブで開く」を実行したときに自動で立ち上がります。
+    </div>
+
+    <h4>キーバインドの書き込み先</h4>
+
+    <p><strong>VSCode が実際に読む場所</strong>に書きます。OS ごとに違います。</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>Windows</th><td><code>%APPDATA%\Code\User\keybindings.json</code></td></tr>
+        <tr><th>macOS</th><td><code>~/Library/Application Support/Code/User/keybindings.json</code></td></tr>
+        <tr><th>Linux</th><td><code>$XDG_CONFIG_HOME/Code/User/keybindings.json</code>（未設定なら <code>~/.config/Code/User/</code>）</td></tr>
+      </table>
+    </div>
+
+    <div class="note warn">
+      <strong><code>~/.vscode/keybindings.json</code> ではありません。</strong>
+      <code>~/.vscode</code> は拡張機能の置き場であって設定の置き場ではなく、そこに <code>keybindings.json</code> を置いても
+      VSCode は読みません（実測で確認済み）。0.2.x までの <code>install.py</code> はここに書いてしまっていました。
+      古い手順書を見ている場合はご注意ください。
+    </div>
+
+    <p>キーバインドは拡張機能の <code>contributes.keybindings</code> ではなく<strong>ユーザー設定に書きます</strong>。
+    VSCode 標準の Ctrl+Shift+D「実行とデバッグ」より確実に優先させるためです。</p>
+
+    <h3>完了すると</h3>
+
+    <div class="dialog-box">Subagent Dashboard: 設定完了。CLAUDE.md に使い方を書き込み、Ctrl+Shift+D で開けるようにしました。<div class="dialog-buttons">ボタン: 「Subagent Dashboard を開く」「ログを見る」</div></div>
+
+    <p>見送っても<strong>Subagent Dashboard そのものは使えます。</strong> あとから実行したくなったら、コマンドパレットの
+    「Subagent Dashboard: 初期設定を実行」を選んでください。
+    ただし <strong>Ctrl+Shift+D は、この初期設定を実行した場合にだけ効きます。</strong></p>
+
+    <hr>
+
+    <h2>セットアップが完了したら</h2>
+
+    <p>以降は、<strong>どのプロジェクトを開いていても</strong>、以下の方法で Subagent Dashboard にアクセスできます。</p>
+
+    <ol>
+      <li><strong>アクティビティバー</strong> — 左端のロボットアイコンをクリック</li>
+      <li><strong>ステータスバーのボタン</strong> — 画面下の 🤖 Subagent Dashboard をクリック（動作中はポート番号も出ます）</li>
+      <li><strong>キーボードショートカット</strong> — Ctrl+Shift+D（初期設定を実行した場合のみ）</li>
+      <li><strong>コマンドパレット</strong> — Ctrl+Shift+P → 「Subagent Dashboard」と入力</li>
+    </ol>
+
+    <h3>コマンド一覧</h3>
+
+    <p>コマンドパレット（Ctrl+Shift+P）で「Subagent Dashboard」と入力すると出ます。</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>コマンド</th><th>すること</th></tr>
+        <tr><td>Subagent Dashboard: タブで開く</td><td>VSCode のタブに Subagent Dashboard を表示する</td></tr>
+        <tr><td>Subagent Dashboard: ブラウザで開く</td><td>OS の既定ブラウザで表示する</td></tr>
+        <tr><td>Subagent Dashboard: サーバーを再起動</td><td>サーバーを立て直す</td></tr>
+        <tr><td>Subagent Dashboard: サーバーを停止</td><td>サーバーを止める</td></tr>
+        <tr><td>Subagent Dashboard: 本体を配置／更新</td><td>同梱の本体を置き場所へコピーする</td></tr>
+        <tr><td>Subagent Dashboard: 初期設定を実行</td><td><code>install.py</code> を実行する</td></tr>
+        <tr><td>Subagent Dashboard: 初期設定のフラグをリセット</td><td>「今後たずねない」を取り消し、また尋ねるようにする</td></tr>
+        <tr><td>Subagent Dashboard: ログを表示</td><td>どこで止まったかが日本語で出る</td></tr>
+      </table>
+    </div>
+
+    <div class="note">
+      <strong>更新すると、CLAUDE.md の運用ルールを配り直すか続けて尋ねられます（v0.4.2〜）。</strong>
+      本体（コード）と CLAUDE.md に書いた運用ルールは別々に古くなります。拡張が新しいバージョンを
+      検知して「本体を配置／更新」を実行すると、本体を置いたあとに初期設定の確認がもう一度出ます。
+      ここで承諾すると、目印で囲んだ範囲だけが最新の内容に差し替わります（他の記述は消えません）。
+      見送った場合や、拡張を使わず手作業で上書きコピーした場合は、あとから
+      <code>python ~/.claude/agent-dashboard/install.py</code> を実行するか、
+      <code>python ~/.claude/agent-dashboard/diagnose.py</code> の「運用ルールの版」で
+      いま古いままかどうかを確認できます。
+    </div>
+
+    <h3>設定一覧</h3>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>設定</th><th>既定</th><th>説明</th></tr>
+        <tr><td><code>agentDashboard.port</code></td><td>3939</td><td>最初に試すポート。使用中なら次の空きへ繰り上げます</td></tr>
+        <tr><td><code>agentDashboard.home</code></td><td>（空）</td><td>本体のパス。空なら <code>~/.claude/agent-dashboard</code></td></tr>
+        <tr><td><code>agentDashboard.pythonPath</code></td><td>（空）</td><td>使う Python。空なら Python 拡張の選択中インタープリタ → <code>python</code> → <code>py</code> → <code>python3</code> の順に探します</td></tr>
+        <tr><td><code>agentDashboard.openIn</code></td><td><code>webview</code></td><td>「タブで開く」の表示先。サイドバーには影響しません</td></tr>
+        <tr><td><code>agentDashboard.autoStartServer</code></td><td>true</td><td>画面を開くとき、動いていなければ自動で起動する</td></tr>
+        <tr><td><code>agentDashboard.showStatusBar</code></td><td>true</td><td>ステータスバーにボタンを出す</td></tr>
+        <tr><td><code>agentDashboard.stopServerOnExit</code></td><td>true</td><td>VSCode を閉じるとき、<strong>この拡張が起動した</strong>サーバーを止める</td></tr>
+        <tr><td><code>agentDashboard.runSetupOnFirstRun</code></td><td>true</td><td>初回に初期設定を実行してよいか尋ねる。<strong>確認なしに実行することはありません</strong></td></tr>
+        <tr><td><code>agentDashboard.autoUpdateOnNewVersion</code></td><td>true</td><td>拡張が新しくなったとき、置き場所の本体も更新する</td></tr>
+      </table>
+    </div>
+
+    <hr>
+
+    <h2>よくある質問</h2>
+
+    <div class="qa">
+      <h4><span class="qa-q">Q:</span> 確認のダイアログが出ません</h4>
+      <div class="qa-content">
+        <p><span class="qa-a">A:</span> 以下を確認してください:</p>
+        <ol>
+          <li><strong>VSCode を再読み込みしましたか？</strong>
+            <ul><li>Ctrl+Shift+P → "Reload Window"</li></ul>
+          </li>
+          <li><strong>拡張機能がインストールされていますか？</strong>
+            <ul>
+              <li>Ctrl+Shift+X（拡張パネル）で「Subagent Dashboard」を検索</li>
+              <li>「local.agent-dashboard」が表示されていれば OK</li>
+            </ul>
+          </li>
+          <li><strong>設定で自動セットアップが有効ですか？</strong>
+            <ul>
+              <li>Ctrl+Shift+P → 「基本設定: 設定を開く」</li>
+              <li><code>agentDashboard.runSetupOnFirstRun</code> を検索（既定は <code>true</code>）</li>
+            </ul>
+          </li>
+        </ol>
+        <p>ダイアログを見逃しても、ロボットのアイコンを押せば画面上のボタンから同じことができます（下の「トラブルシューティング」を参照）。</p>
+      </div>
+    </div>
+
+    <div class="qa">
+      <h4><span class="qa-q">Q:</span> 「今後たずねない」を選んでしまいました</h4>
+      <div class="qa-content">
+        <p><span class="qa-a">A:</span> コマンドからいつでも実行できます:</p>
+        <pre><code>Ctrl+Shift+P → "Subagent Dashboard: 初期設定を実行"</code></pre>
+        <p>また尋ねるように戻したい場合は「Subagent Dashboard: 初期設定のフラグをリセット」を実行してください。</p>
+      </div>
+    </div>
+
+    <div class="qa">
+      <h4><span class="qa-q">Q:</span> 「配置する」を押しそびれました</h4>
+      <div class="qa-content">
+        <p><span class="qa-a">A:</span> ロボットのアイコンを押すと出る画面で「本体を配置して初期設定」を押すか、コマンドから実行してください:</p>
+        <pre><code>Ctrl+Shift+P → "Subagent Dashboard: 本体を配置／更新"</code></pre>
+      </div>
+    </div>
+
+    <div class="qa">
+      <h4><span class="qa-q">Q:</span> Python が見つかりません</h4>
+      <div class="qa-content">
+        <p><span class="qa-a">A:</span> Python 3.9 以降を入れてください。入れてあるのに出る場合は設定で指定します:</p>
+        <pre><code>Ctrl+Shift+P → 「基本設定: 設定を開く」
+`agentDashboard.pythonPath` に、Python の実行ファイルの完全パスを入力</code></pre>
+        <p>例: <code>C:\Users\YourName\AppData\Local\Programs\Python\Python310\python.exe</code></p>
+      </div>
+    </div>
+
+    <div class="qa">
+      <h4><span class="qa-q">Q:</span> Ctrl+Shift+D が効きません</h4>
+      <div class="qa-content">
+        <p><span class="qa-a">A:</span> <strong>初期設定を実行していないと効きません。</strong>
+        「Subagent Dashboard: 初期設定を実行」を実行してください。
+        なお、初期設定をしなくてもロボットのアイコンとコマンドパレットからは開けます。</p>
+        <p>ご自身で <code>ctrl+shift+d</code> に別のコマンドを割り当てている場合、そちらが優先されるので Subagent Dashboard は開きません。</p>
+      </div>
+    </div>
+
+    <div class="qa">
+      <h4><span class="qa-q">Q:</span> 同じ作業フォルダで2つのミッションを同時に走らせたい</h4>
+      <div class="qa-content">
+        <p><span class="qa-a">A:</span> ミッションの記録先はプロジェクト（＝作業フォルダ）ごとに1つしかありません。
+        そのまま2本目を始めると、1本目は稼働中のまま履歴へ押し出され、以後書き込めなくなります
+        （あとから完了に直す方法もありません）。並行させる場合は、Claude に
+        <code>start --project &lt;一意な名前&gt;</code> のように記録先を分けさせてください。
+        <code>start</code> / <code>add</code> / <code>done</code> / <code>finish</code> の
+        すべてに同じ <code>--project</code> を付けます。手順は初期設定で CLAUDE.md に書き込まれる
+        運用ルールに含まれています（v0.4.2〜）。</p>
+      </div>
+    </div>
+
+    <div class="qa">
+      <h4><span class="qa-q">Q:</span> 拡張を更新したら、CLAUDE.md の運用ルールはどうなりますか</h4>
+      <div class="qa-content">
+        <p><span class="qa-a">A:</span> 本体（コード）とは別に古くなるので、そのままでは更新されません。
+        v0.4.2 以降は、更新のあと初期設定の確認がもう一度出るので、そこで承諾すれば
+        目印で囲んだ範囲だけが最新に差し替わります。見送った場合は、あとから
+        <code>python ~/.claude/agent-dashboard/install.py</code> を実行してください。
+        いま古いままかどうかは <code>diagnose.py</code> の「運用ルールの版」で確認できます。</p>
+      </div>
+    </div>
+
+    <div class="qa">
+      <h4><span class="qa-q">Q:</span> 設定を元に戻したい</h4>
+      <div class="qa-content">
+        <p><span class="qa-a">A:</span> 書き込んだ設定を取り消します:</p>
+        <pre><code>python ~/.claude/agent-dashboard/install.py --uninstall</code></pre>
+        <p>何が書き込まれるのかを事前に見たい場合は <code>--print</code> を付けると、変更せずに内容だけ表示します。</p>
+      </div>
+    </div>
+
+    <hr>
+
+    <h2>トラブルシューティング</h2>
+
+    <h3>「Subagent Dashboard を表示できません」と出て進まない</h3>
+
+    <p><strong>あきらめないでください。</strong> その画面には理由と一緒に押せるボタンが並びます。
+    <strong>一番上のボタンは、表示されている理由をそのまま直す一手</strong>になっています。</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>理由</th><th>一番上に出るボタン</th></tr>
+        <tr><td>本体がまだ配置されていない／配置を断った</td><td>本体を配置して初期設定</td></tr>
+        <tr><td>設定 <code>agentDashboard.home</code> の指す場所に本体が無い</td><td>設定 agentDashboard.home を直す</td></tr>
+        <tr><td>Python が見つからない</td><td>Python の場所を設定する</td></tr>
+        <tr><td>ポートが全部埋まっている</td><td>ポート番号を変える</td></tr>
+        <tr><td>自動起動を切っている</td><td>自動起動の設定を見る</td></tr>
+        <tr><td>.vsix に本体が同梱されていない</td><td>本体の場所を設定する</td></tr>
+        <tr><td>サーバーが応答しないなど、時間を置けば通るもの</td><td>もう一度試す</td></tr>
+      </table>
+    </div>
+
+    <p>その下には共通の道具が並びます（もう一度試す／本体を配置して初期設定（配置済みなら初期設定を実行）／設定を開く／ログを見る）。上から順に試してください。</p>
+
+    <div class="note warn">
+      <strong>理由に「この .vsix には本体が同梱されていないようです」と書かれていた場合は、添付そのものが不良品です。</strong>
+      設定を直しても解決しないので、送り主に本体入りの .vsix を作り直してもらってください。
+    </div>
+
+    <h3>画面が黒いまま変わらない／ログを確認する</h3>
+
+    <pre><code>Ctrl+Shift+P → "Subagent Dashboard: ログを表示"</code></pre>
+
+    <h3>ポートが使われていると出る</h3>
+
+    <p>画面の一番上に出る「ポート番号を変える」を押すか、設定 <code>agentDashboard.port</code> を空いている番号に書き換えてください。
+    既定は 3939 で、使用中なら自動で次の番号へずれます（10個先まで探します）。</p>
+
+    <h3>診断スクリプトを実行</h3>
+
+    <p>環境の問題を自動判定します。この結果をそのまま送ってもらえると、配布元で原因を追えます。</p>
+
+    <pre><code>python ~/.claude/agent-dashboard/diagnose.py</code></pre>
+
+    <h3>サーバーが起動しない</h3>
+
+    <pre><code># 手動で起動してみる
+python ~/.claude/agent-dashboard/server.py</code></pre>
+
+    <hr>
+
+    <h2>消したいとき</h2>
+
+    <p>拡張機能パネルで「Subagent Dashboard」を探してアンインストールしてください。
+    作業の記録は <code>.claude/agent-dashboard</code> に残ります。不要ならフォルダごと消してください。
+    CLAUDE.md とキーバインドへの書き込みは <code>install.py --uninstall</code> で取り消せます。</p>
+
+    <hr>
+
+    <h2>変更履歴</h2>
+
+    <h3>v0.4.1 → v0.4.2</h3>
+
+    <ul class="change-list">
+      <li class="feature">同じディレクトリで2本のミッションを同時に走らせたときの事故を、起きる前に案内するように — CLAUDE.md の運用ルールに <code>--project</code> で記録先を分ける手順を追加し、押し出された機体に <code>done</code> を打ったときの案内も、記録が混ざる誤った手順を勧めないよう言い分けた</li>
+      <li class="fix">本体を更新しても CLAUDE.md の運用ルールが古いまま残る問題を修正 — 更新のあと初期設定を配り直すか続けて尋ねるようにし、<code>diagnose.py</code> にも「運用ルールの版」の項目を追加</li>
+    </ul>
+
+    <h3>v0.4.0 → v0.4.1</h3>
+
+    <ul class="change-list">
+      <li class="fix">「（ミッション未開始）」の空タブが居座らなくなった — 他に見るタブがあるときは出さないようにした</li>
+    </ul>
+
+    <h3>v0.3.2 → v0.4.0</h3>
+
+    <ul class="change-list">
+      <li class="feature">機体が増えても系統樹が枠に収まるよう、拡大率が自動で調整されるように（自動フォーカス）</li>
+      <li class="feature">拡大率の範囲を 1%〜500%・1% 刻みに拡張 — 真ん中の数字をクリックすると数値入力もできる</li>
+      <li class="fix">100% 以外の拡大率で親子線がカードから外れていた不具合を修正</li>
+    </ul>
+
+    <h3>v0.3.1 → v0.3.2</h3>
+
+    <ul class="change-list">
+      <li class="fix">説明書画面の保存先表示から、Windows のユーザー名を含むフルパスを隠すように — コピペして実行するコマンド例はフルパスのまま変えていない</li>
+    </ul>
+
+    <h3>v0.3.0 → v0.3.1</h3>
+
+    <ul class="change-list">
+      <li class="feature">「完了」と出ているタブを画面から削除できるように — 1度きりのミッションは完了しても現在の枠に残り続け、消す手段が画面に無かった</li>
+      <li class="feature"><code>finish</code> の締め忘れが見えるように — 最後の1体を <code>done</code> にした瞬間に催促し、画面では琥珀色で「全機帰還・未締め」と点滅する</li>
+      <li class="check"><code>/api/state</code> が軽くなった — 10プロジェクト×20記録で 185ms → 40ms</li>
+      <li class="fix">要素 ID の食い違い1つで画面全体が沈黙する作りを解消 — 欠けても「一部のボタンが効かない」で済み、右上に足りない部品の名前が出る</li>
+      <li class="check">配線の食い違いを出荷前に検める仕組みを追加 — 食い違ったまま .vsix は作れない</li>
+    </ul>
+
+    <h3>v0.2.5 → v0.3.0</h3>
+
+    <ul class="change-list">
+      <li class="feature">過去のチーム作業履歴が残るように — これまでは同じプロジェクトで <code>start</code> すると前のミッションが痕跡なく消えていた</li>
+      <li class="feature">タブで過去の記録を見返せるように（プロジェクトごとに直近20件）</li>
+    </ul>
+
+    <h3>v0.2.4 → v0.2.5</h3>
+
+    <ul class="change-list">
+      <li class="fix">同梱・初期設定に関わる残りの欠陥をまとめて修正</li>
+      <li class="fix"><strong>Ctrl+Shift+D は 0.2.4 まで一度も効いていなかった</strong> — キーバインドを <code>~/.vscode/keybindings.json</code> に書いていたが、そこは拡張機能の置き場で VSCode は読まない。書き込み先を実際に読む場所へ修正</li>
+      <li class="check"><code>keybindings.json</code> が JSONC（コメント付き JSON）であることに対応</li>
+    </ul>
+
+    <h3>v0.2.3 → v0.2.4</h3>
+
+    <ul class="change-list">
+      <li class="fix"><strong>.vsix の組み立て方法を直し、本体の同梱漏れを修正</strong> — 0.2.1〜0.2.3 が動かなかった直接の原因</li>
+      <li class="feature"><strong>失敗の画面にボタンを追加</strong> — 通知を見逃しても、画面から「本体を配置して初期設定」「設定を開く」「もう一度試す」などを実行できるように</li>
+      <li class="check">コマンド「初期設定のフラグをリセット」を登録 — 実装はあったのに宣言漏れで呼び出せなかった</li>
+    </ul>
+
+    <h3>v0.2.1 〜 v0.2.3（配布事故・使用不可）</h3>
+
+    <ul class="change-list">
+      <li class="fix"><strong>.vsix にダッシュボード本体が同梱されておらず、配布先で動きませんでした。</strong> ファイルは削除済みです</li>
+      <li class="fix">0.2.2 は初期設定の表示を改善しようとした版（無限読込みの不具合があり 0.2.3 で差し替え）</li>
+      <li class="fix">0.2.3 でマシン変更の自動検知と、表示タイミングの race condition を修正</li>
+    </ul>
+
+    <h3>v0.2.0 → v0.2.1</h3>
+
+    <ul class="change-list">
+      <li class="feature">自動初期化機能を追加 — vsix インストール直後に自動セットアップダイアログが出るように</li>
+      <li class="check">手動セットアップ実行コマンドを追加 — いつでも「初期設定を実行」で再実行可能</li>
+      <li class="fix">Windows での文字コード問題を修正 — UTF-8 エンコーディングを強制</li>
+      <li class="check">事前チェック機能を追加 — 書き込み権限を実測でテスト</li>
+      <li class="check">詳細なエラーメッセージを追加 — 失敗時の原因を明確に表示</li>
+    </ul>
+  </div>
+
+  <script>
+    const themeToggle = document.getElementById('themeToggle');
+    const htmlElement = document.documentElement;
+
+    // システム設定とローカルストレージから初期テーマを取得
+    function getInitialTheme() {
+      const saved = localStorage.getItem('theme');
+      if (saved) return saved;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    // テーマを適用
+    function applyTheme(theme) {
+      htmlElement.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+      updateToggleButton(theme);
+    }
+
+    // ボタンテキストを更新
+    function updateToggleButton(theme) {
+      themeToggle.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+    }
+
+    // 初期テーマを設定
+    applyTheme(getInitialTheme());
+
+    // ボタンクリック時のテーマ切り替え
+    themeToggle.addEventListener('click', () => {
+      const current = htmlElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+    });
+
+    // システム設定変更時の自動切り替え（テーマが指定されていない場合）
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+      if (!localStorage.getItem('theme')) {
+        applyTheme(e.matches ? 'dark' : 'light');
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,3085 @@
+<!DOCTYPE html>
+<!-- lang と <title> は i18n.js が選ばれた言語で書き換える。data-i18n-doctitle は
+     その差し替え先を指す（<title> は querySelectorAll で拾えない位置にあるため）。
+     ここに書いてある英語は、i18n.js が読めなかったときにそのまま出る値でもある。 -->
+<html lang="en" data-i18n-doctitle="app.title">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subagent Dashboard</title>
+<!-- 文言表。**インラインスクリプトより先に**読み込む。読めなかった場合は
+     下の退避 t() が英語を返すので、画面は英語で動き続ける（黙って止まらない）。 -->
+<script src="/i18n.js"></script>
+<!-- ロボの顔をそのままアイコンにする。外部ファイルにすると /favicon.ico が 404 になり、
+     読み込みのたびにコンソールにエラーが並ぶので、データURIで埋め込む（# は %23）。 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d131c'/%3E%3Cpath d='M6 20a10 14 0 0 1 20 0 10 9 0 0 1-20 0z' fill='%23eef4fb'/%3E%3Crect x='9' y='12' width='14' height='8' rx='4' fill='%2311202f'/%3E%3Ccircle cx='13' cy='16' r='2' fill='%233ee0ff'/%3E%3Ccircle cx='19' cy='16' r='2' fill='%233ee0ff'/%3E%3C/svg%3E">
+<style>
+/* ============================================================ 基本 */
+:root {
+  --bg:        #080c12;
+  --bg2:       #0d131c;
+  --panel:     #111a26;
+  --panel2:    #16212f;
+  --line:      #1e2c3d;
+  --text:      #e7eef8;
+  --dim:       #8ba0b8;
+  --cyan:      #3ee0ff;
+  --cyan-dim:  #1a7d96;
+  --amber:     #ffbe55;
+  --green:     #5fe6a4;
+  --gray:      #6b7c91;
+  --shadow:    0 10px 30px rgba(0,0,0,.45);
+  --card-w:    232px;
+  --robot-w:   94px;
+  /* 機体1体の横幅（ロボ + gap 4px + カード）。.agent を絶対配置にすると
+     絶対配置の子は親の寸法に寄与しないので、列の幅を計算で確定させる必要がある。 */
+  --agent-w:   calc(var(--robot-w) + 4px + var(--card-w));
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background:
+    radial-gradient(1200px 600px at 12% -10%, #12202e 0%, transparent 60%),
+    radial-gradient(900px 500px at 95% 110%, #131b2a 0%, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  /* 4言語ぶんの字を出す。日本語→中国語（簡体）→韓国語 の順に並べているのは、
+     同じ字体を共有する漢字で「その言語らしい形」が先に当たるようにするため
+     （<html lang> も i18n.js が切り替えるので、対応するブラウザはそちらでも選ぶ）。 */
+  font-family: "Segoe UI", "Yu Gothic UI", "Hiragino Kaku Gothic ProN", Meiryo,
+               "Microsoft YaHei", "PingFang SC", "Noto Sans SC",
+               "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR",
+               system-ui, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+}
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* ============================================================ 上部バー（画面に1つ） */
+/* チームを縦に積むので、接続状態と説明書はどのチームにも属さない共通の帯に置く。 */
+#topbar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 20px; flex: none;
+  background: linear-gradient(180deg, rgba(23,34,48,.95), rgba(13,19,28,.92));
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  z-index: 5;
+}
+.app-name { flex: none; font-size: 14px; font-weight: 700; letter-spacing: .18em; }
+#team-count {
+  flex: none; font-size: 11px; letter-spacing: .1em; color: var(--dim); white-space: nowrap;
+  padding: 4px 11px; border-radius: 999px;
+  background: rgba(255,255,255,.035); border: 1px solid var(--line);
+}
+.topbar-right { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
+.zoom-control {
+  display: flex; align-items: center; gap: 4px; flex: none;
+  padding: 4px 8px; border-radius: 7px;
+  background: rgba(255,255,255,.035); border: 1px solid var(--line);
+}
+.zoom-btn {
+  flex: none; width: 24px; height: 24px; display: grid; place-items: center;
+  font-size: 14px; font-weight: 700; cursor: pointer; border-radius: 5px;
+  background: transparent; border: 0; color: var(--dim);
+  transition: color .2s, background .2s;
+  padding: 0; touch-action: manipulation;
+}
+.zoom-btn:hover { color: var(--cyan); background: rgba(62,224,255,.08); }
+/* 自動フォーカスの入切ボタン。「いま自動かどうか」は点灯／消灯で常に見えている必要がある。
+   ボタンが出たり消えたりする作りにすると、トップバーの他の部品が左右にずれて落ち着かない。 */
+.zoom-btn.zoom-auto { font-size: 12px; }
+.zoom-btn.zoom-auto.on { color: var(--cyan); background: rgba(62,224,255,.12); }
+/* 拡大率は 1%〜500%（"1%"〜"自動 500%"）で桁数が変わる。等幅＋固定幅で箱を動かさない。
+   Consolas が無い環境でジェネリック monospace に落ちたときのために tabular-nums も置く。 */
+.zoom-level {
+  flex: none; font-size: 11px; color: var(--dim); letter-spacing: .06em;
+  width: 62px; text-align: center; font-family: Consolas, monospace;
+  font-variant-numeric: tabular-nums; cursor: text;
+  -webkit-user-select: none; user-select: none;
+}
+.zoom-level:hover { color: var(--cyan); }
+.zoom-level[hidden] { display: none; }
+/* 数値入力。1%刻みの精密指定はボタンでは現実的でない（100%→500% が400回）ので、
+   ここが「一発で目的の値へ行く」唯一の手段になる。 */
+.zoom-input {
+  flex: none; width: 62px; text-align: center; font-family: Consolas, monospace;
+  font-size: 11px; letter-spacing: .06em; color: var(--text);
+  background: rgba(255,255,255,.06); border: 1px solid var(--cyan-dim);
+  border-radius: 4px; padding: 1px 0;
+  -moz-appearance: textfield; appearance: textfield;
+}
+.zoom-input[hidden] { display: none; }
+.zoom-input::-webkit-outer-spin-button,
+.zoom-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ============================================================ タブバー */
+/* タブ1枚＝「1回の start」。同じプロジェクトの記録が何枚も並ぶので、
+   プロジェクト名・ミッション名・開始時刻の3つを出さないと見分けが付かない。 */
+#team-tabs {
+  display: flex; gap: 10px; align-items: center;
+  padding: 7px 20px; flex: none; min-height: 0;
+  background: linear-gradient(180deg, rgba(17,26,38,.9), rgba(13,19,28,.87));
+  border-bottom: 1px solid var(--line);
+}
+#team-tabs[hidden] { display: none; }
+/* はみ出しはタブ列の中だけでスクロールさせる。#team-tabs 自体をスクロールさせると、
+   記録が増えたときに右端の削除ボタンが画面の外へ流れていって押せなくなる。 */
+.tab-bar {
+  display: flex; gap: 5px; flex: 1; min-width: 0; align-items: stretch;
+  overflow-x: auto; overflow-y: hidden; padding-bottom: 2px;
+}
+/* ✕ を .tab の中に入れると button の入れ子になるので、枠だけを共有して横に並べる。 */
+.tab-item {
+  flex: none; display: flex; align-items: stretch; max-width: 268px;
+  border-radius: 7px; border: 1px solid var(--line);
+  background: rgba(255,255,255,.05);
+  transition: border-color .2s, background .2s, box-shadow .2s;
+}
+.tab-item:hover { background: rgba(255,255,255,.09); }
+.tab-item.active { background: var(--cyan); border-color: rgba(62,224,255,.8);
+                   box-shadow: 0 0 12px rgba(62,224,255,.25); }
+/* 過去の記録は少し沈ませる。稼働中のタブと同じ強さで出ると、
+   どれが「いま動いているもの」なのか一目で分からなくなる。 */
+.tab-item.history:not(.active) { background: rgba(255,255,255,.025); border-style: dashed; }
+.tab {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px;
+  padding: 4px 10px 5px; background: transparent; border: 0; border-radius: 6px 0 0 6px;
+  color: var(--dim); cursor: pointer; text-align: left;
+  font-family: inherit; transition: color .2s;
+}
+.tab:only-child { border-radius: 6px; }
+.tab:hover { color: var(--text); }
+.tab-item.active .tab { color: #062b34; }
+.tab-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tab-status {
+  flex: none; font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
+  padding: 1px 5px; border-radius: 4px; border: 1px solid transparent;
+}
+.tab-status.running { color: #062b34; background: var(--cyan); }
+.tab-status.done    { color: #06291c; background: var(--green); }
+.tab-status.standby { color: var(--dim); background: rgba(139,160,184,.16);
+                      border-color: rgba(139,160,184,.3); }
+.tab-status.broke   { color: #3a2400; background: var(--amber); }
+/* 全機帰還済みなのに締められていないもの。稼働中（シアン）と同じ色だと
+   「まだ動いている」と読めてしまうので、手当てが要る色に分ける。 */
+.tab-status.unfinished { color: #3a2400; background: var(--amber);
+                         animation: unfinished-pulse 2.4s ease-in-out infinite; }
+@keyframes unfinished-pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+/* 選択中のタブは背景がシアンなので、状態の札は暗い面に置き換えて読めるようにする */
+.tab-item.active .tab-status { color: #eaf7fb; background: rgba(6,43,52,.8); border-color: transparent; }
+/* ただし「未締」だけは暗い面に沈めない。いま見ているタブこそ気づくべき場所で、
+   ここで他の札と同じ見た目になると、催促が一番届かない所で消えることになる。 */
+.tab-item.active .tab-status.unfinished { color: #3a2400; background: var(--amber); }
+.tab-proj {
+  min-width: 0; font-size: 10px; font-family: Consolas, monospace; opacity: .85;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tab-foot { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.tab-title {
+  min-width: 0; font-size: 12px; font-weight: 600; letter-spacing: .02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 同じプロジェクトで同じ名前のミッションを何度も走らせることがあるので、
+   開始時刻が無いと記録を区別できない。折り返させず必ず出す。 */
+.tab-when {
+  flex: none; font-size: 10px; font-family: Consolas, monospace; opacity: .7;
+  font-variant-numeric: tabular-nums;
+}
+.tab-close {
+  flex: none; width: 22px; display: grid; place-items: center;
+  font-size: 12px; background: transparent; border: 0; padding: 0;
+  border-left: 1px solid var(--line); border-radius: 0 6px 6px 0;
+  cursor: pointer; color: var(--dim); opacity: .65;
+  font-family: inherit; transition: opacity .2s, color .2s, background .2s;
+}
+.tab-close:hover { opacity: 1; color: #ffb0b0; background: rgba(255,107,107,.16); }
+.tab-item.active .tab-close { color: #062b34; border-left-color: rgba(6,43,52,.28); }
+.tab-item.active .tab-close:hover { color: #7a1010; background: rgba(6,43,52,.14); }
+
+/* 一括削除。ズームボタンと同じ「✕だけ」では何が起きるか分からないので、
+   文言と件数を出して、危険な操作だと色でも分かるようにする。 */
+.history-clear {
+  flex: none; display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 6px 12px; border-radius: 7px; cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+  background: rgba(255,107,107,.08); border: 1px solid rgba(255,107,107,.32);
+  color: #ffb0b0; transition: color .2s, border-color .2s, background .2s;
+}
+.history-clear:hover { background: rgba(255,107,107,.18); border-color: rgba(255,107,107,.58);
+                       color: #ffd6d6; }
+.history-clear[hidden] { display: none; }
+.history-clear .n { font-family: Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+/* ============================================================ チームの積み方 */
+/* タブで1チームずつ表示。拡大は .tree-scroll だけに適用（ログ・バー・チームバーは固定）。 */
+#teams-wrapper { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#teams { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+/* 作成者の display:flex は UA の [hidden]{display:none} に勝ってしまうので明示的に消す */
+#teams[hidden] { display: none; }
+.team { display: none; }
+/* 画面に出るのはタブで選んだ1枚だけなので、上の区切り線は要らない
+   （縦積みしていた頃はチームの境目を示すために入れていた）。 */
+.team[data-active] { display: flex; flex: 1; min-height: 300px; flex-direction: column; }
+.team-body { flex: 1; display: flex; min-height: 0; }
+
+/* ============================================================ ミッションバー（チームごと） */
+.team-bar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 9px 18px; flex: none; min-width: 0;
+  background: linear-gradient(180deg, rgba(21,31,44,.92), rgba(13,19,28,.88));
+  border-bottom: 1px solid var(--line);
+}
+.team-title {
+  flex: 0 1 auto; min-width: 0;
+  font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* プロジェクト名は「どのチームか」の手掛かり。長いパスでバーを押し広げないよう頭打ちにする。 */
+.team-project {
+  flex: none; max-width: 24ch;
+  font-size: 11px; color: var(--dim); font-family: Consolas, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.team-stats { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
+.phase {
+  flex: none; padding: 5px 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; letter-spacing: .08em;
+  border: 1px solid transparent;
+}
+.phase.standby { color: var(--dim);   background: rgba(139,160,184,.10); border-color: rgba(139,160,184,.28); }
+.phase.running { color: #062b34;      background: var(--cyan); box-shadow: 0 0 18px rgba(62,224,255,.35); }
+.phase.done    { color: #06291c;      background: var(--green); box-shadow: 0 0 18px rgba(95,230,164,.28); }
+/* 全機帰還済みなのに finish が打たれていない。稼働中と同じシアンで出すと
+   「まだ動いている」と読めてしまうので、手当てが要る色に分ける。 */
+.phase.unfinished { color: #3a2400; background: var(--amber);
+                    box-shadow: 0 0 18px rgba(255,190,80,.35);
+                    animation: unfinished-pulse 2.4s ease-in-out infinite; }
+/* もう更新されない画面（過去の記録、および /api/state が流してこなくなったミッション）
+   では光らせない。稼働中の札と同じ見た目だと「いま動いている」と読めてしまう。
+   完了しないまま記録されたもの（phase が running のまま）は琥珀色にする。 */
+.team[data-frozen] .phase { box-shadow: none; }
+.team[data-frozen] .phase.running { color: #3a2400; background: var(--amber); }
+
+/* 「これは過去の記録」の印。ミッション名の前に置いて、必ず目に入る位置にする。 */
+.team-archive {
+  flex: none; padding: 5px 11px; border-radius: 999px; white-space: nowrap;
+  font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  color: var(--amber); background: rgba(255,190,85,.10);
+  border: 1px solid rgba(255,190,85,.38);
+}
+.team-archive[hidden] { display: none; }
+
+.stat {
+  display: flex; align-items: baseline; gap: 7px;
+  padding: 6px 12px; border-radius: 8px;
+  background: rgba(255,255,255,.035); border: 1px solid var(--line);
+}
+.stat .k { font-size: 11px; color: var(--dim); letter-spacing: .06em; }
+.stat .v { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+           font-family: Consolas, "SF Mono", monospace; }
+
+.conn { display: flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 8px;
+        background: rgba(255,255,255,.035); border: 1px solid var(--line);
+        font-size: 11px; color: var(--dim); }
+.conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); flex: none; }
+.conn.ok i   { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s ease-in-out infinite; }
+.conn.bad i  { background: #ff6b6b; box-shadow: 0 0 8px #ff6b6b; }
+.conn.bad    { color: #ffb0b0; border-color: rgba(255,107,107,.4); }
+
+.help-link {
+  display: grid; place-items: center; flex: none; width: 30px; height: 30px;
+  border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 700;
+  background: rgba(255,255,255,.035); border: 1px solid var(--line); color: var(--dim);
+  transition: color .2s, border-color .2s, background .2s;
+}
+.help-link:hover {
+  color: var(--cyan); border-color: rgba(62,224,255,.45); background: rgba(62,224,255,.08);
+}
+
+/* 言語セレクタ。<select> のままにしてあるのは、OS 側の入力方式（IME・スクリーン
+   リーダー・タッチの選択UI）にそのまま乗るのが読めない言語では特に効くため。
+   option の背景は Windows の Chrome/Edge では OS 側が塗るので、暗い前提の色を
+   指定しても効かない。読めなくならないよう、option だけ明示的に暗色を当てる。 */
+.lang-select {
+  flex: none; height: 30px; padding: 0 6px; border-radius: 8px;
+  background: rgba(255,255,255,.035); border: 1px solid var(--line); color: var(--dim);
+  font-size: 11px; font-family: inherit; cursor: pointer;
+  transition: color .2s, border-color .2s, background .2s;
+}
+.lang-select:hover, .lang-select:focus {
+  color: var(--cyan); border-color: rgba(62,224,255,.45); background: rgba(62,224,255,.08);
+  outline: none;
+}
+.lang-select option { background: var(--panel); color: var(--text); }
+
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* ============================================================ 系統樹の枠（チームごと） */
+/* overflow-anchor はブラウザ自前のスクロール補正だが、絶対配置の子には効かない。
+   効く要素と効かない要素が混ざると JS 側の補正と二重に掛かって暴れるので切る。
+   拡大はここだけに適用（ログ・バーは固定）。 */
+/* scrollbar-gutter は自動フォーカスのためにある。縦スクロールバーが出入りすると枠の幅が
+   15px 前後ゆれ、幅を見て決める拡大率が「縮める→バーが消える→戻す→バーが出る」を
+   往復する。溝を常に確保しておけば、この振動は発生源ごと消える。 */
+.tree-scroll { flex: 1; overflow: auto; overflow-anchor: none;
+               scrollbar-gutter: stable;
+               padding: 20px 18px 36px; min-width: 0; }
+.tree-canvas { position: relative; width: max-content; min-width: 100%; min-height: max-content; }
+.links { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.generations { position: relative; display: flex; align-items: flex-start; gap: 38px; }
+
+/* 幅を固定するのは、絶対配置の .agent が列の幅を作らないため。
+   指定しないと列が潰れて世代見出しが左端で重なる。 */
+.gen-col { display: flex; flex-direction: column; gap: 20px; flex: none; width: var(--agent-w); }
+/* 全列の .gen-body の上端が揃っていることが、列をまたいだ共通Y座標系の前提。
+   高さを line-height で確定させておく。 */
+.gen-head {
+  font-size: 11px; line-height: 15px; letter-spacing: .16em; color: var(--dim);
+  padding: 0 0 4px 2px; border-bottom: 1px dashed var(--line); margin-bottom: 4px;
+  white-space: nowrap;
+}
+/* .agent の top の基準（包含ブロック）。position を付け忘れると基準が .generations に
+   なり、世代見出しの高さぶん全機がずれる。height は layoutTree() が px で入れる。
+   入れないと絶対配置の子は高さを作らないので列が 0 になり、.tree-canvas.scrollHeight
+   まで潰れて drawLinks が viewBox「0 0 0 0」を書き、親子線が全部消える。 */
+.gen-body { position: relative; }
+.empty-note { color: var(--dim); font-size: 13px; padding: 40px 4px; line-height: 1.9; }
+.empty-note code { background: rgba(255,255,255,.06); padding: 2px 7px; border-radius: 5px;
+                   font-family: Consolas, monospace; color: var(--cyan); }
+
+/* ============================================================ 待機画面（チームが0のとき） */
+/* チームが1つも無いときだけ出す。チームはあるが機体がまだ0体のときは、
+   そのチームの .generations の中に .empty-note が出る（別物なので混ぜない）。 */
+#standby { flex: 1; display: grid; place-items: center; padding: 20px; }
+#standby[hidden] { display: none; }
+#standby .empty-note { text-align: center; padding: 0; }
+
+/* ============================================================ エージェント（ロボ＋カード） */
+/* 縦位置は layoutTree() が top で与える。transform は使えない：@keyframes pop が
+   fill-mode:both で transform を占有しているので、レイアウトに使うと誕生アニメーションが
+   潰れ、.born が外れるまで位置が戻らない。
+   この要素と祖先（.gen-body / .gen-col / .generations / .tree-canvas）に
+   display:none と content-visibility を使ってはいけない。どちらも配下の CSS
+   アニメーションを取り消すので、ロボの呼吸・瞬き・手の動きと表情のクロスフェードが
+   0 から作り直される。隠す必要が出たら opacity で行う。 */
+.agent {
+  position: absolute; left: 0; top: 0; width: var(--agent-w);
+  display: flex; align-items: center; gap: 4px;
+  transition: top .46s cubic-bezier(.22,.68,.28,1);
+}
+/* 初回配置だけは滑らせない（top:0 から所定の位置へ降ってくるのを防ぐ） */
+.agent.snap { transition: none; }
+.agent.born { animation: pop .68s cubic-bezier(.15,1.35,.3,.98) both; }
+@keyframes pop {
+  0%   { transform: scale(.15) rotate(-16deg); opacity: 0; }
+  50%  { transform: scale(1.18) rotate(4deg);  opacity: 1; }
+  75%  { transform: scale(.94) rotate(-1deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+.agent.born .robot-slot::before {
+  content: ''; position: absolute; inset: 6px;
+  border: 2px solid var(--cyan); border-radius: 50%;
+  animation: ring .85s cubic-bezier(.2,.5,0,1) forwards;
+  will-change: transform, opacity;
+}
+@keyframes ring {
+  0%   { transform: scale(.25); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.robot-slot { position: relative; width: var(--robot-w); flex: none;
+              display: flex; align-items: center; justify-content: center; }
+/* 高さは viewBox(120x166) の比率から計算する。直書きにすると --robot-w を変えた瞬間に
+   等倍関係が崩れ、レターボックスでロボがスロット内に浮く。 */
+.robot { width: var(--robot-w); height: calc(var(--robot-w) * 166 / 120);
+         overflow: visible; display: block; }
+
+/* --- ロボ 共通パーツ（頭と胴を兼ねた卵型 / viewBox 120x166 / 接地影なし・耳なし） */
+.robot, .robot * { transform-box: view-box; }
+.rb-figure { transform-origin: 60px 154px; will-change: transform; }
+
+.rb-rod           { fill: none; stroke: #c9d4e2; stroke-width: 2.8; stroke-linecap: round; }
+.rb-bulb          { fill: url(#rbBulbGrad); filter: drop-shadow(0 0 5px rgba(255,107,157,.75)); }
+.rb-egg           { fill: url(#rbEggGrad); }
+.rb-egg-shade     { fill: url(#rbShadeGrad); }
+.rb-arm           { fill: url(#rbLimbGrad); }
+.rb-socket        { fill: #ccd8e6; }
+.rb-bezel         { fill: #c9d5e3; }
+.rb-visor         { fill: url(#rbVisorGrad); }
+.rb-visor-gloss   { fill: #ffffff; opacity: .07; }
+.rb-eye           { fill: url(#rbEyeGrad); }
+.rb-eye-arc       { fill: none; stroke: #7ceeff; stroke-width: 3.4; stroke-linecap: round; }
+.rb-aura          { fill: url(#rbAuraGrad); opacity: .25; }
+.rb-scan          { fill: url(#rbScanGrad); }
+.rb-spark         { fill: #ffe08a; }
+/* 発光は figure ごとにまとめて1枚の filter で出す。左右の目は 28 離れていてブラー半径は 4 なので、
+   個別に掛けたときと影が重ならず見た目は同じまま、filter の枚数が減る。 */
+.rb-g-eye         { filter: drop-shadow(0 0 4px rgba(62,224,255,.85)); }
+.rb-g-spark       { filter: drop-shadow(0 0 4px rgba(255,214,110,.85)); }
+
+/* 拡大・回転するパーツは原点を明示する（未指定だと viewBox 中心を軸に飛んでいく）。
+   手は平行移動だけなので原点は不要。 */
+.rb-eye-l  { transform-origin: 46px 71px; }
+.rb-eye-r  { transform-origin: 74px 71px; }
+.rb-spark1 { transform-origin: 14px 48px; }
+.rb-spark2 { transform-origin: 106px 48px; }
+
+/* 口と胸ライトは白面の上に乗るので、彩度ではなく明度差でコントラストを稼ぐ */
+.rb-mouth-standby { fill: #ff7fae; }
+.rb-mouth-running { fill: #e89000; }
+.rb-mouth-done    { fill: #22b87c; }
+.rb-chest-standby { fill: #b9c6d6; }
+.rb-chest-running { fill: #3ee0ff; filter: drop-shadow(0 0 5px rgba(62,224,255,.9)); }
+.rb-chest-done    { fill: #5fe6a4; filter: drop-shadow(0 0 5px rgba(95,230,164,.9)); }
+
+/* --- 表情の切替。d:path() は Blink 専用なので使わず、状態別要素の出し入れで行う */
+.robot .rb-s         { opacity: 0; transition: opacity .22s ease; }
+.robot .rb-s-standby { opacity: 1; }
+.agent.running .robot .rb-s-standby,
+.agent.done    .robot .rb-s-standby { opacity: 0; }
+.agent.running .robot .rb-s-running { opacity: 1; }
+.agent.done    .robot .rb-s-done    { opacity: 1; }
+
+/* --- 待機中＝ゆっくり呼吸して、手をふわりと浮かせ、ときどき瞬きする */
+.agent.standby .rb-figure { animation: rbBreathe 3.6s ease-in-out infinite; }
+.agent.standby .rb-arm-l  { animation: rbHandL 3.6s ease-in-out infinite; }
+.agent.standby .rb-arm-r  { animation: rbHandR 3.6s ease-in-out infinite; }
+/* 表示中のグループに絞る。絞らないと、隠れている側の目（1体あたり2個）でも
+   瞬きが回り続けて機体数に比例した無駄なアニメーションになる。 */
+.agent.standby .rb-s-standby .rb-blink,
+.agent.running .rb-s-running .rb-blink { animation: rbBlink 5.4s ease-in-out infinite; }
+/* 全員が同時に瞬きしないよう時差をつける。
+   animation ショートハンドが delay を 0 に戻すので、同じ詳細度で後ろに置いて上書きする。 */
+.agent.standby:nth-child(3n+2) .rb-blink,
+.agent.running:nth-child(3n+2) .rb-blink { animation-delay: -1.8s; }
+.agent.standby:nth-child(3n+3) .rb-blink,
+.agent.running:nth-child(3n+3) .rb-blink { animation-delay: -3.4s; }
+
+/* --- 稼働中＝ゆらゆら揺れて、左右の手を交互に動かし、バイザーを走査線が流れる */
+.agent.running .rb-figure { animation: rbSway 1.7s ease-in-out infinite; }
+.agent.running .rb-arm-l  { animation: rbWorkL 1.7s ease-in-out infinite; }
+.agent.running .rb-arm-r  { animation: rbWorkR 1.7s ease-in-out -.85s infinite; }
+.agent.running .rb-aura   { animation: rbAura 1.7s ease-in-out infinite; }
+.agent.running .rb-scan   { animation: rbScan 1.9s linear infinite; }
+/* グローは .robot 全体ではなく静止している卵のパスに掛ける。
+   全体に掛けると、内側で動いている要素のせいで毎フレーム 94x130 を再ラスタライズし直すことになる。 */
+.agent.running .rb-egg    { filter: drop-shadow(0 0 7px rgba(62,224,255,.28)); }
+
+/* --- 報告待ち＝稼働中のまま、子の報告を待っている親。running に重ねて当てる。
+   揺れを呼吸に落とし、走査線とオーラを止める。「この機体を見ていても進まない、
+   見るべきは右の子の方」と一目で分かるようにするため。目と瞬きは running のまま
+   （寝ているわけではない）。走査線は animation を切るだけで消える：静止位置は
+   x21-30 で、バイザーのクリップ（x33-87）の外に出るため描かれない。 */
+.agent.waiting .rb-figure { animation: rbBreathe 3.6s ease-in-out infinite; }
+.agent.waiting .rb-arm-l  { animation: rbHandL 3.6s ease-in-out infinite; }
+.agent.waiting .rb-arm-r  { animation: rbHandR 3.6s ease-in-out infinite; }
+.agent.waiting .rb-scan   { animation: none; }
+.agent.waiting .rb-aura   { animation: none; opacity: 0; }
+.agent.waiting .rb-egg    { filter: drop-shadow(0 0 7px rgba(255,190,85,.26)); }
+.agent.waiting .rb-chest-running { fill: var(--amber); filter: drop-shadow(0 0 5px rgba(255,190,85,.9)); }
+.agent.waiting .rb-mouth-running { fill: #b06a00; }
+
+/* --- 完了＝両手を大きく上げて喜ぶ。跳ねは控えめにして、勢いは手に持たせる */
+.agent.done .rb-figure { animation: rbHop 1.25s ease-in-out infinite; }
+.agent.done .rb-arm-l  { animation: rbCheerL 1.25s cubic-bezier(.3,1.5,.5,1) infinite; }
+.agent.done .rb-arm-r  { animation: rbCheerR 1.25s cubic-bezier(.3,1.5,.5,1) infinite; }
+.agent.done .rb-bulb   { animation: rbBulbPop 1.25s ease-in-out infinite; transform-origin: 43px 16px; }
+.agent.done .rb-spark  { animation: rbSpark 1.25s ease-in-out infinite; }
+.agent.done .rb-egg    { filter: drop-shadow(0 0 8px rgba(95,230,164,.32)); }
+
+@keyframes rbBreathe {
+  0%,100% { transform: translateY(0) scaleY(1); }
+  50%     { transform: translateY(-4.5px) scaleY(1.015); }
+}
+@keyframes rbBlink {
+  0%,91%,100% { transform: scaleY(1); }
+  93.5%       { transform: scaleY(.08); }
+  96%         { transform: scaleY(1); }
+}
+@keyframes rbSway {
+  0%,100% { transform: rotate(0deg) translateY(0); }
+  25%     { transform: rotate(2.2deg) translateY(-1.6px); }
+  75%     { transform: rotate(-2.2deg) translateY(-1.6px); }
+}
+@keyframes rbAura { 0%,100% { opacity: .18; } 50% { opacity: .6; } }
+@keyframes rbScan { 0% { transform: translateX(0); } 100% { transform: translateX(66px); } }
+
+/* 跳ね。基準点が足元なので、縦に伸ばすと 143 離れたアンテナ球が大きく持ち上がって
+   viewBox の外へ出る。頂点では形を戻し（本来アニメーションでも伸びるのは加速中だけ）、
+   潰しは踏み切りと着地に置くことで、球を枠内に収めている。 */
+@keyframes rbHop {
+  0%,100% { transform: translateY(0) scale(1,1); }
+  10%     { transform: translateY(2.5px) scale(1.05,.95); }
+  32%     { transform: translateY(-6px) scale(1,1); }
+  48%     { transform: translateY(-8px) scale(1,1); }
+  72%     { transform: translateY(0) scale(1.06,.94); }
+  86%     { transform: translateY(-2px) scale(.99,1.01); }
+}
+@keyframes rbBulbPop { 0%,100% { transform: scale(1); } 45% { transform: scale(1.25); } }
+@keyframes rbSpark {
+  0%,100% { opacity: 0; transform: scale(.5) rotate(0deg); }
+  35%     { opacity: 1; transform: scale(1.1) rotate(25deg); }
+  70%     { opacity: 0; transform: scale(.7) rotate(45deg); }
+}
+
+/* 手の動き。上へは卵が太くなるので余裕があるが、外へ出るほど卵が細くなって
+   付け根が離れる。そのため外向きの移動は小さく、上向きを大きく取っている。 */
+@keyframes rbHandL { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-1px,-3px); } }
+@keyframes rbHandR { 0%,100% { transform: translate(0,0); } 50% { transform: translate(1px,-3px); } }
+@keyframes rbWorkL { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-1.5px,-6px); } }
+@keyframes rbWorkR { 0%,100% { transform: translate(0,0); } 50% { transform: translate(1.5px,-6px); } }
+@keyframes rbCheerL {
+  0%,100% { transform: translate(0,0); }
+  45%     { transform: translate(-2.5px,-16px); }
+  75%     { transform: translate(-1px,-4px); }
+}
+@keyframes rbCheerR {
+  0%,100% { transform: translate(0,0); }
+  45%     { transform: translate(2.5px,-16px); }
+  75%     { transform: translate(1px,-4px); }
+}
+
+/* ============================================================ 情報カード */
+.card {
+  width: var(--card-w); flex: none;
+  background: linear-gradient(165deg, var(--panel2), var(--panel));
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px 11px; box-shadow: var(--shadow);
+  position: relative; overflow: hidden;
+  transition: border-color .35s, opacity .5s, filter .5s;
+}
+.card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--gray); transition: background .35s;
+}
+.agent.running .card { border-color: rgba(62,224,255,.45); box-shadow: var(--shadow), 0 0 22px rgba(62,224,255,.10); }
+.agent.running .card::before { background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+/* 報告待ちは running の後に置く（同じ詳細度なので後勝ちで上書きする）。
+   稼働中のシアンを琥珀に振り替えるだけで、沈めはしない。動いてはいるため。 */
+.agent.waiting .card { border-color: rgba(255,190,85,.42); box-shadow: var(--shadow), 0 0 18px rgba(255,190,85,.09); }
+.agent.waiting .card::before { background: var(--amber); box-shadow: 0 0 12px rgba(255,190,85,.7); }
+.agent.standby .card { border-style: dashed; opacity: .82; }
+.agent.standby .card::before { background: rgba(139,160,184,.5); }
+.agent.done .card { opacity: .62; filter: saturate(.25); }
+.agent.done .card::before { background: var(--green); }
+
+.c-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+.c-name { font-size: 14px; font-weight: 700; letter-spacing: .02em;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-id { font-size: 10px; color: var(--dim); font-family: Consolas, monospace; flex: none; }
+.c-badges { display: flex; gap: 5px; margin: 5px 0 7px; flex-wrap: wrap; }
+.badge {
+  font-size: 10px; padding: 2px 7px; border-radius: 5px;
+  background: rgba(255,255,255,.06); border: 1px solid var(--line);
+  color: var(--dim); font-family: Consolas, monospace; white-space: nowrap;
+}
+.badge.self { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+.badge.b-wait { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+.c-mission {
+  font-size: 12px; color: #c3d2e4; line-height: 1.5; min-height: 2.5em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* 進捗バーはここに在った。実測できる進捗率がどこにも無く、稼働中は空のまま縞が流れ、
+   完了で満タンになるだけ＝状態はカードの色・ロボの動き・フェーズ表示で既に分かる。
+   「進んでいる量」を示していると読み違えられるだけなので外した。 */
+
+.c-metrics { display: flex; gap: 6px; margin-top: 9px; }
+.metric { flex: 1; min-width: 0; background: rgba(0,0,0,.22); border-radius: 7px;
+          padding: 5px 4px; text-align: center; }
+.metric .mk { font-size: 9px; color: var(--dim); letter-spacing: .06em; display: block; }
+.metric .mv { font-size: 12px; font-weight: 700; font-family: Consolas, monospace;
+              font-variant-numeric: tabular-nums; }
+.metric .mv.none { color: var(--gray); font-weight: 400; }
+
+.c-result {
+  margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--line);
+  font-size: 11.5px; line-height: 1.5; color: var(--green);
+  display: flex; gap: 6px; align-items: flex-start;
+}
+.c-result::before { content: '▸'; flex: none; opacity: .8; }
+/* hidden 属性を効かせる。ブラウザ既定の [hidden]{display:none} は作成者の
+   display:flex に負けるので、結果が無いときも空の「▸」の行が残ってしまう。 */
+.c-result[hidden] { display: none; }
+
+/* ============================================================ 親子線 */
+.link { fill: none; stroke-width: 2.5; stroke-linecap: round; }
+.link.standby { stroke: rgba(139,160,184,.28); stroke-dasharray: 3 6; }
+.link.running { stroke: rgba(62,224,255,.75); stroke-dasharray: 9 7; animation: flow 1s linear infinite; }
+/* 稼働中の線が多いときは drawLinks が そのチームの .links に calm を付けて、流れる表現を止める */
+.links.calm .link.running { animation: none; }
+.link.done    { stroke: rgba(139,160,184,.4); }
+@keyframes flow { to { stroke-dashoffset: -16; } }
+
+/* ============================================================ サイドパネル（チームごと） */
+.team-side {
+  width: 292px; flex: none; display: flex; flex-direction: column; min-height: 0;
+  background: linear-gradient(180deg, rgba(17,26,38,.95), rgba(10,14,20,.95));
+  border-left: 1px solid var(--line);
+}
+.side-head {
+  padding: 12px 16px 10px; font-size: 11px; letter-spacing: .16em; color: var(--dim);
+  border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline;
+  flex: none;
+}
+.side-head .count { font-family: Consolas, monospace; font-size: 11px; }
+.log { flex: 1; overflow-y: auto; padding: 10px 14px 16px; min-height: 0; }
+.log-row {
+  display: flex; gap: 9px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: 12px; line-height: 1.5; animation: slidein .4s ease-out both;
+}
+@keyframes slidein { from { opacity: 0; transform: translateX(14px); } }
+.log-row .t { flex: none; font-family: Consolas, monospace; font-size: 10.5px;
+              color: var(--dim); padding-top: 1px; }
+.log-row .b { min-width: 0; }
+.log-row .w { color: var(--cyan); font-weight: 700; font-size: 11px; display: block; }
+.log-row .x { color: #cfdcea; word-break: break-word; }
+
+.summary {
+  flex: none;
+  margin: 14px; padding: 14px; border-radius: 12px;
+  background: linear-gradient(160deg, rgba(95,230,164,.14), rgba(95,230,164,.03));
+  border: 1px solid rgba(95,230,164,.35);
+  animation: pop .6s cubic-bezier(.2,1.3,.4,1) both;
+}
+.summary h3 { margin: 0 0 4px; font-size: 13px; letter-spacing: .1em; color: var(--green); }
+.summary .head { font-size: 12px; color: #d8e6f2; line-height: 1.55; margin-bottom: 11px; }
+.summary .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+.summary .cell { background: rgba(0,0,0,.28); border-radius: 8px; padding: 7px 6px; text-align: center; }
+.summary .cell .k { display: block; font-size: 9.5px; color: var(--dim); letter-spacing: .06em; }
+.summary .cell .v { font-size: 15px; font-weight: 700; font-family: Consolas, monospace; }
+
+.warnings {
+  flex: none;
+  margin: 0 14px 14px; padding: 10px 12px; border-radius: 10px;
+  background: rgba(255,190,85,.08); border: 1px solid rgba(255,190,85,.3);
+  font-size: 11px; line-height: 1.6; color: #ffd79a;
+}
+.warnings b { display: block; margin-bottom: 3px; color: var(--amber); font-size: 10.5px; letter-spacing: .08em; }
+
+/* ============================================================ 取扱説明書オーバーレイ */
+/* 別ウィンドウではなく画面内の iframe で開く。理由は JS 側の「取扱説明書」節に書いた。 */
+#manual-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; place-items: center; padding: 16px;
+  background: rgba(4,7,11,.74);
+}
+/* 作成者の display:grid は UA の [hidden]{display:none} に勝ってしまうので明示的に消す */
+#manual-overlay[hidden] { display: none; }
+.manual-box {
+  width: min(1000px, 94vw); height: min(90vh, 900px);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: var(--shadow);
+}
+.manual-head {
+  display: flex; align-items: center; gap: 10px; flex: none;
+  padding: 9px 10px 9px 16px;
+  background: linear-gradient(180deg, rgba(23,34,48,.95), rgba(13,19,28,.92));
+  border-bottom: 1px solid var(--line);
+}
+.manual-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; letter-spacing: .1em; }
+.manual-pop {
+  flex: none; font-size: 11px; color: var(--dim); text-decoration: none;
+  padding: 4px 10px; border-radius: 7px;
+  background: rgba(255,255,255,.035); border: 1px solid var(--line);
+  transition: color .2s, border-color .2s;
+}
+.manual-pop:hover { color: var(--cyan); border-color: rgba(62,224,255,.45); }
+.manual-pop[hidden] { display: none; }
+.manual-close {
+  flex: none; width: 28px; height: 28px; display: grid; place-items: center;
+  font-size: 16px; line-height: 1; cursor: pointer; border-radius: 7px;
+  background: rgba(255,255,255,.035); border: 1px solid var(--line); color: var(--dim);
+  font-family: inherit; transition: color .2s, border-color .2s, background .2s;
+}
+.manual-close:hover { color: var(--cyan); border-color: rgba(62,224,255,.45); background: rgba(62,224,255,.08); }
+/* min-height:0 が無いと iframe の既定高さが flex の縮小を止めて枠からはみ出す */
+.manual-frame { width: 100%; flex: 1; min-height: 0; border: 0; background: var(--bg); }
+
+/* ============================================================ 確認・報告ダイアログ */
+/* window.confirm / alert を使わない理由は、上の「取扱説明書」と同じ。VSCode の webview に
+   埋め込まれて表示されているとき、ホスト iframe の sandbox に modal-dialog の許可が無く、
+   confirm() が問いかけを出さずに false を返す。それでは削除が永久に効かないので、
+   画面内のダイアログを自前で持つ。説明書のオーバーレイより手前に出す。 */
+#dialog-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  display: grid; place-items: center; padding: 20px;
+  background: rgba(4,7,11,.78);
+}
+#dialog-overlay[hidden] { display: none; }
+.dialog-box {
+  width: min(460px, 92vw); max-height: 86vh; display: flex; flex-direction: column;
+  padding: 18px 20px 16px; border-radius: 14px;
+  background: linear-gradient(165deg, var(--panel2), var(--panel));
+  border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.dialog-title { margin: 0 0 10px; font-size: 14px; font-weight: 700; letter-spacing: .08em; }
+.dialog-box.danger .dialog-title { color: #ffb0b0; }
+.dialog-body { overflow-y: auto; font-size: 12.5px; line-height: 1.75; color: #cfdcea; }
+.dialog-line { margin-bottom: 2px; }
+.dialog-line.sub { font-size: 11.5px; color: var(--dim); }
+.dialog-line.bad { color: #ffb0b0; font-family: Consolas, monospace; font-size: 11.5px;
+                   word-break: break-all; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex: none; }
+.dialog-btn {
+  padding: 7px 14px; border-radius: 8px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  background: rgba(255,255,255,.05); border: 1px solid var(--line); color: var(--dim);
+  transition: color .2s, border-color .2s, background .2s;
+}
+.dialog-btn:hover { color: var(--text); background: rgba(255,255,255,.1); }
+.dialog-btn[hidden] { display: none; }
+.dialog-btn.go { color: #eaf7fb; background: rgba(62,224,255,.14); border-color: rgba(62,224,255,.45); }
+.dialog-btn.go:hover { background: rgba(62,224,255,.24); border-color: rgba(62,224,255,.7); }
+.dialog-btn.go.danger { color: #ffd6d6; background: rgba(255,107,107,.14);
+                        border-color: rgba(255,107,107,.45); }
+.dialog-btn.go.danger:hover { background: rgba(255,107,107,.26); border-color: rgba(255,107,107,.7); }
+
+/* スクロールバー */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #24344a; border-radius: 999px; border: 2px solid transparent;
+                            background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #33475f; background-clip: content-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* * は擬似要素に当たらない。誕生リング（.robot-slot::before）などが止まらなくなるので、
+     ::before / ::after も明示的に含める。 */
+  *, *::before, *::after {
+    animation-duration: .001s !important; animation-iteration-count: 1 !important;
+  }
+  /* 系統樹の再配置も滑らせない。位置は top なので、transition を切れば即時反映になる。 */
+  .agent { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<!-- ロボの塗り定義。ページに1つだけ置いて全ロボから参照する（各ロボに複製すると id が重複するため） -->
+<svg id="rb-defs" width="0" height="0" aria-hidden="true" focusable="false"
+     style="position:absolute;left:-9999px;top:0;overflow:hidden">
+<defs>
+  <!-- 胴と頭を兼ねる卵。上半分は縦半径78で細く、下半分は48で丸い非対称の卵 -->
+  <linearGradient id="rbEggGrad" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#ffffff"/>
+    <stop offset="0.5"  stop-color="#f4f8fc"/>
+    <stop offset="1"    stop-color="#d4dfec"/>
+  </linearGradient>
+  <!-- 手は左右対称に見せるため縦方向のグラデーションにする -->
+  <linearGradient id="rbLimbGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff"/>
+    <stop offset="1" stop-color="#dbe5f1"/>
+  </linearGradient>
+  <linearGradient id="rbVisorGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#0e1724"/>
+    <stop offset="1" stop-color="#1b2739"/>
+  </linearGradient>
+  <linearGradient id="rbScanGrad" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0"   stop-color="#3ee0ff" stop-opacity="0"/>
+    <stop offset="0.5" stop-color="#7ceeff" stop-opacity="0.5"/>
+    <stop offset="1"   stop-color="#3ee0ff" stop-opacity="0"/>
+  </linearGradient>
+  <radialGradient id="rbEyeGrad" cx="0.4" cy="0.34" r="0.72">
+    <stop offset="0"   stop-color="#ffffff"/>
+    <stop offset="0.4" stop-color="#8af2ff"/>
+    <stop offset="1"   stop-color="#24cdf0"/>
+  </radialGradient>
+  <radialGradient id="rbBulbGrad" cx="0.36" cy="0.3" r="0.75">
+    <stop offset="0"    stop-color="#ffd8e7"/>
+    <stop offset="0.45" stop-color="#ff8ab5"/>
+    <stop offset="1"    stop-color="#ef4b87"/>
+  </radialGradient>
+  <radialGradient id="rbShadeGrad" cx="0.5" cy="0.5" r="0.5">
+    <stop offset="0" stop-color="#9fb2c8" stop-opacity="0.38"/>
+    <stop offset="1" stop-color="#9fb2c8" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="rbAuraGrad" cx="0.5" cy="0.5" r="0.5">
+    <stop offset="0" stop-color="#3ee0ff" stop-opacity="0.9"/>
+    <stop offset="1" stop-color="#3ee0ff" stop-opacity="0"/>
+  </radialGradient>
+  <clipPath id="rbEggClip"><path d="M14 106 A46 78 0 0 1 106 106 A46 48 0 0 1 14 106 Z"/></clipPath>
+  <clipPath id="rbVisorClip"><rect x="33" y="56" width="54" height="30" rx="15"/></clipPath>
+</defs>
+</svg>
+<div id="app">
+
+  <header id="topbar">
+    <span class="app-name" data-i18n="app.name">Subagent Dashboard</span>
+    <span id="team-count">—</span>
+    <div class="topbar-right">
+      <div class="conn" id="conn"><i></i><span id="conn-text" data-i18n="conn.connecting">Connecting…</span></div>
+      <!-- 拡大率は 1%〜500% を1%刻みで扱う。ボタンだけでは 100%→500% が400回になるので、
+           役割を3つに分ける：ボタンは丸い数字の飛び石（長押しで連続送り）、表示部のクリックで
+           数値の直接入力、系統樹の上での Ctrl+ホイールで微調整。⛶ は自動フォーカスの入切。 -->
+      <div class="zoom-control" id="zoom-control">
+        <button type="button" class="zoom-btn" id="zoom-out" data-i18n-title="zoom.out">−</button>
+        <span class="zoom-level" id="zoom-display" tabindex="0" role="button"
+              data-i18n-title="zoom.display_hint">100%</span>
+        <input type="number" class="zoom-input" id="zoom-input" min="1" max="500" step="1"
+               data-i18n-aria-label="zoom.input_label" hidden>
+        <button type="button" class="zoom-btn" id="zoom-in" data-i18n-title="zoom.in">+</button>
+        <button type="button" class="zoom-btn zoom-auto" id="zoom-auto" data-i18n-title="zoom.auto">⛶</button>
+      </div>
+      <!-- 中身の <option> は i18n.js の mountSelect が入れる。ここを空にしておくのは、
+           対応言語を増やしたときに書き換える場所を1つ（i18n.js の SUPPORTED）に
+           留めるため。JS が動かなければ空のまま出るが、画面は英語で読める。 -->
+      <select class="lang-select" id="lang-select" data-i18n-aria-label="lang.label"></select>
+      <!-- target="_blank" は付けない。JS でこのページの中に重ねて開く（理由は JS の
+           「取扱説明書」節）。href は JS が動かないときの逃げ道として残す。 -->
+      <a class="help-link" href="/manual.html" data-i18n-title="manual.open">?</a>
+    </div>
+  </header>
+
+  <!-- ミッション選択タブ。1枚＝「1回の start」で、過去の記録も同じ列に並ぶ。 -->
+  <div id="team-tabs" hidden>
+    <div class="tab-bar" id="tab-bar"></div>
+    <button type="button" class="history-clear" id="history-clear" hidden
+            data-i18n-title="tab.clear_done_title">
+      <span data-i18n="tab.clear_done">Delete finished records</span><span class="n"></span>
+    </button>
+  </div>
+
+  <!-- 選んだタブの中身を出す。器は JS が #team-tpl から作る（表示は常に1枚） -->
+  <div id="teams-wrapper">
+    <div id="teams"></div>
+  </div>
+
+  <!-- チームが1つも無いときだけ出す案内。
+       3行目だけ data-i18n-html なのは、訳文の中に <code> が入るため。
+       この HTML は文言表の中にしか無く、利用者の入力は通らない。 -->
+  <div id="standby" hidden>
+    <div class="empty-note"><span data-i18n="standby.head">Standing by</span><br><br>
+      <span data-i18n="standby.line1">Teams appear here once subagents start moving.</span><br><br>
+      <span data-i18n="standby.line2">To start one yourself, run this in your working directory:</span><br>
+      <code>update_state.py start --title "..."</code><br><br>
+      <span data-i18n-html="standby.line3">Just want to see how it looks? Use <code>update_state.py demo</code>.</span></div>
+  </div>
+
+</div>
+
+<!-- 取扱説明書。iframe の src は初回に開いたときだけ入れる（37KB を常に読み込まないため） -->
+<div id="manual-overlay" hidden>
+  <div class="manual-box">
+    <header class="manual-head">
+      <span class="manual-title" data-i18n="manual.title">Manual</span>
+      <a class="manual-pop" href="/manual.html" target="_blank" rel="noopener" hidden
+         data-i18n="manual.popout">Open in a new window</a>
+      <button class="manual-close" type="button" data-i18n-title="manual.close">×</button>
+    </header>
+    <iframe class="manual-frame" data-i18n-title="manual.title" title="Manual"></iframe>
+  </div>
+</div>
+
+<!-- 確認と結果報告。confirm()/alert() を使わない理由は CSS 側のコメントに書いた。 -->
+<div id="dialog-overlay" hidden>
+  <div class="dialog-box" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <h3 class="dialog-title" id="dialog-title"></h3>
+    <div class="dialog-body"></div>
+    <div class="dialog-actions">
+      <!-- 文言は openDialog() が押すたびに入れ直す。ここに書いてあるのは、
+           一度も開かれていないときに DOM を覗いた人が読める既定値。 -->
+      <button type="button" class="dialog-btn dialog-cancel">Cancel</button>
+      <button type="button" class="dialog-btn go dialog-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- チーム1つ分の骨組み。ID ではなくクラスで引くのは、同じ形が画面に何枚も並ぶため。 -->
+<template id="team-tpl">
+  <section class="team">
+    <header class="team-bar">
+      <!-- .phase / .team-archive の文言は render() が入れる。ここに data-i18n を
+           付けないのは、言語を変えた直後に apply() が「待機中」で塗り戻してしまう
+           ため（実際の状態は render() しか知らない）。言語変更時は再描画で直す。 -->
+      <span class="phase standby">Standby</span>
+      <span class="team-archive" hidden></span>
+      <h2 class="team-title">—</h2>
+      <span class="team-project"></span>
+      <div class="team-stats">
+        <div class="stat"><span class="k" data-i18n="stat.elapsed">Elapsed</span><span class="v m-elapsed">—</span></div>
+        <div class="stat"><span class="k" data-i18n="stat.agents">Units</span><span class="v m-agents">—</span></div>
+        <div class="stat"><span class="k" data-i18n="stat.tokens">Tokens</span><span class="v m-tokens">—</span></div>
+      </div>
+    </header>
+    <div class="team-body">
+      <div class="tree-scroll">
+        <div class="tree-canvas">
+          <svg class="links"></svg>
+          <div class="generations"></div>
+        </div>
+      </div>
+      <aside class="team-side">
+        <div class="summary" hidden></div>
+        <div class="side-head"><span data-i18n="log.title">Event log</span><span class="count log-count">0</span></div>
+        <div class="log"></div>
+        <div class="warnings" hidden></div>
+      </aside>
+    </div>
+  </section>
+</template>
+
+<script>
+'use strict';
+
+const POLL_MS = 1000;
+const COMMAND_ID = 'COMMAND';
+
+// ================================================================ 文言
+// i18n.js（<head> で読み込む）が入れる window.I18N を使う。**読めていなくても
+// この画面は動かなければならない**ので、退避を1つ置く：文言表が無いときは
+// キー名ではなくキーの末尾を返し、{n} だけは埋める。読める英語にはならないが、
+// 画面の骨格と操作はそのまま残り、右上に理由が出る（黙って白くならない）。
+const i18nOk = !!(window.I18N && typeof window.I18N.t === 'function');
+
+/**
+ * 文言を1つ引く。第2引数は {name} に差し込む値。
+ *
+ * **名前が `tr` で `t` でないのは意図的。** この画面ではチーム1つ分のレコードを
+ * 慣習的に `t` と呼んでいて（`render(t, s)`、`drawLinks(t)` など）、翻訳関数を `t` に
+ * すると、それらの関数の中では引数の `t` に隠れて **チームを文言キーとして呼ぶ**
+ * ことになる。例外にもならず、その行だけ静かに壊れる種類の食い違いなので、
+ * 名前の側で起こらないようにしてある。
+ */
+const tr = i18nOk
+  ? (key, params) => window.I18N.t(key, params)
+  : (key, params) => {
+      const tail = String(key).split('.').pop().replace(/_/g, ' ');
+      return params ? tail + ' ' + JSON.stringify(params) : tail;
+    };
+
+/** 桁区切り。言語ごとに区切り方が違う（en/ja/ko/zh はいずれも3桁だが、
+ *  ロケールを固定すると将来ここだけ直し漏れる）。 */
+const fmtLocaleNum = i18nOk ? (n) => window.I18N.fmtNumber(n) : (n) => String(n);
+// ================================================================ 拡大率
+// 1%刻み・1%〜500%。刻みが細かいので +/− ボタンは「丸い数字の飛び石」に徹する
+// （1%刻みでボタンを送ると 100%→500% が400回になる）。1%単位の指定は表示部の
+// クリックで開く数値入力と、系統樹の上での Ctrl+ホイールが担う。
+const ZOOM_STEPS = [1, 2, 5, 10, 15, 20, 25, 33, 50, 67, 75, 90, 100,
+                    110, 125, 150, 175, 200, 250, 300, 400, 500];
+const MIN_ZOOM = 1;         // %
+const MAX_ZOOM = 500;       // %
+const ZOOM_WHEEL_RATIO = 0.05;  // Ctrl+ホイール1目盛りで動く割合（現在値に対する比）
+
+// ---------------------------------------------------------------- 自動フォーカス
+// 自動でも 1%〜500% の全域を使う（収まらないなら 1% まで縮め、余っていれば 500% まで埋める）。
+// AUTO_FIT_THRESHOLD（幅の20%が切れていても放置する閾値）は廃止した。「すべて表示できる
+// 拡大率に合わせる」という要求と正面から矛盾していたため。
+const FIT_MARGIN     = 0.98;  // 枠の98%に収める（端に張り付かせない。丸めの逃げも兼ねる）
+const FIT_DEADBAND   = 0.02;  // 現在値からこの割合（最低1%pt）未満のズレでは動かさない
+const FIT_GROW_GAIN  = 1.05;  // 拡大は5%以上余ったときだけ
+const FIT_GROW_MS    = 500;   // 拡大は形が落ち着いてから（毎秒増える機体で脈打たせない）
+const FIT_MIN_GAP_MS = 200;   // 自動変更どうしの最短間隔
+const FIT_MAX_BURST  = 4;     // 同じ寸法のまま何度も動いたら手を引く（最後の止め）
+
+// ================================================================ 黙って死なないための下ごしらえ
+// この画面は body の末尾にある**1本のインラインスクリプト**で出来ている。top-level で例外が
+// 1つ出ると、そこから下が丸ごと実行されない。そして初期化（ポーリングの開始）はこの
+// ファイルの最後の行にある。つまり途中で落ちると **fetch が一度も飛ばず**、右上は初期値の
+// 「接続中…」のまま固まる。tick() の中ではないので try/catch にも掛からず、「切断」にすら
+// ならない。利用者からは**サーバーの不調と見分けが付かない沈黙**にしか見えない。
+//
+// 実際に v0.2.5 で、HTML の id を変えたのに JS 側のセレクタが旧名のままだったという
+// 食い違い1つがこれを起こし、「サーバーが悪いのか、ポートが悪いのか、インストール先が
+// 悪いのか」の切り分けに利用者の時間を使わせた。原因は1行だったが、症状が原因を一切
+// 指していないことのほうが高くついた。
+//
+// 同じ食い違いが次に起きても「一部のボタンが効かない」で済むように、3つ置く。
+// どれも**要素を掴む宣言より前**にあることに意味がある。
+//   1. need()  … 要素が無くてもその場では落とさず、無かったセレクタを控える
+//   2. bind()  … 相手が居ないハンドラ登録を飛ばす
+//   3. boot()  … 末尾の初期化に頼らず、DOMContentLoaded からも呼ぶ
+// そのうえで、控えた不具合と拾えなかった例外は **右上に出す**。黙って止まるのが一番高い。
+
+/** need() が見つけられなかったセレクタ。boot() で画面に出す。 */
+const missingParts = [];
+
+/** 画面の不具合を1つにまとめた文。null なら健全。setConn がこれを見て表示を変える。 */
+let brokenMsg = null;
+
+const $ = (s) => document.querySelector(s);
+
+/**
+ * 要素を1つ取る。**無くてもここでは落とさない。**
+ * @param {string} sel 探すセレクタ
+ * @param {Element|null} [root] 省略すると document から探す。null を渡したときは
+ *   「親がそもそも無い」ので探さずに null を返す。document へ落として別物を掴むと、
+ *   食い違いが**別の場所の誤動作**に化けて、もっと追いにくくなる
+ */
+function need(sel, root) {
+  const el = (root === undefined) ? document.querySelector(sel)
+           : (root ? root.querySelector(sel) : null);
+  if (!el) missingParts.push(sel);
+  return el;
+}
+
+/** 相手が居るときだけハンドラを付ける。居ないことは need() が既に控えている。 */
+function bind(el, ev, fn) { if (el) el.addEventListener(ev, fn); }
+
+/** 画面の不具合を記録して、右上に出す。宣言より前で呼ばれるので要素はその場で引く。 */
+function markBroken(msg) {
+  console.error('[dashboard] ' + msg);
+  brokenMsg = brokenMsg ? (brokenMsg + ' / ' + msg) : msg;
+  try {
+    const box = document.querySelector('#conn');
+    const txt = document.querySelector('#conn-text');
+    if (box) { box.className = 'conn bad'; box.title = brokenMsg; }
+    if (txt) txt.textContent = tr('conn.broken');
+  } catch (e) { /* ここで落ちたら打つ手が無い。握って先へ進む */ }
+}
+
+// 文言表そのものが読めなかったことも、他の不具合と同じ経路で出す。
+if (!i18nOk) markBroken('Could not load i18n.js; falling back to key names.');
+
+// 拾えなかった例外を画面に出す。原因の切り分けを利用者にさせない。
+window.addEventListener('error', (e) => {
+  markBroken(tr('broken.exception', { msg: (e && e.message) || tr('broken.unknown') })
+           + (e && e.lineno ? tr('broken.at_line', { n: e.lineno }) : ''));
+});
+
+/** ポーリングを始める。末尾からも DOMContentLoaded からも呼ばれるが、走るのは1回だけ。 */
+let booted = false;
+function boot() {
+  if (booted) return;
+  booted = true;
+  if (missingParts.length) markBroken(tr('broken.missing', { list: missingParts.join(' ') }));
+  // 部品が欠けていると下ごしらえのほうが落ちることがある。**ポーリングだけは必ず始める**
+  // ので1つずつ握る。ここで止まると、直そうとしている沈黙にそのまま戻ってしまう。
+  try { loadState(); } catch (e) { markBroken(tr('broken.load_state', { msg: (e && e.message) || e })); }
+  try { setupLang(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
+  try { applyZoom(); } catch (e) { markBroken(tr('broken.apply_zoom', { msg: (e && e.message) || e })); }
+  tick();
+  setInterval(tick, POLL_MS);
+}
+
+// 末尾の boot() に届かなかったときの保険。このスクリプトは body の末尾にあるので、
+// DOMContentLoaded は**下を実行し終えたあと**に来る。途中で落ちてもこの登録は済んでいる。
+// 落ちた位置より下の const は初期化されないままなので boot() 自体が失敗しうる。その場合も
+// 例外を握って画面に出す（何が起きたか出せれば、沈黙よりはるかに直しやすい）。
+window.addEventListener('DOMContentLoaded', () => {
+  try { boot(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
+});
+
+const elTeams      = need('#teams');
+const elStandby    = need('#standby');
+const elCount      = need('#team-count');
+const elTabsPanel  = need('#team-tabs');
+const elTabBar     = need('#tab-bar');
+const elHistClear  = need('#history-clear');
+const elHistClearN = need('.n', elHistClear);
+const elZoomDisplay= need('#zoom-display');
+const elZoomInput  = need('#zoom-input');
+const elZoomIn     = need('#zoom-in');
+const elZoomOut    = need('#zoom-out');
+const elZoomAuto   = need('#zoom-auto');
+const elLangSelect = need('#lang-select');
+const teamTpl      = need('#team-tpl');
+
+let clockSkew = 0;          // サーバー時刻 - ブラウザ時刻
+let failCount = 0;
+let currentTab = null;      // 表示中のタブのキー（tabKey() の値）
+let zoomLevel = 100;        // 拡大率 %
+let autoFitOn = true;       // 自動フォーカスが入っているか（localStorage: dashboard:zoomAuto）
+// 自動フォーカスの調律用。詳しくは autoFitZoom() の頭のコメント。
+let fitRaf       = 0;       // 予約中の rAF
+let fitRecheck   = 0;       // 「あとでもう一度測る」予約（待ちに入ったまま忘れないための命綱）
+let fitLastAt    = 0;       // 最後に自動で拡大率を変えた時刻
+let fitGrowSince = 0;       // 「拡大してよい」状態が続き始めた時刻（0＝続いていない）
+let fitBurst     = 0;       // 同じ寸法のまま何回動いたか
+let fitBurstSig  = null;    // その寸法の署名
+let tabs = [];              // サーバーが返したタブ一覧。並びもサーバーのものをそのまま使う
+let tabsSig = null;         // タブバーを組み直すかの判定用
+let liveSig = null;         // 進行中のミッションの顔ぶれ。新しい start の検出に使う
+// /api/state が毎秒流してくるミッションのタブキー。
+// tabs には「稼働していないプロジェクトの現在のミッション」も runId なしで並ぶので、
+// runId が無いことと「毎秒更新される」ことは同じではない。ここで区別する。
+let liveKeys = new Set();
+
+/** タブの同一性は slug と runId の組で決まる（同じプロジェクトの記録が何枚も並ぶ）。
+ *  区切りは "/"。slug も runId もディレクトリ名なので "/" を含むことがない
+ *  （サーバー側の検証が弾く：slug は Path(s).name == s、runId は 20260804-160200 の書式）。
+ *  よって slug "a" + runId "b" と slug "a/b" + runId なし が同じキーになる事故が起きない。
+ *  このキーは data-key 属性に入れて DOM から引くので、目で読める文字だけで組む。 */
+function tabKey(slug, runId) { return String(slug) + '/' + (runId ? String(runId) : ''); }
+
+// ================================================================ localStorage 管理
+function loadState() {
+  currentTab = migrateTabKey(localStorage.getItem('dashboard:currentTab'));
+  const zoom = localStorage.getItem('dashboard:zoomLevel');
+  if (zoom) {
+    const z = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, parseInt(zoom, 10)));
+    if (!Number.isNaN(z)) zoomLevel = z;
+  }
+  // 旧範囲（50〜200）で保存された値は新範囲（1〜500）に含まれるので、そのまま通る。
+  // dashboard:zoomAuto が無い利用者の扱いだけ決めればよい。以前の版は自動フォーカスを
+  // 一度も呼んでいなかった（autoFitZoom が死にコードだった）ので、拡大率が保存されて
+  // いるならそれは必ず +/− を押した結果＝手動である。真っさらな初回だけ自動から始める。
+  const autoRaw = localStorage.getItem('dashboard:zoomAuto');
+  autoFitOn = (autoRaw === '0' || autoRaw === '1') ? (autoRaw === '1') : !zoom;
+}
+
+/** 保存済みの選択を今の形に読み替える。以前は「プロジェクトの slug」をそのまま
+ *  入れていたので、"/" を含まない値が残っている。それは「そのプロジェクトの
+ *  進行中のミッション」（runId なし）と読み替える。読めない値は無かったことにする
+ *  ——どちらにしても、一覧に無いキーは既定のタブへ落ちるので画面は壊れない。 */
+function migrateTabKey(saved) {
+  if (typeof saved !== 'string' || !saved) return null;
+  if (saved.length > 400) return null;   // 想定外に長い値は捨てる
+  return saved.indexOf('/') >= 0 ? saved : tabKey(saved, null);
+}
+
+function saveCurrentTab() {
+  if (currentTab) localStorage.setItem('dashboard:currentTab', currentTab);
+  else localStorage.removeItem('dashboard:currentTab');
+}
+
+function saveZoomLevel() {
+  localStorage.setItem('dashboard:zoomLevel', String(zoomLevel));
+}
+
+/** 拡大率を画面に反映する。器が増えたときにも呼ぶので、ここでは保存しない
+ *  （保存は「利用者が操作したとき」＝ setZoom だけ）。 */
+function applyZoom() {
+  const zoomPercent = zoomLevel / 100;
+  // 系統樹スクロール領域だけに拡大を適用（ログ・バーは固定）
+  for (const scrollEl of document.querySelectorAll('.tree-scroll')) {
+    scrollEl.style.zoom = zoomPercent;
+  }
+  // 「自動」の2文字を数値の前に出す。自動で動いている画面と、利用者が決めた画面は
+  // 見分けが付かないといけない——操作していないのに大きさが変わる理由がこれだから。
+  if (elZoomDisplay) elZoomDisplay.textContent = (autoFitOn ? tr('zoom.auto_prefix') : '') + zoomLevel + '%';
+  if (elZoomAuto) elZoomAuto.classList.toggle('on', autoFitOn);
+  // ここで title を直に書くので、data-i18n-title は付けていない（付けると
+  // 言語変更時に apply() が「次に踏む値」の入っていない文へ塗り戻す）。
+  if (elZoomOut) elZoomOut.title = tr('zoom.out_to', { n: nextZoomStep(-1) });
+  if (elZoomIn)  elZoomIn.title  = tr('zoom.in_to',  { n: nextZoomStep(1)  });
+}
+
+/**
+ * 拡大率を変える。
+ * @param {number} newLevel 新しい拡大率 %
+ * @param {{auto?: boolean}} [opts] 自動フォーカスから呼ぶときだけ `{auto:true}`。
+ *   **省略時は「利用者の操作」として扱う**（保存し、自動フォーカスを降ろす）。
+ *   既定を手動側に置いているのは、付け忘れたときの壊れ方を選ぶため：自動側が付け忘れると
+ *   自動が自分で消灯するのですぐ気づけるが、逆にすると利用者の操作が黙って無効化される。
+ */
+function setZoom(newLevel, opts) {
+  const auto = !!(opts && opts.auto);
+  newLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(newLevel)));
+  if (!auto && autoFitOn) setAutoFit(false, true);   // 利用者の操作が常に勝つ
+  if (zoomLevel === newLevel) return;
+  zoomLevel = newLevel;
+  applyZoom();
+  if (!auto) saveZoomLevel();   // 自動が決めた値は残さない（次回1フレームで出し直せる）
+}
+
+/** +/− ボタンが次に踏む飛び石。1%刻みの指定は数値入力と Ctrl+ホイールが担う。 */
+function nextZoomStep(dir) {
+  if (dir > 0) {
+    for (const s of ZOOM_STEPS) if (s > zoomLevel) return s;
+    return MAX_ZOOM;
+  }
+  for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) if (ZOOM_STEPS[i] < zoomLevel) return ZOOM_STEPS[i];
+  return MIN_ZOOM;
+}
+
+/** 自動フォーカスの入切。`quiet` は setZoom から降ろされたときで、直後に本人が
+ *  applyZoom を呼ぶので二度描かない。 */
+function setAutoFit(on, quiet) {
+  autoFitOn = !!on;
+  localStorage.setItem('dashboard:zoomAuto', autoFitOn ? '1' : '0');
+  fitBurstSig = null; fitBurst = 0; fitGrowSince = 0;   // 入れ直したら測り直す
+  if (!quiet) applyZoom();
+  if (autoFitOn) {
+    const t = teams.get(currentTab);
+    if (t) scheduleAutoFit(t);   // 入れ直した瞬間に効かせる＝「枠に合わせる」ボタンにもなる
+  }
+}
+
+/** 1フレームに1回だけ予約する。ResizeObserver のコールバックの中で寸法を書き換えないための
+ *  rAF でもある（既存の scheduleLayout が rAF を使っているのと同じ理由）。 */
+function scheduleAutoFit(t) {
+  if (!autoFitOn || !t) return;
+  // 隠れているチームは .team{display:none} なので寸法が全て 0 になる。ここで弾かないと
+  // 0 で割って NaN の拡大率を作る。applyLayout は非表示のチームに対しても走る。
+  if (!t.root.hasAttribute('data-active')) return;
+  if (fitRaf) return;
+  fitRaf = requestAnimationFrame(() => { fitRaf = 0; autoFitZoom(t); });
+}
+
+/** 「いまは動かないが、あとでもう一度測る」を予約する。
+ *  待ちに入ったまま誰も測り直さない、という取りこぼしを防ぐための命綱。ミッションが
+ *  完了して毎秒の再描画が止まっている画面では、これが無いと待ちに入った時点で永久に
+ *  止まる（窓を広げても拡大し直さなくなる）。 */
+function laterAutoFit(ms) {
+  if (fitRecheck) return;
+  fitRecheck = setTimeout(() => {
+    fitRecheck = 0;
+    const cur = teams.get(currentTab);
+    if (cur) scheduleAutoFit(cur);
+  }, Math.max(16, ms));
+}
+
+/** 枠の内寸（ローカル座標）。
+ *  clientWidth/clientHeight は zoom を掛けた要素**自身**なので 1/zoom で膨らむ。
+ *  getComputedStyle のパディングは仕様上「未ズーム値」を返すので同じ座標系で引ける
+ *  （css-viewport-1 §4.1、CSSWG 2023-11-29 決議）。layoutTree の縦中央寄せが既に
+ *  同じ組み合わせで正しく動いているので、整合は取れている。 */
+function fitBox(t) {
+  const w = t.els.scroll.clientWidth  - scrollPad(t, 'paddingLeft') - scrollPad(t, 'paddingRight');
+  const h = t.els.scroll.clientHeight - scrollPad(t, 'paddingTop')  - scrollPad(t, 'paddingBottom');
+  return (w > 0 && h > 0) ? { w, h } : null;   // 隠れている間は 0。割ってはいけない
+}
+
+/** 中身の実寸（ローカル座標。zoom に依らない）。
+ *
+ *  **scrollWidth / scrollHeight を使ってはいけない。** .tree-canvas の min-width:100% と、
+ *  layoutTree が .gen-body に入れる max(木の高さ, 枠の高さ) が、どちらも「枠の大きさ」まで
+ *  値を底上げする。つまり中身が枠より小さいことを DOM からは検出できない。旧実装の拡大枝
+ *  （ratio < 0.95）がどの拡大率でも一度も成立せず、「一度縮んだら戻らない」片道になって
+ *  いたのはこれが理由。幅は列の右端から、高さは layoutTree が計った実高から取る。 */
+function fitContent(t) {
+  let right = 0;
+  for (const [, c] of t.cols) right = Math.max(right, c.col.offsetLeft + c.col.offsetWidth);
+  const h = bodyOffsetTop(t) + (t.contentH || 0);
+  return (right > 0 && h > 0) ? { w: right, h } : null;
+}
+
+/**
+ * 表示中のチームの系統樹が枠に収まる拡大率へ合わせる。
+ *
+ * 収束の要は**相対**で決めること。新しい拡大率 = いまの拡大率 × (枠 ÷ 中身)。
+ * 中身のローカル寸法は zoom に依らず、枠のローカル寸法は 物理寸法 ÷ z なので、この式は
+ * z を約分して 物理寸法 ÷ 中身 になる——**現在の拡大率に関係なく必ず同じ答えを返す**。
+ * つまり不動点であり、どこから始めても1歩で着き、2歩目は必ず「差なし」で止まる。
+ *
+ * 旧実装の絶対式 newLevel = 100 / 比 は Z(n+1) = K / Z(n) の形で、Z(n+2) = Z(n)。
+ * すなわち周期2で永久に往復する（100% ⇔ 39.68% を実測で再現している）。ここを相対に
+ * するだけで、往復は「止まる」のではなく**起きなくなる**。
+ *
+ * その上で、丸め・スクロールバー・毎秒増える機体という現実の揺らぎに4層で備える：
+ *   1. 上の不動点性（振動そのものを消す）
+ *   2. CSS の scrollbar-gutter:stable（バーの出入りで枠幅が揺れる古典的な振動源を断つ）
+ *   3. 不感帯と、拡大側だけの待ち時間（1%刻みの±1ジッタと、増え続ける最中の脈動を吸う）
+ *   4. 同じ寸法のまま何度も動いたら手を引く（上3層が破れても必ず有限回で終わる）
+ *
+ * ResizeObserver の発火を数える echo guard は**採らない**。zoom の変更で RO が飛ぶかは
+ * ブラウザ依存（Firefox は 141 まで要素の zoom を contentRect に反映していなかった）で、
+ * 「発火を待って握り潰す」設計は飛ばない環境で正当な更新まで飲み込むため。
+ */
+function autoFitZoom(t) {
+  if (!autoFitOn || !t || !teams.has(t.key)) return;
+  if (!t.root.hasAttribute('data-active')) return;
+
+  const box = fitBox(t), con = fitContent(t);
+  if (!box || !con) return;
+
+  // 横と縦の両方を収める。列幅は 330px 固定で世代ぶんしか増えないが、縦は機体が増えるたび
+  // 約152px ずつ伸びる。実測では縦が6体で溢れるのに対し、横は5世代必要——つまり普段
+  // 効くのは縦のほう。横だけを見ていた旧実装は、最も起きる過密に何もしていなかった。
+  const f = Math.min(box.w / con.w, box.h / con.h) * FIT_MARGIN;
+  if (!Number.isFinite(f) || f <= 0) return;
+
+  const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(zoomLevel * f)));
+
+  // 不感帯は現在値に対する割合で見る。1%刻みなので、絶対値で置くと 500% では緩すぎ、
+  // 5% では厳しすぎる。丸めの ±0.5 を必ず吸えるように最低 1%pt は確保する。
+  const dead = Math.max(1, Math.round(zoomLevel * FIT_DEADBAND));
+  if (Math.abs(next - zoomLevel) < dead) { fitGrowSince = 0; return; }
+
+  const now = performance.now();
+  if (next > zoomLevel) {
+    // 拡大は急がない。機体は毎秒1体ずつ増えるので、空いた瞬間に戻すと画面が脈打つ。
+    // 「切れているのを直す」は急ぎ、「余白を詰める」は急がない——利用者の損得が非対称。
+    // 待つときは必ず「あとで測り直す」を予約する。予約しないと、完了して再描画が
+    // 止まったミッションでは誰も測り直さず、待ちに入ったまま永久に拡大しなくなる。
+    if (f < FIT_GROW_GAIN) { fitGrowSince = 0; return; }
+    if (!fitGrowSince)     { fitGrowSince = now; laterAutoFit(FIT_GROW_MS); return; }
+    if (now - fitGrowSince < FIT_GROW_MS) {
+      laterAutoFit(FIT_GROW_MS - (now - fitGrowSince));
+      return;
+    }
+  }
+  fitGrowSince = 0;
+
+  // 連発を止める。ただし**捨てない**：残り時間だけ待って測り直す（取りこぼし防止）。
+  if (now - fitLastAt < FIT_MIN_GAP_MS) {
+    laterAutoFit(FIT_MIN_GAP_MS - (now - fitLastAt));
+    return;
+  }
+
+  // 最後の止め。上の層が全部破れても、ここで必ず有限回で終わる。
+  // 木の形か枠が変われば署名も変わるので、正当な再フィットは妨げない。
+  const sig = con.w + 'x' + con.h + '/' + box.w + 'x' + box.h;
+  if (sig === fitBurstSig) {
+    if (++fitBurst > FIT_MAX_BURST) {
+      console.warn(tr('console.fit_stopped'), sig);
+      return;
+    }
+  } else { fitBurstSig = sig; fitBurst = 1; }
+
+  fitLastAt = now;
+  setZoom(next, { auto: true });
+  // 枠のローカル高さが変わったので縦の中央寄せを取り直す。ResizeObserver の発火に
+  // 頼らないのは、zoom 変更で RO が飛ぶかがブラウザ依存だから（上のコメント参照）。
+  scheduleLayout(t);
+}
+
+// ================================================================ タブUI管理
+// タブ1枚＝「1回の start」。進行中のミッション（runId なし）は /api/state の teams から
+// 毎秒描き、過去の記録（runId あり）は選ばれたときに /api/run で1回だけ取る。
+// 一覧の中身も並び順もサーバーが決めるので、ここで並べ替えたり足したりはしない。
+
+/** タブの札に出す短い状態名。文言表から毎回引く（言語を変えたあとに
+ *  古い言語の値が定数として残らないよう、定数ではなく関数にしてある）。 */
+function phaseShort(phase) {
+  const key = { standby: 'phase.short_standby', running: 'phase.short_running',
+                done: 'phase.short_done' }[phase];
+  return key ? tr(key) : '?';
+}
+
+/** サーバーのタブ1件を画面用に整える。同じ値を何度通しても結果が変わらないようにする
+ *  （削除のあと、手元のタブ一覧をそのまま applyTabs に戻して使うため）。 */
+function normalizeTab(raw) {
+  const slug  = typeof raw.slug === 'string' ? raw.slug : '';
+  const runId = raw.runId ? String(raw.runId) : null;
+  let phase = raw.phase;
+  if (phase !== 'standby' && phase !== 'running' && phase !== 'done') {
+    phase = runId ? 'done' : 'standby';
+  }
+  return {
+    key: tabKey(slug, runId), slug, runId, phase,
+    title:       raw.title || tr('run.untitled'),
+    startedAt:   raw.startedAt  || null,
+    finishedAt:  raw.finishedAt || null,
+    projectName: raw.projectName || slug || tr('run.no_project'),
+    agentCount:  typeof raw.agentCount === 'number' ? raw.agentCount : null,
+    doneCount:   typeof raw.doneCount  === 'number' ? raw.doneCount  : null,
+    isCurrent:   !!raw.isCurrent,
+  };
+}
+
+/** 「全機帰還したのに finish が打たれていない」タブか。
+ *
+ *  締め忘れは何も壊さないので、放っておくと画面には「稼働中」と出続け、誰も
+ *  気づかないまま次の start で「未完」の記録になる。ここで見えるようにする。
+ *  doneCount が null（数えられなかった・過去の記録）は、締め忘れとは言わない。
+ *  分からないものを警告にすると、当たっていない警告が常に出ることになる。 */
+function isUnfinishedTab(tb) {
+  return tb.runId === null
+      && tb.phase === 'running'
+      && typeof tb.agentCount === 'number' && tb.agentCount > 0
+      && tb.doneCount === tb.agentCount;
+}
+
+/** サーバーが tabs を返さないとき（古いサーバー）の逃げ道。進行中のミッションだけの
+ *  タブを teams から組む。過去の記録は出ないが、稼働中の画面は従来どおり動く。 */
+function tabsFromTeams(list) {
+  const out = [];
+  for (const ts of list) {
+    const p = ts.project || {}, m = ts.mission || {};
+    if (!p.slug) continue;
+    // 指令塔は機体数に数えない。サーバーの _current_tab と同じ数え方にしておかないと、
+    // 逃げ道を通ったときだけ機体数が1多く出て、締め忘れの印も永久に出なくなる。
+    const workers = (ts.agents || []).filter((a) => a && a.id !== COMMAND_ID);
+    out.push({
+      slug: p.slug, runId: null, title: m.title, phase: m.phase,
+      startedAt: m.startedAt || null, finishedAt: m.finishedAt || null,
+      projectName: p.name || p.slug, agentCount: workers.length, isCurrent: false,
+      doneCount: workers.filter((a) => a.status === 'done').length,
+    });
+  }
+  return out;
+}
+
+function findTab(key) {
+  if (!key) return null;
+  for (const tb of tabs) if (tb.key === key) return tb;
+  return null;
+}
+
+/** 既定で選ぶタブ。いま動いているものを優先し、無ければサーバーが返した先頭（＝一番新しい）。 */
+function pickDefaultTab() {
+  for (const tb of tabs) if (tb.phase === 'running' && liveKeys.has(tb.key)) return tb.key;
+  for (const tb of tabs) if (liveKeys.has(tb.key)) return tb.key;
+  for (const tb of tabs) if (tb.phase === 'running') return tb.key;
+  for (const tb of tabs) if (tb.isCurrent) return tb.key;
+  return tabs.length ? tabs[0].key : null;
+}
+
+/** サーバーから来たタブ一覧を反映する。 */
+function applyTabs(rawList) {
+  tabs = rawList.map(normalizeTab).filter((tb) => tb.slug);
+
+  // 一覧から消えた器を捨てる。tabs は全プロジェクトを網羅した一覧なので、
+  // ここに無いものはもう選べない（プロジェクトごと消された、記録が削除された）。
+  const alive = new Set(tabs.map((tb) => tb.key));
+  for (const [key, t] of [...teams]) if (!alive.has(key)) destroyTeam(t);
+
+  // 新しい start があったら、記録を眺めている手を止めて稼働中の画面へ引き戻す。
+  // 「いま何が動いているか」を映すのがこの画面の役目なので、履歴を開いたまま
+  // 新しいミッションを見落とすほうが困る。逆に、稼働中のタブを見ている人を
+  // 別の稼働中タブへ飛ばすことはしない（見ている対象を勝手に変えない）。
+  const sig = JSON.stringify(tabs.filter((tb) => liveKeys.has(tb.key))
+                                 .map((tb) => [tb.key, tb.startedAt]));
+  const cur = findTab(currentTab);
+  if (liveSig !== null && sig !== liveSig && sig !== '[]'
+      && (!cur || !liveKeys.has(cur.key))) {
+    currentTab = pickDefaultTab();
+  }
+  liveSig = sig;
+
+  if (!findTab(currentTab)) currentTab = pickDefaultTab();
+  renderTabs();
+  if (currentTab) switchTab(currentTab);
+  else for (const [, t] of teams) t.root.removeAttribute('data-active');
+}
+
+function switchTab(key) {
+  const tb = findTab(key);
+  if (!tb) return;
+  const found = teams.get(key);
+  // 毎秒の applyTabs から呼ばれるので、すでにその状態なら何もしない。
+  // 判定は変数ではなく DOM で行う：器が作り直された直後は data-active が
+  // 付いていないので、変数だけを見ると「切り替え済み」と誤判定して真っ白になる。
+  if (found && currentTab === key && found.root.hasAttribute('data-active')) return;
+
+  if (currentTab !== key) { currentTab = key; saveCurrentTab(); }
+  const t = found || createTeam(tb.slug, tb.runId, liveKeys.has(key));
+
+  for (const [, x] of teams) {
+    if (x === t) x.root.setAttribute('data-active', '');
+    else x.root.removeAttribute('data-active');
+  }
+  markTabActive(key);
+
+  // 毎秒流れてこないものは、選ばれたときに1回だけ取る。毎秒取り直すと履歴の数だけ
+  // 完全な状態を読み込むことになるし、もう変わらないので取り直す意味も無い。
+  if (t.loadState === 'idle') loadRun(t, tb);
+
+  // 隠れている間は clientHeight が 0 なので縦の中央寄せが決まらない。出した直後に
+  // 測り直す（lastAvailH を無効化しておけば ResizeObserver 側とも二重にならない）。
+  t.lastAvailH = -1;
+  if (t.state) scheduleLayout(t);
+}
+
+function markTabActive(key) {
+  if (!elTabBar) return;
+  for (const el of elTabBar.querySelectorAll('.tab-item')) {
+    el.classList.toggle('active', el.dataset.key === key);
+  }
+}
+
+/** 削除できるタブか。
+ *
+ *  過去の記録（runId あり）はいつでも消せる。現在のミッション（runId=null＝
+ *  missions/<slug>/state.json）は完了していれば消せる。history/ へ移されるのは次の
+ *  start が走ったときだけなので、1度きりのミッションは完了しても現在の枠に残り続ける。
+ *  ここを「過去の記録だけ」にすると、それらを片付ける手段が画面から無くなる。
+ *  稼働中・待機中の現在のミッションはサーバーが断るので、ここでも消せないままにする。 */
+function canDelete(tb) { return tb.runId !== null || tb.phase === 'done'; }
+
+/** 一括削除（「完了した記録を削除」）の対象か。
+ *
+ *  完了したものだけ。過去の記録でも、完了しないまま次の start に押し出されたもの
+ *  （phase が running のまま＝タブでは「未完」）はまとめては消さない。消すなら
+ *  1件ずつ ✕ で消してもらう。 */
+function isDoneRun(tb) { return tb.phase === 'done'; }
+
+function renderTabs() {
+  // タブバーは**系統樹の付属品**。部品が1つ欠けてもここで例外にせず、描けるものだけ描く。
+  // 呼び手は tick() なので、ここで落とすと系統樹も機体数も一緒に止まる（＝画面が死ぬ）。
+  if (!elTabBar) return;
+
+  // 記録が1件でもあればタブバーを出す。単独で作業していると1件しか無いので、
+  // 「2件以上」を条件にすると一度も出てこない。
+  if (elTabsPanel) elTabsPanel.hidden = tabs.length === 0;
+
+  // 一括削除は「完了したミッションが1件でもあれば」出す。タブの枚数とは無関係。
+  const doneRuns = tabs.filter(isDoneRun);
+  if (elHistClear) elHistClear.hidden = doneRuns.length === 0;
+  if (elHistClearN) elHistClearN.textContent = doneRuns.length ? tr('tab.clear_count', { n: doneRuns.length }) : '';
+
+  // 1秒ごとに組み直すと、押そうとしたボタンが指の下で作り直される（hover も外れる）。
+  // 中身が変わったときだけ作る。
+  // 「未締」の札は phase が running のまま出るので、機体数もここに入れないと
+  // 最後の1体が done になっても札が切り替わらない（phase が動かないため）。
+  const sig = JSON.stringify(tabs.map((tb) =>
+    [tb.key, tb.phase, tb.title, tb.projectName, tb.startedAt,
+     tb.agentCount, tb.doneCount])) + '|' + currentTab;
+  if (sig === tabsSig) return;
+  tabsSig = sig;
+
+  elTabBar.innerHTML = '';
+  for (const tb of tabs) elTabBar.appendChild(buildTab(tb));
+}
+
+function buildTab(tb) {
+  const isHist = tb.runId !== null;
+  const item = document.createElement('div');
+  item.className = 'tab-item' + (isHist ? ' history' : '')
+                 + (tb.key === currentTab ? ' active' : '');
+  item.dataset.key = tb.key;
+
+  const unfinished = isUnfinishedTab(tb);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tab';
+  btn.title = tr('tab.tip', {
+                kind:    tr(isHist ? 'tab.archived' : 'tab.live'),
+                phase:   phaseText(tb.phase, isHist),
+                project: tb.projectName,
+                title:   tb.title,
+                started: tb.startedAt || tr('value.none'),
+              })
+            + (tb.finishedAt ? tr('tab.tip_finished', { finished: tb.finishedAt }) : '')
+            + (tb.agentCount !== null ? tr('tab.tip_agents', { n: tb.agentCount }) : '')
+            + (unfinished ? tr('tab.tip_unfinished') : '');
+
+  // 1段目にプロジェクト名、2段目にミッション名と開始時刻。複数プロジェクトの記録が
+  // 同じ列に並ぶので、プロジェクト名が無いとどれの記録か分からない。
+  const head = document.createElement('div');
+  head.className = 'tab-head';
+  const st = document.createElement('span');
+  st.className = 'tab-status '
+               + (unfinished ? 'unfinished' : (isHist && tb.phase === 'running' ? 'broke' : tb.phase));
+  st.textContent = unfinished ? tr('phase.unfinished_short') : phaseText(tb.phase, isHist);
+  const proj = document.createElement('span');
+  proj.className = 'tab-proj';
+  proj.textContent = tb.projectName;
+  head.appendChild(st);
+  head.appendChild(proj);
+
+  const foot = document.createElement('div');
+  foot.className = 'tab-foot';
+  const title = document.createElement('span');
+  title.className = 'tab-title';
+  title.textContent = tb.title;
+  const when = document.createElement('span');
+  when.className = 'tab-when';
+  when.textContent = fmtStamp(tb.startedAt);
+  foot.appendChild(title);
+  foot.appendChild(when);
+
+  btn.appendChild(head);
+  btn.appendChild(foot);
+  btn.addEventListener('click', () => switchTab(tb.key));
+  item.appendChild(btn);
+
+  // ✕ は消せるものだけに付ける。稼働中・待機中のミッションはサーバーが削除を
+  // 受け付けないので、押しても何も起きないボタンを置かない。
+  if (canDelete(tb)) {
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tab-close';
+    close.textContent = '✕';
+    close.title = tr('tab.delete_one');
+    close.addEventListener('click', (e) => { e.stopPropagation(); askDeleteOne(tb); });
+    item.appendChild(close);
+  }
+  return item;
+}
+
+/** 完了せずに次の start で押し出された記録は「完了」ではない。
+ *  過去の記録では、そこを言い分ける。 */
+function phaseText(phase, isHist) {
+  if (!isHist) return phaseShort(phase);
+  if (phase === 'running') return tr('phase.hist_running');
+  if (phase === 'standby') return tr('phase.hist_standby');
+  return tr('phase.hist_done');
+}
+
+/** タブに出す短い時刻。日付まで出すのは、同じ名前のミッションを別の日に
+ *  走らせたときに記録を区別できないと困るため。 */
+function fmtStamp(iso) {
+  if (!iso) return '';
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return '';
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+// ------------------------------------------------------------------ 過去の記録の読み込み
+
+/** 選ばれた記録を1回だけ取ってきて、いつもの描画機構に流す。
+ *  /api/run は teams の1要素と同じ形を返すので、render() をそのまま使える。 */
+async function loadRun(t, tb) {
+  t.loadState = 'loading';
+  t.els.title.textContent = tb.title;
+  t.els.project.textContent = tb.projectName;
+  showRunNote(t, tr('run.loading'), null);
+
+  // slug には日本語や空白が入るので必ずエンコードする
+  const url = '/api/run?slug=' + encodeURIComponent(t.slug)
+            + (t.runId ? '&runId=' + encodeURIComponent(t.runId) : '');
+  let data = null;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+    data = normalizeState(body);
+    if (!data) throw new Error(tr('run.bad_shape'));
+  } catch (e) {
+    if (!teams.has(t.key)) return;      // 読み込んでいる間に消された記録
+    t.loadState = 'error';
+    showRunNote(t, tr('run.load_failed', { msg: (e && e.message) || e }),
+                () => loadRun(t, tb));
+    return;
+  }
+  if (!teams.has(t.key)) return;
+  t.loadState = 'done';
+  // 経過時間の基準時刻をここで固定する。「いま」を使うと、完了せずに記録された
+  // ミッションの経過が永久に増え続けて、進行中のものと見分けが付かなくなる。
+  t.refNow = freezeRef(data, tb);
+  t.archiveAt = Number.isFinite(t.refNow) ? t.refNow : null;
+  t.state = data;
+  t.prevSig = null;
+  t.missionKey = data.mission.startedAt || null;
+  render(t, data);
+  updateClocks(t);   // 記録は変化しないので、時計はここで1回入れるだけ
+}
+
+/** 読み込み中・失敗を系統樹の場所に出す。render() が最初に片付けるので残らない。 */
+function showRunNote(t, text, retry) {
+  t.els.links.innerHTML = '';
+  t.els.gens.innerHTML = '';
+  const note = document.createElement('div');
+  note.className = 'empty-note run-note';
+  note.textContent = text;
+  if (retry) {
+    const br = document.createElement('br');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dialog-btn';
+    btn.textContent = tr('run.retry');
+    btn.style.marginTop = '12px';
+    btn.addEventListener('click', retry);
+    note.appendChild(br);
+    note.appendChild(btn);
+  }
+  t.els.gens.appendChild(note);
+}
+
+/** 過去の記録における「現在時刻」。終了時刻 → 最後のログ → 開始時刻 の順に探す。
+ *  どれも読めなければ NaN を返し、経過は「—」になる（動かすより出さないほうがよい）。 */
+function freezeRef(s, tb) {
+  const cands = [tb && tb.finishedAt, s.mission.finishedAt,
+                 s.log.length ? s.log[s.log.length - 1].at : null,
+                 tb && tb.startedAt, s.mission.startedAt];
+  for (const c of cands) {
+    if (!c) continue;
+    const ms = Date.parse(c);
+    if (!Number.isNaN(ms)) return ms;
+  }
+  return NaN;
+}
+
+/** /api/run の応答を render() が触る形にそろえる。1件ずつの読み込みでしか通らないので、
+ *  ここは毎秒の負荷にならない。壊れた記録1件で画面全体が落ちないようにするための保険。 */
+function normalizeState(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+  const mission = Object.assign({}, (s.mission && typeof s.mission === 'object') ? s.mission : {});
+  if (mission.phase !== 'standby' && mission.phase !== 'running' && mission.phase !== 'done') {
+    mission.phase = 'done';
+  }
+  if (!mission.title) mission.title = tr('run.untitled');
+  if (!mission.summary || typeof mission.summary !== 'object') mission.summary = null;
+  // waiting はサーバーが導出して付ける真偽値。古いサーバーには無いので、
+  // 欠けていれば false として扱う（表示が「稼働中」に戻るだけで壊れない）。
+  const agents = (Array.isArray(s.agents) ? s.agents : [])
+    .filter((a) => a && typeof a === 'object' && a.id)
+    .map((a) => (a.status === 'standby' || a.status === 'running' || a.status === 'done')
+                ? a : Object.assign({}, a, { status: 'standby' }))
+    .map((a) => (typeof a.waiting === 'boolean' && a.status === 'running')
+                ? a : Object.assign({}, a, { waiting: false }));
+  return {
+    runId:   s.runId || null,
+    project: (s.project && typeof s.project === 'object') ? s.project : {},
+    mission, agents,
+    log:     (Array.isArray(s.log) ? s.log : []).filter((e) => e && typeof e === 'object'),
+    sources: (s.sources && typeof s.sources === 'object') ? s.sources : null,
+  };
+}
+
+// ================================================================ 確認・報告ダイアログ
+const elDlg       = need('#dialog-overlay');
+const elDlgBox    = need('.dialog-box', elDlg);
+const elDlgTitle  = need('.dialog-title', elDlg);
+const elDlgBody   = need('.dialog-body', elDlg);
+const elDlgOk     = need('.dialog-ok', elDlg);
+const elDlgCancel = need('.dialog-cancel', elDlg);
+let dlgResolve = null;
+
+/** 問いかけを出して、押されたボタンを返す。cancelText を省くと「知らせるだけ」になる。 */
+function openDialog(opt) {
+  // 枠が無いなら「やめる」を返して終わる。ここで例外にすると、呼び手の await が
+  // 拒否されて削除処理の途中で止まる。押しても何も起きない、のほうがまだ安全。
+  if (!elDlg || !elDlgBox || !elDlgTitle || !elDlgBody || !elDlgOk || !elDlgCancel) {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    closeDialog(false);                  // 前の問いかけが残っていたら「やめる」で畳む
+    elDlgTitle.textContent = opt.title || tr('dialog.confirm');
+    elDlgBox.classList.toggle('danger', !!opt.danger);
+    elDlgBody.innerHTML = '';
+    for (const ln of (opt.lines || [])) {
+      const d = document.createElement('div');
+      d.className = 'dialog-line' + (ln && ln.kind ? ' ' + ln.kind : '');
+      d.textContent = (ln && ln.text !== undefined) ? ln.text : String(ln);
+      elDlgBody.appendChild(d);
+    }
+    elDlgOk.textContent = opt.okText || tr('dialog.ok');
+    elDlgOk.classList.toggle('danger', !!opt.danger);
+    elDlgCancel.hidden = !opt.cancelText;
+    if (opt.cancelText) elDlgCancel.textContent = opt.cancelText;
+    dlgResolve = resolve;
+    elDlg.hidden = false;
+    elDlgOk.focus();
+  });
+}
+
+function closeDialog(ok) {
+  if (!elDlg || elDlg.hidden) return;
+  elDlg.hidden = true;
+  const r = dlgResolve;
+  dlgResolve = null;
+  if (r) r(!!ok);
+}
+
+bind(elDlgOk, 'click', () => closeDialog(true));
+bind(elDlgCancel, 'click', () => closeDialog(false));
+bind(elDlg, 'click', (e) => { if (e.target === elDlg) closeDialog(false); });
+
+// ================================================================ 記録の削除
+// 押した結果をブラウザ内の配列から外すだけにしてはいけない。1秒ごとのポーリングで
+// サーバーの一覧に戻されるので、必ず POST して、サーバーが「消した」と答えたものだけを
+// 画面から落とす。消せなかったものは黙って捨てず、そのまま出す。
+
+async function askDeleteOne(tb) {
+  const isHist = tb.runId !== null;
+  // 現在のミッションを消すとき、そのプロジェクトに他の記録が1枚も無ければ、
+  // サーバーは空の入れ物を残さずプロジェクトごとゴミ箱へ移す。押す前に断っておく。
+  const lastOfProject = !isHist && !tabs.some((x) => x.slug === tb.slug && x.key !== tb.key);
+  const lines = [
+    { text: tb.projectName + ' / ' + tb.title },
+    { text: tr('dialog.delete_one.started', { when: fmtStamp(tb.startedAt) || tr('value.none') })
+          + (isHist ? tr('dialog.delete_one.run_id', { runId: tb.runId })
+                    : tr('dialog.delete_one.current')), kind: 'sub' },
+    { text: tr('dialog.delete_one.body') },
+  ];
+  if (lastOfProject) {
+    lines.push({ text: tr('dialog.delete_one.last'), kind: 'sub' });
+  }
+  lines.push({ text: tr('dialog.delete.trash'), kind: 'sub' });
+
+  const ok = await openDialog({
+    title: tr('dialog.delete_one.title'), danger: true, lines,
+    okText: tr('dialog.delete_one.ok'), cancelText: tr('dialog.cancel'),
+  });
+  if (!ok) return;
+  await deleteRuns([{ slug: tb.slug, runId: tb.runId }]);
+}
+
+async function askDeleteDone() {
+  const targets = tabs.filter(isDoneRun);
+  if (!targets.length) return;
+  const ok = await openDialog({
+    title: tr('dialog.delete_done.title'), danger: true,
+    lines: [
+      { text: tr('dialog.delete_done.body', { n: targets.length }) },
+      { text: tr('dialog.delete.trash'), kind: 'sub' },
+      { text: tr('dialog.delete_done.keep'), kind: 'sub' },
+    ],
+    okText: tr('dialog.delete_done.ok', { n: targets.length }), cancelText: tr('dialog.cancel'),
+  });
+  if (!ok) return;
+  await deleteRuns(targets.map((tb) => ({ slug: tb.slug, runId: tb.runId })));
+}
+
+/** phase 指定でもまとめて消せるが、runs を明示して投げる。そうしないと
+ *  「何が消えて何が残ったか」を応答と突き合わせられない。 */
+async function deleteRuns(runs) {
+  let data = null;
+  try {
+    const res = await fetch('/api/history/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runs }),
+      cache: 'no-store',
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+    data = body || {};
+  } catch (e) {
+    await openDialog({
+      title: tr('dialog.delete_failed.title'), danger: true,
+      lines: [{ text: tr('dialog.delete_failed.body') },
+              { text: String((e && e.message) || e), kind: 'bad' }],
+      okText: tr('dialog.close'),
+    });
+    return;
+  }
+
+  const failed = Array.isArray(data.failed) ? data.failed : [];
+  const failedKeys = new Set();
+  for (const f of failed) {
+    if (f && typeof f === 'object' && f.slug) failedKeys.add(tabKey(f.slug, f.runId || null));
+  }
+
+  // 消えたものの器を捨て、タブ一覧からも外す。次の /api/state でも返ってこないので、
+  // ここでの反映と1秒後の状態は一致する（＝押しても戻る、が起きない）。
+  const asked = new Set(runs.map((r) => tabKey(r.slug, r.runId)));
+  for (const key of asked) {
+    if (failedKeys.has(key)) continue;
+    const t = teams.get(key);
+    if (t) destroyTeam(t);
+  }
+  applyTabs(tabs.filter((tb) => !asked.has(tb.key) || failedKeys.has(tb.key)));
+
+  if (failed.length) {
+    const lines = [
+      { text: tr('dialog.delete_partial.done', {
+                n: typeof data.deleted === 'number' ? data.deleted : (asked.size - failed.length) }) },
+      { text: tr('dialog.delete_partial.fail', { n: failed.length }) },
+    ];
+    for (const f of failed) lines.push({ text: tr('dialog.bullet', { text: describeFailed(f) }), kind: 'bad' });
+    await openDialog({ title: tr('dialog.delete_partial.title'), lines, okText: tr('dialog.close') });
+  }
+  tick();   // サーバーの現状で即座に揃え直す（次のポーリングまで待たない）
+}
+
+function describeFailed(f) {
+  if (typeof f === 'string') return f;
+  if (!f || typeof f !== 'object') return String(f);
+  const who = (f.slug || '?') + (f.runId ? ' / ' + f.runId : '');
+  const why = f.error || f.reason || f.message || '';
+  return why ? who + ' — ' + why : who;
+}
+
+// ================================================================ イベントハンドラ
+/** +/− に「押しっぱなしで連続送り」を付ける。1%〜500% を飛び石で渡るのに指の連打を
+ *  強いないため。click と pointerdown は通常のクリックで両方飛ぶので、長押しで既に
+ *  進めていたら直後の click を捨てる（キーボードの Enter/Space は click しか飛ばないので
+ *  この判定に掛からず、そのまま1段階進む）。 */
+function bindZoomHold(btn, dir) {
+  if (!btn) return;
+  let holdTimer = null;
+  let repeated = false;
+  const step = () => setZoom(nextZoomStep(dir));
+  const stopHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    repeated = false;
+    stopHold();
+    holdTimer = setTimeout(function repeat() {
+      repeated = true;
+      step();
+      holdTimer = setTimeout(repeat, 100);
+    }, 450);
+  });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, stopHold);
+  btn.addEventListener('click', () => {
+    if (repeated) { repeated = false; return; }
+    step();
+  });
+}
+bindZoomHold(elZoomOut, -1);
+bindZoomHold(elZoomIn, 1);
+
+bind(elZoomAuto, 'click', () => setAutoFit(!autoFitOn));
+
+// 表示部をクリックすると数値入力に変わる。1%刻みで目的の値へ一発で行ける唯一の手段。
+function beginZoomEdit() {
+  if (!elZoomInput || !elZoomDisplay) return;
+  elZoomInput.value = String(zoomLevel);
+  elZoomDisplay.hidden = true;
+  elZoomInput.hidden = false;
+  elZoomInput.focus();
+  elZoomInput.select();
+}
+function endZoomEdit() {
+  if (elZoomInput) elZoomInput.hidden = true;
+  if (elZoomDisplay) elZoomDisplay.hidden = false;
+}
+function commitZoomEdit() {
+  if (elZoomInput && !elZoomInput.hidden) {
+    const v = Math.round(parseFloat(elZoomInput.value));
+    if (!Number.isNaN(v)) setZoom(v);
+  }
+  endZoomEdit();
+}
+bind(elZoomDisplay, 'click', beginZoomEdit);
+bind(elZoomDisplay, 'keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); beginZoomEdit(); }
+});
+bind(elZoomInput, 'keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); commitZoomEdit(); }
+  else if (e.key === 'Escape') { e.preventDefault(); endZoomEdit(); }
+});
+bind(elZoomInput, 'blur', commitZoomEdit);
+
+// 系統樹の上での Ctrl+ホイール。トラックパッドのピンチも ctrlKey=true の合成ホイールとして
+// 届くので同じ実装で拾える。ブラウザ既定のページ拡大を横取りするため preventDefault が要る
+// （wheel は既定で passive ではないので奪える）。歩幅を現在値に比例させると、100% 付近は
+// 細かく、500% 付近は粗く動いて、どの倍率でも同じ操作感になる。
+if (elTeams) {
+  elTeams.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return;
+    if (!e.target || !e.target.closest || !e.target.closest('.tree-scroll')) return;
+    e.preventDefault();
+    const delta = Math.max(1, Math.round(zoomLevel * ZOOM_WHEEL_RATIO));
+    setZoom(zoomLevel + (e.deltaY < 0 ? delta : -delta));
+  }, { passive: false });
+}
+
+bind(elHistClear, 'click', () => { askDeleteDone(); });
+
+// ================================================================ チームの器
+// tabKey -> ミッション1回分の描画状態。DOM も状態もタブごとに完全に独立させる。
+// 1つの Map/Set を共有すると、別チームの同名IDや同世代が混ざって列や線が壊れる。
+// 系統樹レイアウトの算法（下の「系統樹レイアウト」節）は外部状態を持たない純関数なので、
+// チームごとに呼び分けるだけで足りる。
+const teams = new Map();
+
+// 監視している要素 -> 所属チーム。ResizeObserver のコールバックは entry.target しか
+// 渡してくれないので、そこから所属チームを引くための対応表。
+const boxOwner = new WeakMap();
+
+// キャンバスの寸法が変わったら線を引き直す。ここで再配置すると、レイアウト自身が
+// キャンバスの寸法を変えるので無限ループになる。描画だけにとどめる。
+//
+// 縦の中央寄せは「スクロール枠の見える高さ」に依存する。この高さはウィンドウの
+// リサイズ以外でも変わる：ミッション名の折り返し、読み込み警告の出入り、
+// 横スクロールバーの出入り、そして別のチームが増減して縦の取り分が変わったとき。
+// これらでは window の resize が飛ばず、キャンバスの寸法も変わらないことがあるので、
+// キャンバスとは別にスクロール枠も見る。1px のヒステリシスは往復を止めるため。
+// 監視器は1つで足り、チームごとに observe() を足していく。
+const sizeWatch = new ResizeObserver((entries) => {
+  for (const en of entries) {
+    const t = boxOwner.get(en.target);
+    if (!t) continue;                        // 片付け済みのチームの分は捨てる
+    if (en.target === t.els.canvas) { drawLinks(t); continue; }
+    const h = t.els.scroll.clientHeight;
+    // 横だけの変化。縦が変わる経路は下の scheduleLayout → applyLayout が自動フォーカスを
+    // 呼ぶが、ここは枠の**幅だけ**が変わる唯一の入口なので、ここでも呼ぶ必要がある。
+    if (Math.abs(h - t.lastAvailH) < 1) { drawLinks(t); scheduleAutoFit(t); continue; }
+    t.lastAvailH = h;
+    scheduleLayout(t);
+  }
+});
+
+function createTeam(slug, runId, live) {
+  const root = teamTpl.content.firstElementChild.cloneNode(true);
+  // <template> の中身は document のツリーに居ないので I18N.apply(document) が届かない。
+  // 複製した直後にここで1回訳す（以後は apply(document) が拾えるようになる）。
+  if (i18nOk) window.I18N.apply(root);
+  const key = tabKey(slug, runId || null);
+  root.dataset.slug = slug;
+  root.dataset.key = key;
+  const q = (sel) => root.querySelector(sel);
+  const t = {
+    key, slug, runId: runId || null, live: !!live, root,
+    els: {
+      bar:      q('.team-bar'),
+      phase:    q('.phase'),
+      archive:  q('.team-archive'),
+      title:    q('.team-title'),
+      project:  q('.team-project'),
+      elapsed:  q('.m-elapsed'),
+      agents:   q('.m-agents'),
+      tokens:   q('.m-tokens'),
+      scroll:   q('.tree-scroll'),
+      canvas:   q('.tree-canvas'),
+      links:    q('.links'),
+      gens:     q('.generations'),
+      summary:  q('.summary'),
+      log:      q('.log'),
+      logCount: q('.log-count'),
+      warnings: q('.warnings'),
+    },
+    cards:   new Map(),   // id -> { root, card, metrics..., status }
+    cols:    new Map(),   // generation -> { col, body }
+    logKeys: new Set(),   // 重複排除キーは at|who|text。チームごとに分けるので衝突しない
+    layoutOrder:  [],     // 深さ優先順の機体。縦順の決定はこれが基準
+    // 木の実際の高さ。DOM から測ると .gen-body が max(木の高さ, 枠の高さ) で底上げされて
+    // いて「枠より小さい」ことが分からなくなるので、layoutTree が計った値を別に持つ。
+    contentH:     0,
+    layoutRaf:    0,
+    followRaf:    0,
+    followUntil:  0,
+    recenterOnce: true,   // このチームが現れた直後だけ、指令塔を自分の枠の縦中央へ寄せる
+    lastAvailH:   -1,     // スクロール枠の見える高さ（変化したときだけ再配置する）
+    prevSig:      null,   // 内容が変わったかの判定用
+    state:        null,
+    missionKey:   null,   // 同じプロジェクトで次のミッションが始まったことを見分ける
+    // live＝/api/state が毎秒流してくる器。そうでないものは /api/run で1回取って終わり。
+    // loadState は同じ記録を何度も取りに行かないための番人（'live' は取得済みと同じ扱い）。
+    loadState:    live ? 'live' : 'idle',
+    refNow:       null,   // 経過時間の基準時刻（null＝いま。止まった画面では固定する）
+    archiveAt:    null,   // 記録された時刻（バーの「過去の記録」札に出す）
+  };
+  teams.set(key, t);
+  elTeams.appendChild(root);
+  boxOwner.set(t.els.canvas, t);
+  boxOwner.set(t.els.scroll, t);
+  sizeWatch.observe(t.els.canvas);
+  sizeWatch.observe(t.els.scroll);
+  applyZoom();   // あとから増えた器にも今の拡大率を効かせる
+  return t;
+}
+
+/** 器ごと捨てる。稼働中のチームはサーバーが返さなくなったとき（稼働終了かつ
+ *  .current でもない）、過去の記録はタブ一覧から消えたとき（削除されたとき）。 */
+function destroyTeam(t) {
+  // 予約済みの再配置・線の追従を取り消す。残すと、消えた機体を参照したまま走る。
+  if (t.layoutRaf) { cancelAnimationFrame(t.layoutRaf); t.layoutRaf = 0; }
+  if (t.followRaf) { cancelAnimationFrame(t.followRaf); t.followRaf = 0; }
+  sizeWatch.unobserve(t.els.canvas);
+  sizeWatch.unobserve(t.els.scroll);
+  boxOwner.delete(t.els.canvas);
+  boxOwner.delete(t.els.scroll);
+  t.root.remove();
+  teams.delete(t.key);
+}
+
+// ------------------------------------------------------------------ 書式
+
+function serverNow() { return Date.now() + clockSkew; }
+
+function fmtSec(sec) {
+  if (sec === null || sec === undefined || Number.isNaN(sec)) return '—';
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const p = (n) => String(n).padStart(2, '0');
+  return h > 0 ? h + ':' + p(m) + ':' + p(r) : p(m) + ':' + p(r);
+}
+function fmtNum(n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  return fmtLocaleNum(n);
+}
+function fmtTokens(n) {
+  if (n === null || n === undefined) return '—';
+  if (n >= 10000) return (n / 1000).toFixed(n >= 100000 ? 0 : 1) + 'k';
+  return fmtNum(n);
+}
+function fmtClock(iso) {
+  if (!iso) return '--:--';
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '--:--';
+  const d = new Date(t);
+  const p = (n) => String(n).padStart(2, '0');
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+/** 経過秒。refMs は「どの時点までの経過か」で、null/undefined なら今この瞬間。
+ *  過去の記録では記録された時刻を渡して時計を止める（動き続けると、完了せずに
+ *  記録されたミッションが進行中のものと見分けられなくなる）。
+ *  基準が読めない（NaN）ときは null を返し、表示は「—」になる。 */
+function elapsedFrom(iso, refMs) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const now = (refMs === null || refMs === undefined) ? serverNow() : refMs;
+  if (!Number.isFinite(now)) return null;
+  return Math.max(0, (now - t) / 1000);
+}
+
+// ------------------------------------------------------------------ ロボット
+
+function robotSvg() {
+  // viewBox 120x166 は .robot の 94x130 と同じ縦横比。倍率 0.783 でレターボックスが出ない。
+  // 頭と胴は1つの卵（x14-106 / y28-154）。上半分は縦半径78で細く、下半分は48で丸い。
+  // 接地影は置かない（足を消したあと、卵の下の影だけが台座のように残って見えるため）。
+  // 手は卵より先に描いて根元を隠す真円。肩を軸に回すと中心が軸から9しか離れておらず
+  // 動きが見えないため、CSS では平行移動で動かす（動く範囲は卵から離れない値に検算済み）。
+  // 完了時の跳ねは viewBox の内側に収まる範囲に抑えてある。祖先の .tree-scroll が
+  // overflow:auto なので、枠から出た分はスクロール領域の端で切られるため。
+  // 塗り定義は #rb-defs（ページに1つ）を参照する。
+  return `<svg class="robot" viewBox="0 0 120 166" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <g class="rb-figure">
+    <g class="rb-antenna">
+      <path class="rb-rod" d="M52 36 L43 17"/>
+      <circle class="rb-bulb" cx="43" cy="16" r="5"/>
+    </g>
+    <circle class="rb-arm rb-arm-l" cx="21" cy="112" r="13"/>
+    <circle class="rb-arm rb-arm-r" cx="99" cy="112" r="13"/>
+    <path class="rb-egg" d="M14 106 A46 78 0 0 1 106 106 A46 48 0 0 1 14 106 Z"/>
+    <g clip-path="url(#rbEggClip)">
+      <ellipse class="rb-egg-shade" cx="88" cy="130" rx="34" ry="32"/>
+    </g>
+    <circle class="rb-socket" cx="60" cy="126" r="6.4"/>
+    <circle class="rb-chest-standby rb-s rb-s-standby" cx="60" cy="126" r="4.4"/>
+    <circle class="rb-chest-running rb-s rb-s-running" cx="60" cy="126" r="4.4"/>
+    <circle class="rb-chest-done rb-s rb-s-done" cx="60" cy="126" r="4.4"/>
+    <rect class="rb-bezel" x="30" y="53" width="60" height="36" rx="18"/>
+    <rect class="rb-visor" x="33" y="56" width="54" height="30" rx="15"/>
+    <g clip-path="url(#rbVisorClip)">
+      <rect class="rb-scan rb-s rb-s-running" x="21" y="56" width="9" height="30"/>
+    </g>
+    <g class="rb-s rb-s-running">
+      <circle class="rb-aura" cx="46" cy="71" r="11"/>
+      <circle class="rb-aura" cx="74" cy="71" r="11"/>
+    </g>
+    <g class="rb-s rb-s-standby rb-g-eye">
+      <circle class="rb-eye rb-eye-l rb-blink" cx="46" cy="71" r="6"/>
+      <circle class="rb-eye rb-eye-r rb-blink" cx="74" cy="71" r="6"/>
+    </g>
+    <g class="rb-s rb-s-running rb-g-eye">
+      <circle class="rb-eye rb-eye-l rb-blink" cx="46" cy="71" r="6.4"/>
+      <circle class="rb-eye rb-eye-r rb-blink" cx="74" cy="71" r="6.4"/>
+    </g>
+    <g class="rb-s rb-s-done rb-g-eye">
+      <path class="rb-eye-arc" d="M39 76 Q46 60 53 76"/>
+      <path class="rb-eye-arc" d="M67 76 Q74 60 81 76"/>
+    </g>
+    <rect class="rb-visor-gloss" x="36" y="58" width="48" height="9" rx="4.5"/>
+    <g class="rb-s rb-s-standby"><rect class="rb-mouth-standby" x="52" y="92" width="16" height="7" rx="3.5"/></g>
+    <g class="rb-s rb-s-running"><rect class="rb-mouth-running" x="51" y="91.5" width="18" height="8" rx="4"/></g>
+    <g class="rb-s rb-s-done"><path class="rb-mouth-done" d="M48 91 H72 A12 10 0 0 1 48 91 Z"/></g>
+    <g class="rb-s rb-s-done rb-g-spark">
+      <path class="rb-spark rb-spark1" d="M14 42 Q15.3 46.7 20 48 Q15.3 49.3 14 54 Q12.7 49.3 8 48 Q12.7 46.7 14 42 Z"/>
+      <path class="rb-spark rb-spark2" d="M106 42 Q107.3 46.7 112 48 Q107.3 49.3 106 54 Q104.7 49.3 100 48 Q104.7 46.7 106 42 Z"/>
+    </g>
+  </g>
+</svg>`;
+}
+
+// ------------------------------------------------------------------ ツリー構造
+
+function effectiveParentId(agent, ids) {
+  if (agent.parentId && ids.has(agent.parentId) && agent.parentId !== agent.id) return agent.parentId;
+  return null;
+}
+
+/** 指令塔から深さ優先で並べる。同じ列の中で親子が近くに並ぶようにするため。 */
+function orderAgents(agents) {
+  const ids = new Set(agents.map((a) => a.id));
+  const children = new Map();
+  const roots = [];
+  for (const a of agents) {
+    const p = effectiveParentId(a, ids);
+    if (p === null) { roots.push(a); continue; }
+    if (!children.has(p)) children.set(p, []);
+    children.get(p).push(a);
+  }
+  const out = [];
+  const seen = new Set();
+  (function walk(list) {
+    for (const a of list) {
+      if (seen.has(a.id)) continue;
+      seen.add(a.id);
+      out.push(a);
+      walk(children.get(a.id) || []);
+    }
+  })(roots);
+  for (const a of agents) if (!seen.has(a.id)) out.push(a); // 循環などの取りこぼし救済
+  return out;
+}
+
+function genLabel(g) {
+  return g === 0 ? tr('gen.command') : tr('gen.nth', { n: g });
+}
+
+function ensureColumn(t, g) {
+  if (t.cols.has(g)) return t.cols.get(g);
+  const col = document.createElement('div');
+  col.className = 'gen-col';
+  col.dataset.gen = String(g);
+  const head = document.createElement('div');
+  head.className = 'gen-head';
+  head.textContent = genLabel(g);
+  const body = document.createElement('div');
+  body.className = 'gen-body';
+  // 縦の並べ方は layoutTree() が .agent の top で決める。ここで flex にはしない
+  // （.agent は position:absolute なので flex アイテムにならず gap も効かない）。
+  col.appendChild(head);
+  col.appendChild(body);
+
+  // 世代の昇順を保って挿入する
+  let inserted = false;
+  for (const child of [...t.els.gens.children]) {
+    if (Number(child.dataset.gen) > g) { t.els.gens.insertBefore(col, child); inserted = true; break; }
+  }
+  if (!inserted) t.els.gens.appendChild(col);
+
+  // head も控える。世代見出しは一度作ったら render() が触らない（ensureColumn は
+  // 既にある列をそのまま返す）ので、言語を変えたときに書き換える相手が要る。
+  const entry = { col, body, head };
+  t.cols.set(g, entry);
+  return entry;
+}
+
+// ------------------------------------------------------------------ カード生成・更新
+
+function createAgent(t, a) {
+  const root = document.createElement('div');
+  root.className = 'agent ' + a.status + ' born';
+  root.dataset.id = a.id;
+
+  const slot = document.createElement('div');
+  slot.className = 'robot-slot';
+  slot.innerHTML = robotSvg();
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  // 動かない札（自己申告・報告待ち・トークン・ツール）は data-i18n に任せる。
+  // 言語を変えたとき、I18N.apply(document) が画面じゅうのカードをまとめて塗り直す。
+  // 1つ目の見出し（経過／所要）だけは状態で入れ替わるので、updateAgent が
+  // data-i18n 属性ごと差し替える（そうしないと apply() が「経過」で塗り戻す）。
+  card.innerHTML =
+    '<div class="c-top"><span class="c-name"></span><span class="c-id"></span></div>' +
+    '<div class="c-badges"><span class="badge b-model"></span>' +
+      '<span class="badge b-src self" hidden data-i18n="card.self_reported"></span>' +
+      '<span class="badge b-wait" hidden data-i18n="card.awaiting"></span></div>' +
+    '<div class="c-mission"></div>' +
+    '<div class="c-metrics">' +
+      '<div class="metric"><span class="mk" data-i18n="stat.elapsed"></span><span class="mv m-time">—</span></div>' +
+      '<div class="metric"><span class="mk" data-i18n="stat.tokens"></span><span class="mv m-tok">—</span></div>' +
+      '<div class="metric"><span class="mk" data-i18n="stat.tools"></span><span class="mv m-tool">—</span></div>' +
+    '</div>' +
+    '<div class="c-result" hidden></div>';
+  if (i18nOk) window.I18N.apply(card);
+
+  root.appendChild(slot);
+  root.appendChild(card);
+
+  const entry = {
+    root, card,
+    name:   card.querySelector('.c-name'),
+    id:     card.querySelector('.c-id'),
+    model:  card.querySelector('.b-model'),
+    src:    card.querySelector('.b-src'),
+    mission:card.querySelector('.c-mission'),
+    wait:   card.querySelector('.b-wait'),
+    time:   card.querySelector('.m-time'),
+    timeK:  card.querySelector('.metric .mk'),
+    tok:    card.querySelector('.m-tok'),
+    tool:   card.querySelector('.m-tool'),
+    result: card.querySelector('.c-result'),
+    status: null,
+    waiting: null,
+    top:    null,   // layoutTree が入れた縦位置（px、.gen-body 基準）。null は未配置
+    h:      0,      // layoutTree が実測した高さ
+  };
+  root.addEventListener('animationend', function once(e) {
+    if (e.animationName === 'pop') root.classList.remove('born');
+  });
+  t.cards.set(a.id, entry);
+  return entry;
+}
+
+function updateAgent(t, entry, a) {
+  if (entry.status !== a.status) {
+    entry.root.classList.remove('standby', 'running', 'done');
+    entry.root.classList.add(a.status);
+    entry.status = a.status;
+  }
+  // 報告待ちは status を上書きせず、running に重ねる別のクラスにする。
+  // 経過時間・線の描き方・集計はどれも「稼働中」のままで正しいため。
+  if (entry.waiting !== a.waiting) {
+    entry.root.classList.toggle('waiting', a.waiting);
+    entry.wait.hidden = !a.waiting;
+    entry.waiting = a.waiting;
+  }
+  entry.name.textContent = a.name;
+  entry.id.textContent = a.id;
+  // 空 = モデル未指定。サーバーは言語に依存しない空文字で寄こすので、訳すのはここ。
+  entry.model.textContent = a.model || tr('card.unknown_model');
+  entry.src.hidden = a.source !== 'self';
+  entry.mission.textContent = a.mission || tr('card.no_mission');
+  entry.mission.title = a.mission || '';
+
+  const r = a.result || {};
+  setMetric(entry.tok, a.status === 'done' ? fmtTokens(r.tokens) : '—', a.status === 'done' && r.tokens !== null);
+  setMetric(entry.tool, a.status === 'done' ? fmtNum(r.toolCalls) : '—', a.status === 'done' && r.toolCalls !== null);
+  // 属性ごと差し替える。textContent だけ変えると、言語を変えたときに
+  // I18N.apply() が古いキー（stat.elapsed）で「経過」に塗り戻してしまう。
+  const timeKey = a.status === 'done' ? 'stat.took' : 'stat.elapsed';
+  entry.timeK.setAttribute('data-i18n', timeKey);
+  entry.timeK.textContent = tr(timeKey);
+
+  if (a.status === 'done' && r.headline) {
+    entry.result.hidden = false;
+    entry.result.textContent = r.headline;
+  } else {
+    entry.result.hidden = true;
+  }
+  updateAgentClock(entry, a, t.refNow);
+}
+
+function setMetric(el, text, hasValue) {
+  el.textContent = text;
+  el.classList.toggle('none', !hasValue);
+}
+
+function updateAgentClock(entry, a, refNow) {
+  let sec = null;
+  if (a.status === 'running') sec = elapsedFrom(a.startedAt, refNow);
+  else if (a.status === 'done') sec = a.result ? a.result.elapsedSec : null;
+  setMetric(entry.time, fmtSec(sec), sec !== null);
+}
+
+/** そのチームの枠で次のミッションが始まったら、前のミッションの表示を完全に捨てる。
+ *  slug が同じままミッションが入れ替わる（同じプロジェクトで start をやり直す）ことが
+ *  あるので、器を作り直すのではなく中身だけを空にする。これをしないと logKeys が
+ *  残ったままになり、前のミッションのログ行が新しいログに混ざる。 */
+function resetView(t) {
+  // 予約済みの再配置・線の追従を取り消す。残すと、消えた機体を参照したまま走る。
+  if (t.layoutRaf) { cancelAnimationFrame(t.layoutRaf); t.layoutRaf = 0; }
+  if (t.followRaf) { cancelAnimationFrame(t.followRaf); t.followRaf = 0; }
+  for (const [, entry] of t.cards) entry.root.remove();
+  t.cards.clear();
+  for (const [, entry] of t.cols) { entry.body.style.removeProperty('height'); entry.col.remove(); }
+  t.cols.clear();
+  t.layoutOrder = [];
+  t.logKeys.clear();
+  t.els.log.innerHTML = '';
+  t.els.links.innerHTML = '';
+  t.els.gens.innerHTML = '';
+  // 大きいミッションから小さいミッションへ入れ替わったとき、何も無い領域を
+  // 表示したままにしない（絶対配置で総高が変わるので放置すると目立つ）。
+  t.els.scroll.scrollTop = 0;
+  t.els.scroll.scrollLeft = 0;
+  t.recenterOnce = true;
+  t.lastAvailH = -1;
+  t.contentH = 0;
+  t.els.summary.hidden = true;
+  delete t.els.summary.dataset.key;
+  t.prevSig = null;
+  t.state = null;
+}
+
+// ------------------------------------------------------------------ 描画
+
+function render(t, s) {
+  // 読み込み中・失敗の案内はここで片付ける（機体が0体のときの案内とは別物）
+  const rn = t.els.gens.querySelector('.run-note');
+  if (rn) rn.remove();
+
+  // --- ミッションバー
+  const isHist = t.runId !== null;      // 過去の記録（history/<runId>）
+  const frozen = !t.live;               // もう更新されない画面（記録、または流れてこなくなったもの）
+  const workers = s.agents.filter((a) => a.id !== COMMAND_ID);
+  const doneCount = workers.filter((a) => a.status === 'done').length;
+
+  // 全機帰還したのに締められていない状態。動いている画面のときだけ言う
+  // （止まった記録に「締めてください」と出しても、もう締められない）。
+  const unfinished = !frozen && s.mission.phase === 'running'
+                  && workers.length > 0 && doneCount === workers.length;
+
+  const phaseEl = t.els.phase;
+  // 止まった画面で「稼働中」と出すと、いま動いているように読める。言い方を変える。
+  const phaseKey = unfinished
+    ? 'phase.unfinished'
+    : frozen
+      ? { standby: 'phase.hist_standby', running: 'phase.hist_running', done: 'phase.hist_done' }[s.mission.phase]
+      : { standby: 'phase.standby', running: 'phase.running', done: 'phase.done' }[s.mission.phase];
+  phaseEl.textContent = phaseKey ? tr(phaseKey) : tr('value.none');
+  phaseEl.className = 'phase ' + (unfinished ? 'unfinished' : s.mission.phase);
+  phaseEl.title = unfinished ? tr('phase.unfinished_tip') : '';
+  if (frozen) t.root.dataset.frozen = '';
+  else delete t.root.dataset.frozen;
+  t.els.title.textContent = s.mission.title;
+
+  // 過去の記録は必ず印を付ける。稼働中の画面と同じ見た目で出すと、
+  // 止まった時計を「いま動いているもの」と読み違える。
+  if (isHist) {
+    const stamp = fmtStamp(s.mission.finishedAt) || fmtStamp(s.mission.startedAt)
+                || (t.archiveAt ? fmtStamp(new Date(t.archiveAt).toISOString()) : '');
+    t.els.archive.hidden = false;
+    t.els.archive.textContent = tr('archive.badge') + (stamp ? ' ' + stamp : '');
+    t.els.archive.title = tr('archive.tip', {
+      runId:    t.runId,
+      started:  s.mission.startedAt  || tr('value.none'),
+      finished: s.mission.finishedAt || tr('value.none'),
+    });
+  } else {
+    t.els.archive.hidden = true;
+  }
+
+  // どのチームかの手掛かり。名前は詰めて出すので、フルパスは title 属性に持たせる。
+  const proj = s.project || {};
+  t.els.project.textContent = proj.name || proj.slug || '';
+  t.els.project.title = proj.path || '';
+
+  t.els.agents.textContent = workers.length ? doneCount + ' / ' + workers.length : '—';
+
+  const toks = workers.map((a) => (a.result ? a.result.tokens : null)).filter((v) => typeof v === 'number');
+  t.els.tokens.textContent = toks.length ? fmtNum(toks.reduce((x, y) => x + y, 0)) : '—';
+
+  // --- 空のとき（チームはあるが機体がまだ0体。チームが0のときの #standby とは別物）
+  if (s.agents.length === 0) {
+    if (!t.els.gens.querySelector('.empty-note')) {
+      // 過去の記録に「これから始めるなら」の案内を出しても意味が無いので出し分ける。
+      // 訳文をそのまま innerHTML へ入れるのは standby.line3 だけで、そこに <code> が
+      // 入るのは文言表の中身として決まっている（利用者の入力はここを通らない）。
+      // 他の行は textContent で入れる。
+      const note = document.createElement('div');
+      note.className = 'empty-note';
+      if (isHist) {
+        note.appendChild(document.createTextNode(tr('empty.archived_head')));
+        note.appendChild(document.createElement('br'));
+        note.appendChild(document.createElement('br'));
+        note.appendChild(document.createTextNode(tr('empty.archived_body')));
+      } else {
+        const cmd = document.createElement('code');
+        cmd.textContent = 'update_state.py start --title "..."';
+        const line3 = document.createElement('span');
+        line3.innerHTML = tr('standby.line3');
+        note.appendChild(document.createTextNode(tr('standby.head')));
+        note.appendChild(document.createElement('br'));
+        note.appendChild(document.createElement('br'));
+        note.appendChild(document.createTextNode(tr('standby.line1')));
+        note.appendChild(document.createElement('br'));
+        note.appendChild(document.createElement('br'));
+        note.appendChild(document.createTextNode(tr('standby.line2')));
+        note.appendChild(document.createElement('br'));
+        note.appendChild(cmd);
+        note.appendChild(document.createElement('br'));
+        note.appendChild(document.createElement('br'));
+        note.appendChild(line3);
+      }
+      t.els.gens.innerHTML = '';
+      t.els.gens.appendChild(note);
+      t.cols.clear(); t.cards.clear();
+    }
+    // 消えた機体につながる線が案内文の上に残らないように落とす。
+    // layoutTree は機体0体では何もしないので、ここで片付ける必要がある。
+    t.els.links.innerHTML = '';
+    t.layoutOrder = [];
+    t.recenterOnce = true;   // 次に機体が現れたら中央から見せ直す
+  } else {
+    const note = t.els.gens.querySelector('.empty-note');
+    if (note) { note.remove(); }
+  }
+
+  // --- 各エージェント
+  // 縦位置は layoutTree() が top で与えるので、列の中では並べ替えない。
+  // 要素を動かすとブラウザはその要素以下の CSS アニメーションを中断して 0 から
+  // 作り直すため、並べ替えると機体が増減するたびに全ロボの呼吸・瞬き・手の動きが
+  // 巻き戻り、表情のクロスフェード（.rb-s の opacity 遷移）も発火しなくなる。
+  // よって DOM を触るのは「世代が変わって列をまたぐとき」だけに限る。
+  const ordered = orderAgents(s.agents);
+  const alive = new Set();
+  for (const a of ordered) {
+    alive.add(a.id);
+    let entry = t.cards.get(a.id);
+    if (!entry) entry = createAgent(t, a);
+    updateAgent(t, entry, a);
+    const target = ensureColumn(t, a.generation).body;
+    if (entry.root.parentNode !== target) {
+      target.appendChild(entry.root);
+      entry.top = null;  // 列が変わった機体は滑らせずに置き直す
+    }
+  }
+  for (const [id, entry] of [...t.cards]) {
+    if (!alive.has(id)) { entry.root.remove(); t.cards.delete(id); }
+  }
+  for (const [g, entry] of [...t.cols]) {
+    if (entry.body.children.length === 0) {
+      // 同じ世代が復活したときに古い高さを持ち越さないよう、inline を落としてから消す
+      entry.body.style.removeProperty('height');
+      entry.col.remove();
+      t.cols.delete(g);
+    }
+  }
+  t.layoutOrder = ordered.filter((a) => t.cards.has(a.id));
+
+  // --- イベントログ
+  // 時刻の span は ti という名前にする。ここを t にすると、チームレコードの t が
+  // ブロックスコープで隠れて、下の t.els.log が span を指してしまう。
+  for (const e of s.log) {
+    const key = (e.at || '') + '|' + e.who + '|' + e.text;
+    if (t.logKeys.has(key)) continue;
+    t.logKeys.add(key);
+    const row = document.createElement('div');
+    row.className = 'log-row';
+    const ti = document.createElement('span'); ti.className = 't'; ti.textContent = fmtClock(e.at);
+    const b = document.createElement('div'); b.className = 'b';
+    const w = document.createElement('span'); w.className = 'w'; w.textContent = e.who;
+    const x = document.createElement('span'); x.className = 'x'; x.textContent = e.text;
+    b.appendChild(w); b.appendChild(x);
+    row.appendChild(ti); row.appendChild(b);
+    t.els.log.appendChild(row);
+  }
+  t.els.logCount.textContent = String(t.logKeys.size);
+  const nearBottom = t.els.log.scrollHeight - t.els.log.scrollTop - t.els.log.clientHeight < 120;
+  if (nearBottom) t.els.log.scrollTop = t.els.log.scrollHeight;
+
+  // --- サマリー
+  const sum = s.mission.summary;
+  const elSum = t.els.summary;
+  if (s.mission.phase === 'done' && sum) {
+    // 言語も鍵に混ぜる。中身が同じでも言語が変われば作り直す必要がある
+    // （そうしないと、言語を変えたあともこの枠だけ前の言語のまま残る）。
+    const key = JSON.stringify(sum) + '|' + (i18nOk ? window.I18N.getLang() : '');
+    if (elSum.dataset.key === key) { elSum.hidden = false; }
+    else {
+    elSum.dataset.key = key;
+    elSum.hidden = false;
+    elSum.innerHTML =
+      '<h3 data-i18n="summary.title"></h3>' +
+      '<div class="head"></div>' +
+      '<div class="grid">' +
+        '<div class="cell"><span class="k" data-i18n="summary.agents"></span><span class="v">' + fmtNum(sum.agentCount) + '</span></div>' +
+        '<div class="cell"><span class="k" data-i18n="summary.tokens"></span><span class="v">' + fmtTokens(sum.totalTokens) + '</span></div>' +
+        '<div class="cell"><span class="k" data-i18n="summary.elapsed"></span><span class="v">' + fmtSec(sum.elapsedSec) + '</span></div>' +
+      '</div>';
+    if (i18nOk) window.I18N.apply(elSum);
+    elSum.querySelector('.head').textContent = sum.headline || '';
+    }
+  } else {
+    elSum.hidden = true;
+    delete elSum.dataset.key;
+  }
+
+  // --- 警告
+  const warns = (s.sources && s.sources.warnings) || [];
+  const elWarn = t.els.warnings;
+  if (warns.length) {
+    elWarn.hidden = false;
+    elWarn.innerHTML = '';
+    const head = document.createElement('b');
+    head.textContent = tr('warn.title');
+    elWarn.appendChild(head);
+    for (const w of warns) {
+      const d = document.createElement('div');
+      d.textContent = tr('dialog.bullet', { text: w });
+      elWarn.appendChild(d);
+    }
+  } else {
+    elWarn.hidden = true;
+  }
+
+  // --- 配置。カードの中身を確定させたあとに測る（完了の結果行で高さが変わるため）。
+  //     render() は内容が変わったときだけ呼ばれるので、ここで同期的に測ってよい。
+  //     rAF に逃がすと、新しい機体が top:0 のまま1フレーム描かれ、
+  //     拡大しながら所定の位置へ滑っていく見た目になる。
+  applyLayout(t);
+  requestAnimationFrame(() => drawLinks(t));
+}
+
+// ------------------------------------------------------------------ 系統樹レイアウト
+// 横に伸びる整形木。親は自分が生み出した子たちの縦の範囲の中央に来る。
+// 位置は .agent の top だけで与える（DOM の並べ替えでも transform でもない。
+// 前者は配下の CSS アニメーションを 0 に戻し、後者は @keyframes pop と衝突する）。
+
+const GAP_SIB      = 20;   // 同じ親から生まれた機体どうしの縦の間隔
+const GAP_FAMILY   = 34;   // 親が違う機体どうしの間隔（家族の境目を広く取る）
+const MAX_ANIMATED = 60;   // これより多い機体数では移動を滑らせない
+const MOVE_MS      = 460;  // .agent の top トランジションと同じ長さ
+
+/** そのチームの .tree-canvas から見た .gen-body の上端（＝世代見出しの高さ）。全列で同じ。 */
+function bodyOffsetTop(t) {
+  const body = t.els.gens.querySelector('.gen-body');
+  return body ? body.offsetTop : 0;
+}
+
+function scrollPad(t, which) {
+  const v = parseFloat(getComputedStyle(t.els.scroll)[which] || '0');
+  return Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * 各機体の中心Yを決める。深い列から順に確定させ、詰まったら「自分と自分の部分木、
+ * および深さ優先順で自分より後ろの全機体」をまとめて下へずらす。
+ * 深さ優先順では部分木が縦に連続するので、これは「添字 i 以降を一律に下げる」で済む。
+ * 一律移動なので親子の中央関係は崩れず、下方向だけなので空けた間隔も詰まらない。
+ * よって収束を待つ反復は要らず、1走査で必ず終わる。再帰も使わないので、
+ * 親子関係が循環している異常データでもスタックを溢れさせない。
+ */
+function computeTidyY(agents, heights) {
+  const n = agents.length;
+  const index = new Map();
+  for (let i = 0; i < n; i++) index.set(agents[i].id, i);
+  const ids = new Set(index.keys());
+
+  const parentOf = new Array(n).fill(-1);
+  const kids = [];
+  for (let i = 0; i < n; i++) kids.push([]);
+  for (let i = 0; i < n; i++) {
+    const pid = effectiveParentId(agents[i], ids);
+    if (pid === null) continue;
+    const p = index.get(pid);
+    if (p === undefined || p === i) continue;
+    parentOf[i] = p;
+    kids[p].push(i);   // 深さ優先順のまま入るので、先頭が一番上・末尾が一番下になる
+  }
+
+  const genOf = new Array(n);
+  let maxGen = 0;
+  for (let i = 0; i < n; i++) {
+    const g = Number.isFinite(agents[i].generation) ? Math.max(0, agents[i].generation) : 0;
+    genOf[i] = g;
+    if (g > maxGen) maxGen = g;
+  }
+  const byGen = [];
+  for (let g = 0; g <= maxGen; g++) byGen.push([]);
+  for (let i = 0; i < n; i++) byGen[genOf[i]].push(i);
+
+  const y = new Array(n).fill(0);
+  const pushDown = (from, dy) => { for (let k = from; k < n; k++) y[k] += dy; };
+
+  for (let g = maxGen; g >= 0; g--) {
+    let prevBottom = null, prevParent = -2;
+    for (const i of byGen[g]) {
+      const h = heights[i];
+      // 子は必ず自分より深い列にいる。同じ列に子が来るのは親不在の孤児や循環の
+      // 異常データなので、位置決めの材料にしない（線は drawLinks が引くので関係は残る）。
+      let lo = Infinity, hi = -Infinity;
+      for (const c of kids[i]) {
+        if (genOf[c] <= g) continue;
+        if (y[c] < lo) lo = y[c];
+        if (y[c] > hi) hi = y[c];
+      }
+      const gap = prevParent === -2 ? 0 : (parentOf[i] === prevParent ? GAP_SIB : GAP_FAMILY);
+      const limit = prevBottom === null ? null : prevBottom + gap;
+      let top;
+      if (hi === -Infinity) {
+        top = limit === null ? 0 : limit;      // 子がいない機体は前の機体の下に詰める
+      } else {
+        top = (lo + hi) / 2 - h / 2;           // 生み出した子たちの中央
+        if (limit !== null && top < limit) {
+          pushDown(i, limit - top);            // 子ごと下げるので中央の関係は保たれる
+          top = limit;
+        }
+      }
+      y[i] = top + h / 2;
+      prevBottom = top + h;
+      prevParent = parentOf[i];
+    }
+  }
+
+  const bounds = (skip) => {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < n; i++) {
+      if (i === skip) continue;
+      if (y[i] - heights[i] / 2 < lo) lo = y[i] - heights[i] / 2;
+      if (y[i] + heights[i] / 2 > hi) hi = y[i] + heights[i] / 2;
+    }
+    return [lo, hi];
+  };
+
+  // 指令塔（世代0が1体）は木全体の上下中央へ。1体しかいない列なので衝突しない。
+  // 純粋な整形木では指令塔＝第1世代の中点になるが、片方の枝だけ深い偏った木では
+  // 上端に張り付いて「中央」に見えないので、指令塔を除いた外接矩形の中央に置き直す。
+  if (byGen[0] && byGen[0].length === 1 && n > 1) {
+    const r = byGen[0][0];
+    const [lo, hi] = bounds(r);
+    if (Number.isFinite(lo)) y[r] = (lo + hi) / 2;
+  }
+
+  const [minTop, maxBottom] = bounds(-1);
+  if (!Number.isFinite(minTop)) return { y, height: 0 };
+  for (let i = 0; i < n; i++) y[i] -= minTop;   // 一番上の機体の上端を 0 に合わせる
+  return { y, height: maxBottom - minTop };
+}
+
+/** 実測して縦位置を決め、top で反映する。戻り値は滑らせるべき移動があった機体の数。 */
+function layoutTree(t) {
+  const agents = t.layoutOrder.filter((a) => t.cards.has(a.id));
+  if (!agents.length) { t.contentH = 0; return 0; }   // 前のミッションの高さを居座らせない
+
+  // 高さは実測する。完了で結果行が増え、モデル名が長いと札が折り返すので一定ではない。
+  // getBoundingClientRect ではなく offsetHeight を使う：rect は .agent.born の
+  // pop（transform: scale(1.18)）を拾い、生まれた瞬間だけ 1.18 倍の高さを返す。
+  const heights = agents.map((a) => t.cards.get(a.id).root.offsetHeight);
+  const laid = computeTidyY(agents, heights);
+  t.contentH = laid.height;   // 自動フォーカスが縦を測るのに使う（DOM は底上げされていて使えない）
+
+  // 縦の中央寄せ。木が枠に収まるときだけ中央へ寄せ、はみ出すときは上寄せにする
+  // （常に中央にすると、長い木で上に空白ができて最上段の機体を見失う）。
+  const headH  = bodyOffsetTop(t);
+  const availH = Math.max(0, t.els.scroll.clientHeight - scrollPad(t, 'paddingTop')
+                                                       - scrollPad(t, 'paddingBottom') - headH);
+  const pad    = Math.max(0, Math.floor((availH - laid.height) / 2));
+  const boxH   = Math.ceil(Math.max(laid.height, availH)) + 'px';
+
+  // 絶対配置の子は高さを作らないので、列の高さは明示的に入れる。
+  // 入れないと .tree-canvas.scrollHeight まで潰れて親子線が消え、スクロールも効かない。
+  for (const [, c] of t.cols) if (c.body.style.height !== boxH) c.body.style.height = boxH;
+
+  const animate = agents.length <= MAX_ANIMATED;
+  const snapped = [];
+  let moved = 0;
+  for (let i = 0; i < agents.length; i++) {
+    const e = t.cards.get(agents[i].id);
+    e.h = heights[i];
+    const top = Math.round(laid.y[i] - heights[i] / 2) + pad;
+    if (e.top === top) continue;
+    if (e.top === null || !animate) { e.root.classList.add('snap'); snapped.push(e.root); }
+    else moved++;
+    e.top = top;
+    e.root.style.top = top + 'px';
+  }
+  if (snapped.length) {
+    void t.els.gens.offsetHeight;                      // 新しい top を確定させてから
+    for (const el of snapped) el.classList.remove('snap');  // トランジションを戻す
+  }
+  return moved;
+}
+
+/** レイアウト前に「画面の上端に一番近い機体」を覚える。実測値ではなく layoutTree が
+ *  入れた top を使う。トランジション中でも値がぶれないため。 */
+function pickAnchor(t) {
+  if (t.els.scroll.scrollTop <= 0) return null;   // 一番上を見ているなら補正は要らない
+  const view = t.els.scroll.scrollTop - scrollPad(t, 'paddingTop') - bodyOffsetTop(t);
+  let best = null, bestD = Infinity;
+  for (const [, e] of t.cards) {
+    if (e.top === null) continue;
+    const d = e.top - view;
+    if (d >= -40 && d < bestD) { bestD = d; best = e; }
+  }
+  return best ? { entry: best, before: best.top } : null;
+}
+
+/** 指令塔がそのチームの枠の縦中央に来るまでスクロールする（チームが現れた直後の1回だけ）。
+ *  チームごとに .tree-scroll を持つので、他のチームのスクロール位置には影響しない。 */
+function recenterOnCommand(t) {
+  const c = t.cards.get(COMMAND_ID) || t.cards.values().next().value;
+  if (!c || c.top === null) return;
+  const y = bodyOffsetTop(t) + c.top + c.h / 2;   // .tree-canvas から見た指令塔の中心
+  t.els.scroll.scrollTop = Math.max(0, Math.round(scrollPad(t, 'paddingTop') + y
+                                                  - t.els.scroll.clientHeight / 2));
+  t.els.scroll.scrollLeft = 0;
+}
+
+function applyLayout(t) {
+  const anchor = pickAnchor(t);
+  const moved = layoutTree(t);
+  if (t.recenterOnce && t.cards.size) {
+    t.recenterOnce = false;
+    recenterOnCommand(t);
+  } else if (anchor && anchor.entry.top !== null) {
+    // 木が伸び縮みしても、見ていた機体が画面上の同じ位置に留まるようにする
+    t.els.scroll.scrollTop += anchor.entry.top - anchor.before;
+  }
+  if (moved > 0) followMoves(t);
+  // 自動フォーカスの本流。「木の形が変わった瞬間」を正確に押さえられるのはここだけで、
+  // render() も scheduleLayout() も必ずここを通る（タブ切替もウィンドウのリサイズも
+  // 既に scheduleLayout を呼んでいるので、別途の呼び出しは要らない）。
+  // 機体数の差分で発火させないのは、完了で結果行が生えるとカードの高さが変わるのに
+  // 機体数は変わらないため——木の形の代理変数として不正確だから。
+  scheduleAutoFit(t);
+}
+
+function scheduleLayout(t) {
+  if (t.layoutRaf) return;
+  t.layoutRaf = requestAnimationFrame(() => {
+    t.layoutRaf = 0;
+    if (!t.state) return;   // resetView 直後に流れてきた分は捨てる
+    applyLayout(t);
+    drawLinks(t);
+  });
+}
+
+/** top のトランジション中だけ線を引き直す。有限ループで、木が動いたときしか走らない。 */
+function followMoves(t) {
+  t.followUntil = performance.now() + MOVE_MS + 80;
+  if (t.followRaf) return;
+  const step = () => {
+    drawLinks(t);
+    t.followRaf = performance.now() < t.followUntil ? requestAnimationFrame(step) : 0;
+  };
+  t.followRaf = requestAnimationFrame(step);
+}
+
+/** 親子線を引く。座標の原点はそのチームの .tree-canvas。SVG もチームごとに1枚なので、
+ *  隣のチームの機体を巻き込むことはない。 */
+function drawLinks(t) {
+  if (!t.state) return;
+  // 0 を渡すと viewBox が「0 0 0 0」になって SVG が何も描かなくなる。
+  // .gen-body に高さが入る前の1フレームなどで実際に起こる。
+  const w = Math.max(1, t.els.canvas.scrollWidth), h = Math.max(1, t.els.canvas.scrollHeight);
+  t.els.links.setAttribute('width', w);
+  t.els.links.setAttribute('height', h);
+  t.els.links.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+
+  const base = t.els.canvas.getBoundingClientRect();
+  // 座標系を揃える。上の viewBox は scrollWidth/scrollHeight ＝ **拡大前**のローカルpx だが、
+  // getBoundingClientRect は **拡大後**の物理px を返す（この木は zoom を掛けた .tree-scroll の
+  // 中にいる）。差を取っただけでは「ローカル距離 × 拡大率」になり、100% 以外のすべての
+  // 拡大率で線がカードから外れる。実測比（物理幅 ÷ ローカル幅 ＝ 効いている拡大率）で割って
+  // ローカルへ戻す。zoomLevel を直に使わないのは、DOM に実際に効いている値とずれないため。
+  const zf = (base.width > 0 && t.els.canvas.offsetWidth > 0)
+             ? base.width / t.els.canvas.offsetWidth : 1;
+  const ids = new Set(t.state.agents.map((a) => a.id));
+  let out = '';
+  let running = 0;
+  for (const a of t.state.agents) {
+    const pid = effectiveParentId(a, ids);
+    if (!pid) continue;
+    const p = t.cards.get(pid), c = t.cards.get(a.id);
+    if (!p || !c) continue;
+    const pr = p.card.getBoundingClientRect();
+    const cr = c.root.getBoundingClientRect();
+    const x1 = (pr.right - base.left) / zf;
+    const y1 = (pr.top + pr.height / 2 - base.top) / zf;
+    const x2 = (cr.left - base.left) / zf;
+    const y2 = (cr.top + cr.height / 2 - base.top) / zf;
+    const dx = Math.max(18, (x2 - x1) * 0.5);
+    if (a.status === 'running') running++;
+    out += '<path class="link ' + a.status + '" d="M ' + x1 + ' ' + y1 +
+           ' C ' + (x1 + dx) + ' ' + y1 + ', ' + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2 + '"/>';
+  }
+  t.els.links.innerHTML = out;
+  // 流れる破線は stroke-dashoffset を動かすので合成できず、線の本数だけ毎フレーム再ペイントが走る。
+  // 少数のうちは動かし、増えたら止める。止めてもシアンの破線で稼働中は読み取れる。
+  // 数えるのはそのチームの稼働数だけ。全チームの合計で判定すると、
+  // 静かなチームの線まで一緒に止まってしまう。
+  t.els.links.classList.toggle('calm', running > 12);
+}
+
+/** 内容が変わっていなくても毎秒動かす部分（稼働中の経過時間）。
+ *  過去の記録では tick() から呼ばれず、読み込み直後に1回だけ通る。
+ *  そのとき t.refNow が入っているので、経過は記録された時点で止まる。 */
+function updateClocks(t) {
+  if (!t.state) return;
+  if (t.state.mission.phase === 'running') {
+    t.els.elapsed.textContent = fmtSec(elapsedFrom(t.state.mission.startedAt, t.refNow));
+  } else if (t.state.mission.summary) {
+    t.els.elapsed.textContent = fmtSec(t.state.mission.summary.elapsedSec);
+  } else {
+    t.els.elapsed.textContent = '—';
+  }
+  for (const a of t.state.agents) {
+    if (a.status !== 'running') continue;
+    const e = t.cards.get(a.id);
+    if (e) updateAgentClock(e, a, t.refNow);
+  }
+}
+
+// ------------------------------------------------------------------ 取扱説明書
+// 別ウィンドウで開かない理由: VSCode 拡張が webview の中に iframe で埋め込んで
+// 表示している場合、VSCode が webview ホスト iframe に付ける sandbox に
+// allow-popups が無く、sandbox の制約は入れ子の iframe にも伝播する。そのため
+// target="_blank" も window.open も、例外を出さずに黙って何も起こさない。
+// 拡張側からは解除できない既知の制約なので、同一オリジンの iframe を画面内に
+// 重ねて開く。これならブラウザでも webview でも同じ挙動になる。
+const elManual      = need('#manual-overlay');
+const elManualFrame = need('.manual-frame', elManual);
+const elManualPop   = need('.manual-pop', elManual);
+const elManualClose = need('.manual-close', elManual);
+
+// 埋め込まれていないときだけ「別ウィンドウで開く」を見せる（埋め込み中は上の理由で動かない）。
+// クロスオリジンで埋め込まれていると window.top の読み取り自体が例外になるので、
+// 失敗したら埋め込みと見なす。
+let standalone = false;
+try { standalone = window.top === window.self; } catch (e) { standalone = false; }
+if (standalone && elManualPop) elManualPop.hidden = false;
+
+function openManual() {
+  if (!elManual || !elManualFrame) return;
+  // src は初回に開いたときだけ入れる。最初から入れると 37KB の説明書を毎回読み込む。
+  // 2回目以降は読み込み済みのものをそのまま見せ直す。
+  if (!elManualFrame.getAttribute('src')) elManualFrame.setAttribute('src', '/manual.html');
+  elManual.hidden = false;
+  // 閉じるボタンへフォーカスを移す。フォーカスが親側にある限り Escape が効く。
+  if (elManualClose) elManualClose.focus();
+}
+function closeManual() { if (elManual) elManual.hidden = true; }
+
+bind(need('.help-link'), 'click', (e) => { e.preventDefault(); openManual(); });
+bind(elManualClose, 'click', closeManual);
+// 背景（.manual-box の外側）のクリックで閉じる。e.target が枠自身のときだけ拾う。
+bind(elManual, 'click', (e) => { if (e.target === elManual) closeManual(); });
+// ダイアログのほうが手前にあるので、開いているならそちらを先に畳む。
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (elDlg && !elDlg.hidden) { closeDialog(false); return; }
+  if (elManual && !elManual.hidden) closeManual();
+});
+
+// 説明書の中にフォーカスが移ったあとの Escape は、上の keydown には届かない
+// （キーイベントは iframe 自身の document で起きて、文書の境界を越えない）。
+// そこで manual.html 側が Escape だけをここへ転送してくる。受け取る側の条件を
+// 絞って、無関係な postMessage で画面が閉じないようにする。
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin) return;
+  const m = e.data;
+  if (m && m.source === 'agent-dashboard-manual' && m.type === 'close') closeManual();
+});
+
+// ------------------------------------------------------------------ 言語
+// 画面に出ている文字には2種類ある：
+//   (a) マークアップに data-i18n が付いていて、JS が触らないもの
+//   (b) 描画のたびに JS が入れているもの（状態の札、タブ、ダイアログ、集計）
+// (a) は I18N.apply(document) が塗り直す。**(b) は誰も塗り直さない。** 稼働中の
+// 画面なら1秒後の再描画で追いつくが、完了した記録や待機中の画面は再描画そのものが
+// 止まっているので、そこだけ前の言語のまま残る。切り替えた直後に描き直すのは
+// そのため。「変えたのに一部だけ変わらない」は、変わらないより始末が悪い。
+
+function setupLang() {
+  if (!i18nOk) return;
+  window.I18N.mountSelect(elLangSelect);
+  window.I18N.apply(document);
+  window.I18N.onChange(relabelAll);
+}
+
+/** 言語が変わったあと、JS が入れた文字を全部入れ直す。 */
+function relabelAll() {
+  applyZoom();                       // 「自動 100%」の接頭辞と +/− の説明
+
+  // タブは中身が同じなら組み直さない作りなので、署名を捨てて作り直させる
+  tabsSig = null;
+  renderTabs();
+
+  for (const [, t] of teams) {
+    // 世代見出しは一度作ったら render() が触らない
+    for (const [g, c] of t.cols) c.head.textContent = genLabel(g);
+    if (t.state) {
+      // 機体が0体のときの案内は「既にあるなら作らない」ので、先に落としてから描く
+      const note = t.els.gens.querySelector('.empty-note');
+      if (note) note.remove();
+      t.prevSig = null;
+      render(t, t.state);
+      updateClocks(t);
+    } else if (t.loadState === 'loading') {
+      showRunNote(t, tr('run.loading'), null);
+    }
+  }
+
+  // まだ一度も通信していないなら触らない（「接続中…」を勝手に「接続中」にしない）
+  if (lastConn.ok !== null) setConn(lastConn.ok, lastConn.msg);
+  tick();                            // 上部の集計バッジはサーバーの応答から作る
+}
+
+// ------------------------------------------------------------------ ポーリング
+
+/** setConn に最後に渡された引数。言語を変えたときに、この表示だけ前の言語で
+ *  取り残されないよう、同じ引数でもう一度呼び直すために控えておく。 */
+let lastConn = { ok: null, msg: undefined };
+
+function setConn(ok, msg) {
+  const el = $('#conn');
+  const txt = $('#conn-text');
+  if (!el || !txt) return;
+  // 画面そのものが壊れているなら、通信の可否より先にそれを出す。1秒ごとにここを通るので、
+  // markBroken が塗ったものを黙って「接続中」で上書きしてしまうと、また沈黙に戻る。
+  if (brokenMsg) {
+    el.className = 'conn bad';
+    el.title = brokenMsg;
+    txt.textContent = tr('conn.broken');
+    return;
+  }
+  el.className = 'conn ' + (ok ? 'ok' : 'bad');
+  // 最後に出した状態を控える。言語を変えたときにこの表示だけ取り残されないよう、
+  // 切り替え側が同じ引数でもう一度呼べるようにするため。
+  lastConn = { ok, msg };
+  const reason = msg || tr('conn.lost');
+  txt.textContent = ok ? tr('conn.connected')
+                       : (failCount > 1 ? tr('conn.lost_n', { msg: reason, n: failCount }) : reason);
+}
+
+// 応答の追い越しを捨てるための通番。サーバーはスレッドごとに応答するので順序保証がなく、
+// 古い応答が後から着弾すると、更新されたはずの画面が全チームまとめて黙って巻き戻る。
+let reqSeq = 0;
+
+async function tick() {
+  const seq = ++reqSeq;
+  try {
+    const res = await fetch('/api/state?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const next = await res.json();
+    if (seq !== reqSeq) return; // 新しい要求に追い越された古い応答は捨てる
+
+    const st = Date.parse(next.serverTime);
+    if (!Number.isNaN(st)) clockSkew = st - Date.now();
+
+    failCount = 0;
+    setConn(true);
+
+    // サーバーが返すのは「稼働中のチーム全部 ＋ .current が指すチーム」で、
+    // 開始が新しい順に並んでいる。並べ替えはサーバーの責任なので、こちらではしない。
+    // teams は進行中のミッション（runId なし）専用。過去の記録は tabs 経由で
+    // /api/run から取るので、この列には出てこない。
+    const list = Array.isArray(next.teams) ? next.teams : [];
+    const slugOf = (ts) => (ts && ts.project && ts.project.slug) || null;
+
+    // --- 毎秒流れてくるミッションの一覧を作る。器を捨てるのはここではなく applyTabs：
+    // 稼働が終わってもタブは残る（＝まだ選べる）ので、流れてこなくなったものは
+    // 「止まった画面」に落とすだけにする。
+    liveKeys = new Set(list.map((ts) => {
+      const slug = slugOf(ts);
+      return slug === null ? null : tabKey(slug, null);
+    }).filter((v) => v !== null));
+    for (const [key, t] of teams) {
+      if (!t.live || liveKeys.has(key)) continue;
+      t.live = false;
+      // 時計をその場で止める。流れてこなくなったのに経過だけ増え続けると、
+      // 動いていないミッションが動いているように見える。
+      if (t.refNow === null) t.refNow = serverNow();
+      if (t.state) render(t, t.state);   // 札の文字と data-frozen を入れ替える
+    }
+
+    // --- 増えたチームの器を作り、内容が変わったチームだけ描き直す
+    for (const ts of list) {
+      const slug = slugOf(ts);
+      if (slug === null) continue;
+      const key = tabKey(slug, null);
+      let t = teams.get(key);
+      if (!t) t = createTeam(slug, null, true);
+      // /api/run で1回だけ取った器に、あとから稼働が始まって毎秒流れてくるようになった場合。
+      // 止めていた時計を動かし直す（描き直しは下の sig 比較が拾う）。
+      if (!t.live) { t.live = true; t.refNow = null; t.loadState = 'live'; t.prevSig = null; }
+
+      // 同じプロジェクトで次のミッションが始まったら中身を捨てる。slug は変わらないので、
+      // これをしないと logKeys と DOM のログ行が残り、前のミッションのログが混ざる。
+      const mkey = (ts.mission && ts.mission.startedAt) || null;
+      if (t.missionKey !== null && t.missionKey !== mkey) resetView(t);
+      t.missionKey = mkey;
+
+      // sig はチームごとに持つ。1つにまとめると、どこか1チームが動いた拍子に
+      // 全チームが再描画されて、動いていないチームのログも作り直される。
+      const sig = JSON.stringify({ p: ts.project, m: ts.mission, a: ts.agents,
+                                   l: ts.log.length, s: ts.sources });
+      if (sig !== t.prevSig) {
+        t.prevSig = sig;
+        t.state = ts;
+        render(t, ts);
+      }
+    }
+
+    // --- タブ一覧を更新。#teams の中の並び順は揃えない：表示するのはタブで選んだ
+    // 1枚だけなので順番は目に見えず、要素を動かすとその配下の CSS アニメーションが
+    // 中断されて 0 から作り直される（全ロボの呼吸・瞬き・手の動きが毎秒巻き戻る）。
+    // 画面に出る並びは、サーバーが返した tabs の順そのままである。
+    // tabs が空で返ってきたときは teams から組み直す。サーバーはタブ一覧の組み立てに
+    // 失敗しても稼働中の teams だけは返してくるので（tabsError）、それに引きずられて
+    // 動いているチームまで画面から消さない。過去の記録はその間だけ出なくなる。
+    const rawTabs = (Array.isArray(next.tabs) && next.tabs.length) ? next.tabs : tabsFromTeams(list);
+    applyTabs(rawTabs);
+
+    // --- タブが1枚も無いときは待機画面に切り替える
+    const has = tabs.length > 0;
+    if (elTeams.hidden === has)   elTeams.hidden = !has;
+    if (elStandby.hidden !== has) elStandby.hidden = has;
+
+    const running = list.filter((ts) => ts.mission && ts.mission.phase === 'running').length;
+    const done    = list.filter((ts) => ts.mission && ts.mission.phase === 'done').length;
+    const runs    = tabs.filter((tb) => tb.runId !== null).length;
+    if (elCount) elCount.textContent = (!list.length ? tr('count.standby')
+                        : running > 0   ? tr('count.running', { n: running })
+                        : done > 0      ? tr('count.done')
+                        : tr('count.standby'))
+                        + (runs ? tr('count.runs', { n: runs }) : '');
+  } catch (e) {
+    if (seq !== reqSeq) return; // 追い越された要求の失敗で接続表示を汚さない
+    failCount++;
+    // 直前の内容を保持したまま、接続表示だけ落とす
+    setConn(false, e && e.message ? e.message : tr('conn.fetch_failed'));
+  }
+  // 止まった画面（記録・流れてこなくなったミッション）は動かさない。
+  // 時計は読み込んだときに1回入れて、そこで止める。
+  for (const [, t] of teams) if (t.live) updateClocks(t);
+}
+
+// 寸法の監視は上の sizeWatch（チームごとに observe する1つの ResizeObserver）が行う。
+window.addEventListener('resize', () => { for (const [, t] of teams) scheduleLayout(t); });
+
+// 初期化。中身は先頭の boot() にある。ここまで到達できなかった場合の保険として、
+// 同じ boot() が DOMContentLoaded からも呼ばれる（走るのは先に着いた1回だけ）。
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# 組み立てた .vsix と配布物。作り直せるので追跡しない
+dist/
+
+# 実行時にできる記録。ここは利用者のデータであってソースではない
+missions/
+trash/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# OS
+.DS_Store
+Thumbs.db
