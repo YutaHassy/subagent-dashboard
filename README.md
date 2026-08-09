@@ -29,7 +29,7 @@ Put the folder wherever you like, then run the setup tool.
 
 **That alone completes all of the following:**
 1. Detecting your Python environment
-2. Initial setup (writing into CLAUDE.md)
+2. Initial setup (writing the operating rules into every AI coding CLI installed on this machine)
 3. Installing the VSCode extension
 
 #### Alternative: initial setup only (if you do not use VSCode)
@@ -57,15 +57,42 @@ dash.cmd install
 
 1. **Environment check** — verifies the Python version, the file layout and write permissions
 2. **Automatic detection** — finds the Python command, the paths and the location of the config files
-3. **Writing the config files** — updates CLAUDE.md and the VSCode keybindings
+3. **Writing the config files** — updates the instructions file of every AI coding CLI it finds, plus the VSCode keybindings
 4. **Setup complete** — tells you how to start it and what to do next
 
 When every item has a ✓, you are done.
 
 - It detects and embeds the real location of this folder, so **the same commands work on a different PC**
-- It rewrites only the region between its markers, so it does not damage anything else in `CLAUDE.md`
+- It rewrites only the region between its markers, so it does not damage anything else already in that CLI's instructions file
 - To see what it will write first, run `dash install --print`
 - To undo it, run `python install.py --uninstall`
+
+**🧩 Which CLIs it writes to:**
+
+Setup finds every AI coding CLI installed on the machine and writes the same operating rules into each one's own
+instructions file — the body of the rules is identical; only the location differs.
+
+| CLI | File written |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` |
+| opencode | `~/.config/opencode/AGENTS.md` |
+| Amp | `~/.config/amp/AGENTS.md` |
+| Cline | `~/Documents/Cline/Rules/subagent-dashboard.md` |
+| Roo Code | `~/.roo/rules/subagent-dashboard.md` |
+| Windsurf | `~/.codeium/windsurf/memories/global_rules.md` |
+| Qwen Code | `~/.qwen/QWEN.md` |
+
+A CLI missing from this table is not unsupported — it is just not one of the common ones this tool recognises
+automatically. Run `python install.py --list-agents` to see the full status of every CLI it knows about,
+including ones you've added yourself. Cline and Roo Code read a whole folder of rule files rather than a single
+one, so the tool drops one dedicated file into that folder instead of editing your own rules there. Cursor and
+Aider are left out on purpose: neither reads a user-level instructions file automatically (Cursor only reads a
+per-repository `AGENTS.md`; Aider needs the file named explicitly in its config) — point a per-repository file at
+it with `--agent-file`, the same option that covers any other CLI not in this table. For `--agent`,
+`--agent-file` and `--list-agents` in full, see [OPERATION.md](OPERATION.md).
 
 **🚀 Automatic setup:**
 
@@ -146,15 +173,15 @@ against it after that (nor can it be marked finished later). To run missions in 
 destinations with `--project`.
 
 ```bash
-dash start  --project issue51 --title "issue51 investigation"
+dash start  --project issue51 --title "issue51 investigation" --model claude-sonnet-5
 dash add    --project issue51 --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "..."
 dash done   --project issue51 --id SCOUT-A --headline "..."
 dash finish --project issue51 --headline "..."
 ```
 
 Put `--project` on all four commands. Miss it on even one and that one command writes to the current folder's
-side — that is, to the other team's record. `dash install` writes this procedure into `CLAUDE.md` as well,
-so Claude follows the same rule.
+side — that is, to the other team's record. `dash install` writes this procedure into every installed CLI's
+instructions file as well, so the agent follows the same rule.
 
 ### Looking at past records
 
@@ -231,11 +258,12 @@ The first time they press the icon, a confirmation says "the tool will be placed
 
 Distributing an updated version overwrites in the same way. It does not touch `missions/` (your work records).
 
-**On an update, the operating rules (`CLAUDE.md`) are redistributed too.** Otherwise the tool would be new while the
-procedure Claude reads stayed at the previous version (initial setup never runs again automatically once it has
-succeeded). When you update from the extension, the confirmation about "what gets written where" follows right after
-the tool is placed, and approving it replaces the contents between the markers in `CLAUDE.md` with the new procedure.
-If you skip it, or if you updated by copying over the files without the extension, run it by hand.
+**On an update, the operating rules are redistributed too — to every CLI they were written to.** Otherwise the tool
+would be new while the procedure the agent reads stayed at the previous version (initial setup never runs again
+automatically once it has succeeded). When you update from the extension, the confirmation about "what gets written
+where" follows right after the tool is placed, and approving it replaces the contents between the markers in each of
+those files with the new procedure. If you skip it, or if you updated by copying over the files without the
+extension, run it by hand.
 
 ```bash
 python ~/.claude/agent-dashboard/install.py
@@ -349,7 +377,12 @@ export AGENT_DASHBOARD_HOME=~/dashboard-data
 | `AGENT_DASHBOARD_PROJECT` | Pin the target project (`--project` wins over it) |
 | `AGENT_DASHBOARD_HISTORY_KEEP` | How many past records to keep per project (default 20; `0` keeps none) |
 | `PORT` | The server's default port (`--port` wins over it) |
-| `CLAUDE_CONFIG_DIR` | Where `CLAUDE.md` lives (match it to your Claude Code setup) |
+| `CLAUDE_CONFIG_DIR` | Where Claude Code's `CLAUDE.md` lives |
+| `CODEX_HOME` | Where Codex CLI's `AGENTS.md` lives |
+| `GEMINI_CLI_HOME` | Where Gemini CLI's `GEMINI.md` lives |
+| `COPILOT_HOME` | Where GitHub Copilot CLI's instructions live |
+| `OPENCODE_CONFIG_DIR` | Where opencode's `AGENTS.md` lives |
+| `AGENT_DASHBOARD_AGENTS_FILE` | Where the list of CLIs you added yourself is kept (default: `agents.json` beside the mission records) |
 
 ### Display language
 
@@ -375,13 +408,14 @@ The decision runs top to bottom, and **the first one that resolves is used**.
 
 The environment variable beats the saved setting, so if `dash lang ja` seems to change nothing, `AGENT_DASHBOARD_LANG` is set (`dash lang` says so).
 
-**Agent names and mission text are never translated.** They are free text that Claude writes with `dash add`, recorded exactly as written and shown on the screen exactly as recorded. The language Claude writes them in comes from the block `install.py` puts in `CLAUDE.md`, and that block is written in the **command-output** language above — not the screen language. So switching the selector at the top right does not change them. To change them:
+**Agent names and mission text are never translated.** They are free text that the agent writes with `dash add`, recorded exactly as written and shown on the screen exactly as recorded. The language the agent writes them in comes from the block `install.py` puts into each CLI's instructions file, and that block follows the **command-output** language above — not the screen language. So switching the selector at the top right does not change them. `dash lang <code>` does: it rewrites the block in the new language on the spot, so the language you set is always the language teams are formed in.
 
 ```bash
-dash lang en          # 1. choose the language
-python install.py     # 2. rewrite the block in CLAUDE.md
-                      # 3. restart the Claude session (CLAUDE.md is read at startup)
+dash lang en          # 1. choose the language (the block is rewritten with it)
+                      # 2. restart the agent's session (its instructions file is read at startup)
 ```
+
+Only blocks that point at *this* copy of the tool are rewritten, so changing the language in a second copy never repoints one of your instructions files somewhere else. If it reports that the operating rules are not written anywhere, that copy has not been set up yet — run `python install.py` once.
 
 Records that already exist stay in the language they were written in. Retranslating them would make the screen show something other than what actually happened.
 
@@ -428,7 +462,8 @@ running" is a fact, "the parent is waiting" is an inference, so it is wrong when
 work in parallel.
 
 For the same reason, token counts and tool-use counts that were not in the completion report are shown as `—`.
-That is not a fault; it is the correct way to display "unknown".
+That is not a fault; it is the correct way to display "unknown". The command post's own model follows the same
+rule: leave `--model` out of `start` and it shows as "unknown" too, instead of a guessed or hard-coded value.
 
 ---
 
@@ -501,9 +536,9 @@ The robot faces use the CSS `d` property, so mouth shapes do not change in Safar
 
    Check that every item is ✓.
 
-3. **Restart your Claude session**
+3. **Restart the agent's session**
 
-   Changes to `CLAUDE.md` are read at startup, so a running session does not pick them up.
+   Changes to its instructions file are read at startup, so a running session does not pick them up.
 
 4. **Check the current directory**
 
@@ -514,6 +549,14 @@ The robot faces use the CSS `d` property, so mouth shapes do not change in Safar
    ```
 
    The project marked `→` is the current target.
+
+5. **Did you install a new AI coding CLI after running setup?**
+
+   Setup only writes operating rules into the CLIs that exist at that moment — this is the one trap in the
+   design. Install another CLI afterwards and it has none, so subagents launched from it silently show up
+   nowhere on the dashboard. The fix is one line: run `python install.py` again. The tool now watches for
+   exactly this: the warning appears when a mission's `start` runs, when the server starts, and
+   `python diagnose.py` fails, instead of passing, while any installed CLI is still unwritten.
 
 ### I want to run it from a relative path
 

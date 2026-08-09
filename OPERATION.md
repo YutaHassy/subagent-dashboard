@@ -17,8 +17,10 @@ python <this directory>/dash.py add ...          # the launcher's body directly
 python <this directory>/update_state.py add      # the CLI directly
 ```
 
-**The command examples with the full path — the ones to use at run time — are written into Claude's global config `CLAUDE.md`.**
-Use those as they are (`dash install` generates them to match this environment).
+**The command examples with the full path — the ones to use at run time — are written into whichever AI coding CLI
+you have installed, in that CLI's own instructions file** (Claude Code's `CLAUDE.md`, Codex CLI's `AGENTS.md`, and
+so on — the full list and the mechanism are in "9. Files and environment").
+Use those as they are (`dash install` generates them to match this environment, for every CLI it finds).
 The actual location of this directory is also printed at the top of `dash projects` output.
 
 ## The target project is decided automatically
@@ -157,7 +159,7 @@ When `install.py` runs, it detects and records the path to agent-dashboard in th
 
 1. **The environment variable `AGENT_DASHBOARD_HOME`** is already set → use that path
 2. **Not set in the environment** → detect the directory `install.py` was run from
-3. **Embedded in `CLAUDE.md`** → the full path is included in the commands Claude runs automatically
+3. **Embedded in the operating rules** → the full path is included in the commands written into each CLI's instructions file, so the agent runs them automatically
 
 #### Starting the server
 
@@ -248,12 +250,23 @@ If moving the record aside fails, `start` does not stop (it prints a warning and
 unable to start while a record exists is the worse outcome.
 
 ```bash
-dash start --title "refactor impact survey"
+dash start --title "refactor impact survey" --model claude-sonnet-5
 ```
+
+Pass `--model` with your own model ID here too. The command post no longer defaults to a fixed model: leave it
+out and the model column shows "unknown" instead of a guess (→ "3. When a completion report arrives" for the
+same principle applied to `done`).
 
 **When you run a second mission at the same time in the same directory, split the record destination with
 `--project`.** Running `start` as-is pushes the first mission out while it is still running, and from then on
 its record cannot be kept. → "6.1. Running two or more missions at the same time in the same directory"
+
+> **Installed a new AI coding CLI after running setup?** Setup only writes operating rules into the CLIs that
+> exist at that moment — this is the one trap in the design. Install another CLI afterwards and it has none, so
+> subagents launched from it silently show up nowhere on the dashboard. The fix is one line: run
+> `python install.py` again. The tool now watches for exactly this: the warning appears when a mission's `start`
+> runs (right here), when the server starts, and `python diagnose.py` fails, instead of passing, while any
+> installed CLI is still unwritten.
 
 ---
 
@@ -277,8 +290,10 @@ dash add --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "list e
 
 **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you
 write it and shown on the screen exactly as recorded — nothing is translated afterwards. Follow the language of this
-manual, not the language of the conversation. To change which language that is, run `dash lang <en|ja|zh|ko>` and then
-`python install.py` to rewrite the block in `CLAUDE.md`; records that already exist are left as they were written.
+manual, not the language of the conversation. To change which language that is, run `dash lang <en|ja|zh|ko>`: **the
+block in your instructions file is rewritten in the new language on the spot**, so the language that is set is the
+language teams are formed in (it applies from the next session — the file is read at startup). Records that already
+exist are left as written.
 
 The generation (which column it sits in) is computed automatically from `--parent`, so do not specify it.
 **"awaiting report" is also derived automatically from `--parent`**, so there is no need to declare that the
@@ -307,7 +322,8 @@ dash done --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "identified
 **A number that was not included in the completion report must be omitted, not estimated.** Omitting it puts
 `null` in, and the screen shows "—". That is the correct state, not a gap to be filled in.
 Writing `--tokens 20000` because "it was probably around 20k tokens" destroys the purpose of this dashboard
-(seeing what actually happened), so never do it.
+(seeing what actually happened), so never do it. The same principle applies to the command post's own `--model`
+on `start`: leave it out rather than guess, and the model column shows "unknown" instead of a fixed default.
 
 ---
 
@@ -464,7 +480,7 @@ the only countermeasure.
 ```bash
 # When running in parallel in the same directory, give start a unique name with --project to split them
 # (pass a name that does not exist and a new project is created under that name)
-dash start --project PAVS_ER-issue51 --title "issue51 impact survey"
+dash start --project PAVS_ER-issue51 --title "issue51 impact survey" --model claude-sonnet-5
 
 # Put the same --project on that mission's add / done / finish as well — all of them
 dash add --project PAVS_ER-issue51 --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "..."
@@ -557,7 +573,8 @@ A grandchild's card gets a "self-reported" badge.
 | Deciding which team is shown | Decided on the server side alone. The browser remembers nothing, so the same team appears on whichever machine you open it |
 | Parallel operation | Every running team is stacked vertically and shown at the same time. The order is newest start first |
 | Number of record destinations | Exactly one per project (= per working directory). Run a second `start` in the same directory and the first is pushed out into history while still running, and can no longer be written to. To run in parallel, split with `--project` (→ 6.1) |
-| Versions of the tool and of the operating rules | They go stale separately. Updating the tool leaves the operating rules in `CLAUDE.md` stale until you run `install.py` again. If they diverge, you are told at `start` and at server startup (you can also check it with "operating rules version" in `diagnose.py`) |
+| Versions of the tool and of the operating rules | They go stale separately. Updating the tool leaves the operating rules stale in each CLI's instructions file until you run `install.py` again. If they diverge, you are told at `start` and at server startup (you can also check it with "operating rules version" in `diagnose.py`) |
+| A CLI installed after setup ran | Has no operating rules of its own until you run `install.py` again — subagents launched from it show up nowhere, silently. `start`, the server, and `diagnose.py` all watch for it and tell you |
 | Teams being swapped out | A team that has disappeared from `teams` in `/api/state` has its shell cleaned up on the spot |
 | Running start again in the same folder | The slug does not change, so it watches for a change in `mission.startedAt` and throws away the previous mission's log |
 | When the connection drops | It keeps the last display and the connection indicator at the top right turns red |
@@ -575,7 +592,7 @@ The contents of this directory. Every path is resolved at run time, so it works 
 ├─ dash.py            unified entry point
 ├─ server.py          serving server (shared by all projects; start only one)
 ├─ update_state.py    state update CLI (the only way in to the state)
-├─ install.py         first-time setup (writes into CLAUDE.md)
+├─ install.py         first-time setup (writes the operating rules into each installed CLI)
 ├─ dashlib.py         shared logic (path resolution, project identification, merging, formatting)
 ├─ build_vsix.py      builds and installs the VSCode extension (dash ext ...)
 ├─ test_tabs.py       checks the tab list behaviour. Runs with python test_tabs.py (touches no records)
@@ -596,6 +613,52 @@ The contents of this directory. Every path is resolved at run time, so it works 
 └─ trash/             where deleted projects go. To restore one, move the folder back into missions/
 ```
 
+### Which CLI the operating rules go into
+
+`install.py` finds every AI coding CLI installed on the machine and writes the identical body of rules into each
+one's own instructions file — only the location differs.
+
+| CLI | File written |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` |
+| opencode | `~/.config/opencode/AGENTS.md` |
+| Amp | `~/.config/amp/AGENTS.md` |
+| Cline | `~/Documents/Cline/Rules/subagent-dashboard.md` |
+| Roo Code | `~/.roo/rules/subagent-dashboard.md` |
+| Windsurf | `~/.codeium/windsurf/memories/global_rules.md` |
+| Qwen Code | `~/.qwen/QWEN.md` |
+
+**A CLI missing from this table is not unsupported.** The table is a shortcut for the common ones, not the
+boundary of what the tool can reach. Cline and Roo Code read a whole folder of rule files rather than a single
+one, so instead of editing the user's own rules the tool drops one dedicated file into that folder. Cursor and
+Aider are left out on purpose: neither reads a user-level instructions file automatically — Cursor only reads a
+per-repository `AGENTS.md`, and Aider needs the file named explicitly in its config — so for those, as for
+anything else not listed, a per-repository file is pointed at with `--agent-file` instead.
+
+```
+python install.py --list-agents          show every known CLI, where it will be
+                                         written, and whether it has been written yet
+python install.py                        write to every CLI found on this machine
+python install.py --agent codex          write to one named CLI only
+python install.py --agent all            write to every known CLI, installed or not
+python install.py --agent-file <path>    also write to this exact file, for a CLI
+                                         that is not in the table
+```
+
+`--agent-file` is the one that matters: it registers that file permanently in `agents.json` (kept next to the
+mission records — see `AGENT_DASHBOARD_AGENTS_FILE` below), so from then on it appears in `--list-agents`, gets
+refreshed on the next `install.py`, and is cleaned up by `--uninstall`. That is how a brand-new CLI, or an
+in-house one, gets supported without waiting for a new version of this tool.
+
+`agents.json` can also be edited by hand. An entry there whose `key` matches a built-in one **overrides** the
+built-in one — so if a CLI changes where it keeps its instructions, you can correct it locally instead of
+waiting for an update. Each entry has five fields: `key` (the short id used with `--agent`), `label` (the
+display name), `home_env` (an environment variable that relocates the folder, may be empty), `home` (the folder,
+may start with `~`), and `file` (the file name, which may include a subfolder).
+
 ### Environment variables
 
 | Variable | Effect |
@@ -603,7 +666,12 @@ The contents of this directory. Every path is resolved at run time, so it works 
 | `AGENT_DASHBOARD_HOME` | Changes where records are stored (default is this directory; if it is not writable, the OS's user data area) |
 | `AGENT_DASHBOARD_PROJECT` | Fixes the target project (`--project` takes priority) |
 | `PORT` | The server's default port (`--port` takes priority) |
-| `CLAUDE_CONFIG_DIR` | Where `install.py` writes `CLAUDE.md` |
+| `CLAUDE_CONFIG_DIR` | Where Claude Code's `CLAUDE.md` lives |
+| `CODEX_HOME` | Where Codex CLI's `AGENTS.md` lives |
+| `GEMINI_CLI_HOME` | Where Gemini CLI's `GEMINI.md` lives |
+| `COPILOT_HOME` | Where GitHub Copilot CLI's instructions live |
+| `OPENCODE_CONFIG_DIR` | Where opencode's `AGENTS.md` lives |
+| `AGENT_DASHBOARD_AGENTS_FILE` | Where the list of CLIs you added yourself is kept (default: `agents.json` beside the mission records) |
 | `AGENT_DASHBOARD_LANG` | The language of the output (`en` / `ja` / `zh` / `ko`). Takes priority over the saved setting |
 
 ### Display language

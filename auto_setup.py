@@ -10,7 +10,7 @@ server.py と update_state.py が起動時に1回だけ呼ぶ。
     except Exception:
         pass
 
-やることは「CLAUDE.md にまだ運用ルールが書かれていない」を見つけて、人が居るときだけ
+やることは「運用ルールがまだどこにも書かれていない」を見つけて、人が居るときだけ
 知らせる（承諾があれば install.py を呼ぶ）ことだけ。**それ以上のことをしてはいけない。**
 呼び手は両方とも try/except で囲っていて、**このファイルが無くても動く**ように書いてある
 （`.vsix` には同梱しない ＝ 配布先には存在しない）。無くても動くものに、無いと困ることを
@@ -88,8 +88,8 @@ def _offer_setup() -> bool:
     """未設定であることを知らせ、人が居れば承諾を取って設定する。"""
     print()
     print(t("  ⚠️  First-time setup is not done yet "
-            "(CLAUDE.md has no operating rules)."))
-    print(t("      The screen still opens, but Claude does not know how to use"))
+            "(the operating rules have not been written anywhere)."))
+    print(t("      The screen still opens, but the agent does not know how to use"))
     print(t("      Subagent Dashboard, so starting subagents will show nothing."))
     print()
 
@@ -123,13 +123,16 @@ def _offer_setup() -> bool:
 def check_and_setup(silent: bool = False) -> bool:
     """初期設定が済んでいれば True。済んでいなければ案内して False を返す。
 
-    silent=True では**何も出力しない**。呼び手（update_state.py）は Claude が1コマンド
-    ごとに回す CLI で、そこに毎回の注意書きが混ざると、肝心の start / done の応答が
-    埋もれる。未設定のまま update_state が動くのは、そもそも CLAUDE.md 以外の道筋で
-    呼ばれた場合だけなので、ここで急いで知らせる相手が居ない。
+    silent=True では**何も出力しない**。呼び手（update_state.py）はエージェントが1
+    コマンドごとに回す CLI で、そこに毎回の注意書きが混ざると、肝心の start / done の
+    応答が埋もれる。未設定のまま update_state が動くのは、そもそも運用ルール以外の
+    道筋で呼ばれた場合だけなので、ここで急いで知らせる相手が居ない。
 
     silent=False（server.py）のときだけ人向けに知らせる。サーバーの起動は人が画面を
-    見に来た瞬間なので、ここで気づけると手当てまで一続きになる。
+    見に来た瞬間なので、ここで気づけると手当てまで一続きになる。設定済み（＝早期に
+    True を返す側）でも、セットアップのあとに別の CLI を入れた人には
+    dashlib.unwired_agent_notice() が刺さる。ここで急かさないと、緑のまま気づけない
+    （diagnose.py を自分から実行しない限り一生気づけない）。
 
     **例外を外に出さない。** 呼び手の本業はサーバーの起動と状態の更新であって初期設定
     ではない。ここで転んで本業を巻き添えにするくらいなら、黙って False を返すほうがよい
@@ -137,7 +140,11 @@ def check_and_setup(silent: bool = False) -> bool:
     「このファイルが無い場合」の受けも兼ねているため）。
     """
     try:
-        if dashlib.claude_block_installed():
+        if dashlib.installed_agents():
+            # 「あとから入れた CLI がある」の知らせはここでは出さない。**server.py が
+            # 自前で出しているので、ここでも出すと起動のたびに同じ警告が2回並ぶ。**
+            # あちらに置くのが正で、配布物に auto_setup.py は同梱されない（＝配布先では
+            # ここは動かない）。この関数の役目は初回セットアップの案内だけに留める。
             return True
         if silent:
             return False
@@ -150,6 +157,14 @@ if __name__ == "__main__":
     dashlib.use_utf8_stdio()
     ok = check_and_setup(silent=False)
     if ok:
-        print(t("First-time setup is already done ({path}).")
-              .format(path=dashlib.claude_config_dir() / "CLAUDE.md"))
+        print(t("First-time setup is already done ({path}).").format(
+            path=" / ".join(str(dashlib.instruction_file(k))
+                            for k in dashlib.installed_agents())))
+        # 単体で叩いた人にはここで知らせる（server.py 経由では向こうが出すので、
+        # 二重にならない）。「設定済み」とだけ言って終わると、あとから入れた CLI に
+        # 何も書かれていないことが、この画面からは分からない。
+        notice = dashlib.unwired_agent_notice()
+        if notice:
+            print()
+            print(notice)
     sys.exit(0 if ok else 1)

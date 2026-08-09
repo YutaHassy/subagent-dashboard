@@ -96,6 +96,7 @@ PAYLOAD_SKIP = {
     "package_dist.py",
     "check_wiring.py",
     "check_i18n.py",
+    "check_agents.py",
     "auto_setup.py",
     "make_icons.py",
     "make_icons_simple.py",
@@ -111,6 +112,9 @@ PAYLOAD_SKIP = {
     "CHANGELOG.md",
     "RESTORE_NOTES.md",
     "配布後のセットアップ手順.md",
+    # このリポジトリを触るエージェント向けの指示。**製品の一部ではない**ので配らない
+    # （配ると、配布先の CLAUDE.md をこちらの開発ルールで上書きしかねない）
+    "CLAUDE.md",
 }
 
 # 同梱漏れ検査で「本体候補」として拾う対象。

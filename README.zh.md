@@ -28,7 +28,7 @@
 
 **只要这一步，以下内容就全部完成：**
 1. Python 环境的检测
-2. 初始设置（写入 CLAUDE.md）
+2. 初始设置（向所有已安装的 AI 编程工具写入运行规则）
 3. VSCode 扩展的安装
 
 #### 备选：只做初始设置（不使用 VSCode 时）
@@ -56,13 +56,13 @@ dash.cmd install
 
 1. **环境检查** — 确认 Python 版本、文件构成、写入权限
 2. **环境的自动检测** — 检测 Python 命令、路径、配置文件的位置
-3. **写入配置文件** — 更新 CLAUDE.md 和 VSCode 快捷键绑定
+3. **写入运行规则** — 向每个已安装的 AI 编程工具的指定位置写入规则（如 `~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md` 等），同时更新 VSCode 快捷键绑定
 4. **安装完成** — 说明启动方法和后续步骤
 
 所有项目都打上 ✓ 就完成了。
 
 - 会检测出本文件夹的实际位置并嵌入进去，因此**在别的电脑上也用同样的命令就够了**
-- 只改写标记（marker）括起来的范围，因此不会破坏 `CLAUDE.md` 中已有的内容
+- 只改写标记（marker）括起来的范围，因此不会破坏各工具的配置文件中已有的内容
 - 想先确认将要写入的内容时用 `dash install --print`
 - 想撤销时用 `python install.py --uninstall`
 
@@ -83,6 +83,68 @@ python diagnose.py
 
 它会以向导形式检查 6 个项目，全部变成 ✓ 就是成功了。
 如果发现问题，会带编号地显示原因和解决办法。
+
+**📋 支持的 AI 编程工具：**
+
+下表列出了本工具可以为其写入运行规则的 AI 编程工具。它会自动检测机器上已安装的工具，并为每个工具在其指定的位置写入运行规则。
+
+| 工具 | 规则写入位置 |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` |
+| opencode | `~/.config/opencode/AGENTS.md` |
+| Amp | `~/.config/amp/AGENTS.md` |
+| Cline | `~/Documents/Cline/Rules/subagent-dashboard.md` |
+| Roo Code | `~/.roo/rules/subagent-dashboard.md` |
+| Windsurf | `~/.codeium/windsurf/memories/global_rules.md` |
+| Qwen Code | `~/.qwen/QWEN.md` |
+
+**不在上表中的工具未必不支持。** 如下所述，你可以注册任意工具。
+
+**Cursor** 和 **Aider** 的情况：这两个工具没有自动读取的全局规则文件，但可以用 `--agent-file` 选项为项目级别的规则文件提供支持。
+
+**🔧 支持其他工具或自定义位置：**
+
+如果你要支持不在上表中的工具，或者需要更改某个工具的规则位置，可以用以下命令：
+
+```bash
+# 列出所有已知的工具及其写入状态
+python install.py --list-agents
+
+# 为某个特定工具写入（如果已安装）
+python install.py --agent codex
+
+# 为所有已知的工具写入（无论是否已安装）
+python install.py --agent all
+
+# 为不在已知列表中的工具写入（指定文件路径）
+python install.py --agent-file /path/to/your/tool/rules.md
+```
+
+用 `--agent-file` 指定的文件会被永久记录在 `agents.json` 中（与任务记录放在同一位置），之后会自动包含在 `--list-agents` 的列表里，每次运行 `install.py` 时都会更新，卸载时也会清理。
+
+`agents.json` 也可以手工编辑。每个条目包含以下字段：
+- `key` - 用于 `--agent` 命令的短标识符
+- `label` - 显示名称
+- `home_env` - 指向工具位置的环境变量名（可以为空）
+- `home` - 工具的主目录路径（可以用 `~` 开头）
+- `file` - 规则文件名（可能包含子目录）
+
+如果 `agents.json` 中某条的 `key` 与内置工具相同，会覆盖内置的配置，这样可以在工具改变规则位置时迅速调整，而无需等待工具更新。
+
+> **⚠️ 初始设置之后安装新工具时**
+>
+> 初始设置时只会向当时已安装的工具写入规则。如果之后又安装了新的 AI 编程工具，那个工具会没有规则，导致从它启动的子代理在面板上什么都显示不了。
+>
+> 解决办法很简单 — 只需再运行一次 `python install.py`：
+>
+> ```bash
+> python install.py
+> ```
+>
+> 本工具会自动检测这种情况：当任务 `start` 时、服务器启动时，或者运行 `python diagnose.py` 时，如果发现某个已安装的工具还没有规则，就会显示警告。
 
 ### 2. 打开画面
 
@@ -143,14 +205,14 @@ http://127.0.0.1:3939/manual.html
 （事后也无法改成完成）。要并行时，请用 `--project` 把记录位置分开。
 
 ```bash
-dash start  --project issue51 --title "issue51 的调查"
+dash start  --project issue51 --title "issue51 的调查" --model claude-opus-5
 dash add    --project issue51 --id SCOUT-A --name "侦察A" --model claude-sonnet-5 --mission "..."
 dash done   --project issue51 --id SCOUT-A --headline "..."
 dash finish --project issue51 --headline "..."
 ```
 
 `--project` 要加在全部 4 条命令上。哪怕只有一条忘了加，那一条命令就会写到当前文件夹一侧
-＝写到另一支小队里去。这套步骤 `dash install` 也会写进 `CLAUDE.md`，因此 Claude 也会按同样的规则行动。
+＝写到另一支小队里去。这套步骤会被写进各工具的运行规则中，因此各编程工具也会按同样的规则行动。
 
 ### 查看过去的记录
 
@@ -227,11 +289,10 @@ dash.cmd ext package
 
 分发更新版时也可以用同样的步骤覆盖。不会碰 `missions/`（工作的记录）。
 
-**更新的时候，运行规则（`CLAUDE.md`）也会重新分发一次。** 因为即使把本体更新了，Claude 读的
-操作说明书仍会停留在旧版（初始设置一旦成功过一次，就不会再自动跑第二次）。从扩展进行
-更新时，放置本体之后会接着弹出「把什么写到哪里」的确认，同意之后
-`CLAUDE.md` 标记内的内容就会替换成新的步骤。如果你跳过了，或者没有用扩展而是用
-覆盖复制的方式更新的，请手动执行。
+**更新的时候，各工具的运行规则也会重新分发一次。** 因为即使把本体更新了，各工具读的
+规则仍会停留在旧版（初始设置一旦成功过一次，就不会再自动跑第二次）。从扩展进行
+更新时，放置本体之后会接着弹出「把什么写到哪里」的确认，同意之后各规则文件就会
+替换成新的内容。如果你跳过了，或者没有用扩展而是用覆盖复制的方式更新的，请手动执行。
 
 ```bash
 python ~/.claude/agent-dashboard/install.py
@@ -345,7 +406,12 @@ export AGENT_DASHBOARD_HOME=~/dashboard-data
 | `AGENT_DASHBOARD_PROJECT` | 固定对象项目（`--project` 优先） |
 | `AGENT_DASHBOARD_HISTORY_KEEP` | 每个项目保留多少件过去的记录（默认 20。填 `0` 则不转移） |
 | `PORT` | 服务器的默认端口（`--port` 优先） |
-| `CLAUDE_CONFIG_DIR` | `CLAUDE.md` 的位置（与 Claude Code 的设置保持一致） |
+| `CLAUDE_CONFIG_DIR` | Claude Code 的 `CLAUDE.md` 的位置 |
+| `CODEX_HOME` | Codex CLI 的 `AGENTS.md` 的位置 |
+| `GEMINI_CLI_HOME` | Gemini CLI 的 `GEMINI.md` 的位置 |
+| `COPILOT_HOME` | GitHub Copilot CLI 的规则文件的位置 |
+| `OPENCODE_CONFIG_DIR` | opencode 的 `AGENTS.md` 的位置 |
+| `AGENT_DASHBOARD_AGENTS_FILE` | 自定义添加的工具列表的保存位置（默认为任务记录位置下的 `agents.json`） |
 
 ### 显示语言
 
@@ -371,13 +437,14 @@ dash lang en     # en / ja / zh / ko
 
 因为环境变量比保存下来的设置更强，所以如果执行 `dash lang ja` 之后仍然不变，那就是设置了 `AGENT_DASHBOARD_LANG`（`dash lang` 会把这一点显示出来）。
 
-**代理的名字和任务内容不会被翻译。** 它们是 Claude 用 `dash add` 写进去的自由文本，照写下的样子记录，照记录的样子显示在画面上。Claude 用什么语言来写，由 `install.py` 放进 `CLAUDE.md` 的那段说明决定，而那段说明是用上面的**命令的输出**的语言写的——不是画面的语言。切换右上角的选择器之所以不会改变它们，就是这个原因。要更改时：
+**代理的名字和任务内容不会被翻译。** 它们是各编程工具用 `dash add` 写进去的自由文本，照写下的样子记录，照记录的样子显示在画面上。各工具用什么语言来写，由 `install.py` 放进各规则文件的那段说明决定，而那段说明跟随下面的**命令的输出**的语言——不是画面的语言。切换右上角的选择器之所以不会改变它们，就是这个原因。改变它们的是 `dash lang <代码>`：**它会当场把所有规则文件中的说明也用新的语言重写**（你设置的语言就是组队时使用的语言）。
 
 ```bash
-dash lang en          # 1. 定下语言
-python install.py     # 2. 重写 CLAUDE.md 里的说明
-                      # 3. 重启 Claude 的会话（CLAUDE.md 在启动时读取）
+dash lang zh          # 1. 定下语言（所有规则文件中的说明也会被改写成这个语言）
+                      # 2. 重启各编程工具的会话（规则在启动时读取）
 ```
+
+被重写的**只有指向这一份副本的说明**，所以在别的副本里改变语言，绝不会把规则文件的指向换到别的目录去。如果它提示运行规则没有写在任何地方，说明那份副本还没有做初始设置——执行一次 `python install.py` 即可。
 
 **已经存在的记录保持写下时的语言。** 事后重新翻译，会让画面显示出与「实际发生的事情」不同的东西。
 
@@ -496,9 +563,9 @@ Claude 启动子代理 / 收到完成回报
 
    请确认所有检查项都变成了 ✓。
 
-3. **请重启 Claude 的会话**
+3. **请重启各编程工具的会话**
 
-   `CLAUDE.md` 的改动是在启动时读取的，因此不会反映到正在运行的会话里。
+   规则文件的改动是在启动时读取的，因此不会反映到正在运行的会话里。
 
 4. **请确认当前目录**
 

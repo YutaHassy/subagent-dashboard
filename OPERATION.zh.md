@@ -17,7 +17,7 @@ python <本目录>/dash.py add ...               # 直接调用启动器的本�
 python <本目录>/update_state.py add           # 直接调用 CLI
 ```
 
-**实际执行时使用的、带完整路径的命令示例，已经写入 Claude 的全局配置 `CLAUDE.md`。**
+**实际执行时使用的、带完整路径的命令示例，已经写入各编程工具的规则文件中。**
 请直接照搬那边的写法（那是 `dash install` 按照当前环境生成的）。
 本目录的实际位置也会显示在 `dash projects` 输出的开头。
 
@@ -154,7 +154,7 @@ dash ext install     # 只做一次。之后重新加载 VSCode
 
 1. **环境变量 `AGENT_DASHBOARD_HOME`** 已经设置 → 使用该路径
 2. **环境变量未设置** → 检测执行 `install.py` 的目录
-3. **嵌入 `CLAUDE.md`** → Claude 自动执行的命令中包含完整路径
+3. **嵌入规则文件** → 编程工具自动执行的命令中包含完整路径
 
 #### 服务器的启动
 
@@ -232,6 +232,83 @@ webbrowser.open("http://127.0.0.1:3939")
 
 ---
 
+## 0.2. 支持多种 AI 编程工具
+
+本工具能为以下 AI 编程工具写入运行规则：
+
+| 工具 | 规则文件 |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` |
+| opencode | `~/.config/opencode/AGENTS.md` |
+| Amp | `~/.config/amp/AGENTS.md` |
+| Cline | `~/Documents/Cline/Rules/subagent-dashboard.md` |
+| Roo Code | `~/.roo/rules/subagent-dashboard.md` |
+| Windsurf | `~/.codeium/windsurf/memories/global_rules.md` |
+| Qwen Code | `~/.qwen/QWEN.md` |
+
+表中故意没有列出 **Cursor** 和 **Aider**，因为这两个工具都没有自动读取的全局规则文件（Cursor 读取项目级别的 `AGENTS.md`，Aider 需要配置中明确指定文件名）。对于这两个工具，可以用 `--agent-file` 指向项目级别的规则文件来实现支持。
+
+**不在此表中的工具也可以支持** — 见下文 `--agent-file` 说明。
+
+### 有三种方式为 AI 工具配置规则：
+
+**方式 1：自动检测与安装（推荐）**
+
+```
+python install.py
+```
+
+扫描机器上已安装的工具，为每个工具写入规则。
+
+**方式 2：仅为某个工具写入**
+
+```
+python install.py --agent codex
+```
+
+指定工具名称（`claude` / `codex` / `gemini` / `copilot` / `opencode` / `amp` / `cline` / `roo` / `windsurf` / `qwen`），只为该工具写入，即使它未安装也会尝试。
+
+**方式 3：为所有已知工具写入**
+
+```
+python install.py --agent all
+```
+
+为所有内置工具写入，无论是否已安装。
+
+**方式 4：支持表中没有的工具或自定义位置**
+
+```
+python install.py --agent-file /path/to/rules.md
+```
+
+用 `--agent-file` 指定的文件会被永久记录在 `agents.json` 中（与任务记录放在同一位置），之后：
+- 会出现在 `--list-agents` 的列表中
+- 每次运行 `install.py` 时都会自动更新
+- 卸载时会被清理
+
+`agents.json` 也支持手工编辑。每个条目的字段：
+- `key` - 在 `--agent` 命令中使用的短标识符
+- `label` - 工具的显示名称
+- `home_env` - 指向工具主目录的环境变量名（可为空）
+- `home` - 工具的主目录路径（可以用 `~` 开头）
+- `file` - 规则文件名或相对路径
+
+如果 `agents.json` 中某条的 `key` 与内置工具的 `key` 相同，会**覆盖**内置配置。这样当工具改变规则位置时，可以立即在本地更正，无需等待工具更新。
+
+### 查看已配置的工具和写入状态
+
+```
+python install.py --list-agents
+```
+
+显示所有已知的工具（内置 + 自定义）、它们的规则写入位置、以及当前的写入状态。
+
+---
+
 ## 1. 任务开始时
 
 在启动任何一个子代理**之前**，在正在作业的项目目录下只执行一次。
@@ -245,7 +322,7 @@ webbrowser.open("http://127.0.0.1:3939")
 才更麻烦。
 
 ```bash
-dash start --title "重构影响范围调查"
+dash start --title "重构影响范围调查" --model claude-opus-5
 ```
 
 **在同一目录下同时跑第二个任务时，必须用 `--project` 把记录位置分开。**
@@ -274,7 +351,8 @@ dash add --id SCOUT-A --name "侦察A" --model claude-sonnet-5 --mission "梳理
 
 **自由文本用中文书写**（`--title` / `--name` / `--mission` / `--headline`）。会照你写下的样子记录，
 照记录的样子显示在画面上——事后不会翻译。请对齐这份手册的语言，而不是对话的语言。
-要改这个语言，执行 `dash lang <en|ja|zh|ko>`，接着用 `python install.py` 重写 `CLAUDE.md` 里的说明。
+要改这个语言，执行 `dash lang <en|ja|zh|ko>`。**各规则文件里的说明也会当场被改写成新的语言**，
+所以设置的语言就是组队时使用的语言（从下一次会话开始生效——规则在启动时读取）。
 **已经存在的记录保持写下时的样子**，不会事后重新翻译。
 
 世代（位于第几列）会从 `--parent` 自动算出，不要指定。
@@ -552,7 +630,7 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 | 显示哪支小队的决定 | 完全在服务器一侧决定。浏览器不记忆，所以在哪台设备上打开都显示同一支小队 |
 | 并行运行 | 运行中的小队会全部纵向堆叠、同时显示。排列顺序按开始时间由新到旧 |
 | 记录位置的数量 | 每个项目（＝作业目录）只有一个。在同一目录下 `start` 第二个，第一个就会在运行中的状态下被挤进历史，此后无法写入。要并行就用 `--project` 分开（→ 6.1） |
-| 本体与运行规则的版本 | 会各自变旧。即使更新了本体，`CLAUDE.md` 里的运行规则在重新执行 `install.py` 之前仍旧是旧的。若不一致，会在 `start` 和服务器启动时给出提示（也可以在 `diagnose.py` 的「运行规则的版本」中确认） |
+| 本体与运行规则的版本 | 会各自变旧。即使更新了本体，各工具中的运行规则在重新执行 `install.py` 之前仍旧是旧的。若不一致，会在 `start` 和服务器启动时给出提示（也可以在 `diagnose.py` 的「运行规则的版本」中确认） |
 | 小队的更替 | 从 `/api/state` 的 `teams` 中消失的小队，会当场连同其容器一起清理掉 |
 | 在同一文件夹重新 start 时 | slug 不会变，所以通过 `mission.startedAt` 的变化来丢弃上一次任务的日志 |
 | 通信中断时 | 保持中断前的显示，右上角的连接指示灯变红 |
@@ -570,7 +648,7 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 ├─ dash.py            统一入口点
 ├─ server.py          分发服务器（全部项目共用，只启动一个）
 ├─ update_state.py    状态更新 CLI（对状态的唯一写入口）
-├─ install.py         初始设置（写入 CLAUDE.md）
+├─ install.py         初始设置（向各 AI 工具写入运行规则）
 ├─ dashlib.py         公共逻辑（路径解析、项目识别、合并、格式化）
 ├─ build_vsix.py      组装并安装 VSCode 扩展（dash ext ...）
 ├─ test_tabs.py       标签页列表的动作确认。用 python test_tabs.py 运行（不碰记录）
@@ -598,7 +676,12 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 | `AGENT_DASHBOARD_HOME` | 更改记录的保存位置（默认是本目录。若不可写则使用操作系统的用户数据区域） |
 | `AGENT_DASHBOARD_PROJECT` | 固定目标项目（`--project` 优先级更高） |
 | `PORT` | 服务器的默认端口（`--port` 优先级更高） |
-| `CLAUDE_CONFIG_DIR` | `install.py` 写入的 `CLAUDE.md` 的位置 |
+| `CLAUDE_CONFIG_DIR` | Claude Code 的 `CLAUDE.md` 的位置 |
+| `CODEX_HOME` | Codex CLI 的 `AGENTS.md` 的位置 |
+| `GEMINI_CLI_HOME` | Gemini CLI 的 `GEMINI.md` 的位置 |
+| `COPILOT_HOME` | GitHub Copilot CLI 的规则文件的位置 |
+| `OPENCODE_CONFIG_DIR` | opencode 的 `AGENTS.md` 的位置 |
+| `AGENT_DASHBOARD_AGENTS_FILE` | 自定义添加的工具列表的保存位置（默认为 `agents.json`，与任务记录在同一位置） |
 | `AGENT_DASHBOARD_LANG` | 输出的语言（`en` / `ja` / `zh` / `ko`）。优先于已保存的设置 |
 
 ### 显示语言

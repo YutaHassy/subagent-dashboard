@@ -4,7 +4,7 @@
 このファイル1つから、サーバー起動・状態更新・初期設定をすべて呼び出せる。
 
     dash serve [--open]                 画面のサーバーを起動する
-    dash install                        初期設定（Claude 用の設定ファイルに追記）
+    dash install                        初期設定（エージェント用の設定ファイルに追記）
     dash ext install                    VSCode 拡張機能として入れる
 
     dash start  --title "..."           ミッション開始
@@ -55,7 +55,7 @@ Subagent Dashboard
     dash serve --port 4000     choose the port
 
   First-time setup
-    dash install               write the operating rules into Claude's config file
+    dash install               write the operating rules into the agent's config file
     dash install --print       only show what would be written (changes nothing)
 
   Build a distribution package
@@ -68,7 +68,7 @@ Subagent Dashboard
     dash ext status            check whether it is installed
     dash ext uninstall         remove the extension
 
-  Update the state (normally Claude runs these automatically)
+  Update the state (normally the agent runs these automatically)
     dash start  --title "name of the work"
     dash add    --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "the task"
     dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "result summary"

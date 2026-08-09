@@ -127,31 +127,244 @@ def doc_path(stem: str) -> Path:
     return localized if localized.exists() else TOOL_ROOT / f"{stem}.md"
 
 
-def claude_config_dir() -> Path:
-    """Claude の設定ディレクトリ（CLAUDE_CONFIG_DIR があればそれを尊重する）。"""
-    env = os.environ.get("CLAUDE_CONFIG_DIR")
+# ------------------------------------------------------- 運用ルールの書き先（CLI ごと）
+#
+# 運用ルールの**本文はどの CLI でも同じ**（呼ぶのは同じ update_state.py で、
+# update_state.py はモデル ID を見ていない）。違うのは「その CLI が起動時に必ず読む
+# ファイルはどれか」だけ。Claude Code は ~/.claude/CLAUDE.md、Codex CLI は
+# ~/.codex/AGENTS.md を読む。
+#
+# 対応表をここ1箇所に置いているのは、書く側（install.py）と読む側（diagnose.py /
+# auto_setup.py / 下の版チェック）がファイルを跨いでいるため。片方にだけ CLI を足すと
+# 「書き込んだのに未設定と言われる」噛み合わせ事故になり、症状から原因に辿り着けない。
+#
+# **組み込みの表は「よく使われる CLI の近道」であって、対応できる範囲ではない。**
+# 知らない CLI や、これから出てくる CLI にも書けなければ意味が無いので、表は
+#
+#   1. ここの組み込み
+#   2. 利用者が足した分（AGENTS_FILE の JSON。同じ鍵なら利用者側が勝つ）
+#
+# を重ねたものとして扱う。install.py --agent-file <パス> は 2 に1件足してから書く。
+# 新しい CLI が出ても、このファイルを配り直さずに追随できる形にしてある。
+#
+#   key      : 鍵。コマンドライン（--agent）と JSON で指す名前
+#   label    : 画面に出す名前。**訳さない**（製品名なので、どの言語でも同じ綴り）
+#   home_env : 設定フォルダの場所を変える環境変数。無ければ ""
+#   home     : 既定の設定フォルダ。"~" から書く
+#   file     : その CLI が起動時に読むファイルの名前
+# file にフォルダを含めてよい（"rules/subagent-dashboard.md"）。1つのファイルではなく
+# **ルール置き場のフォルダを丸ごと読む** CLI が実際にあり、そこには専用の1枚を置くのが
+# 一番行儀がよい（既存のルールに追記すると、その CLI の作法と喧嘩する）。
+#
+# ここに無い CLI は install.py --agent-file で足せる。**表に載っていないことは
+# 「対応していない」を意味しない。** 表は近道であって、境界ではない。
+#
+# 印の意味:
+#   [確認済] 公式ドキュメント/リポジトリで場所を確かめたもの
+#   [未確認] 二次情報しか取れなかったもの。設定フォルダが実在するときだけ書くので
+#            外していても実害は小さいが、直す価値はある
+BUILTIN_AGENT_TARGETS: tuple[dict, ...] = (
+    # [確認済]
+    {"key": "claude", "label": "Claude Code", "home_env": "CLAUDE_CONFIG_DIR",
+     "home": "~/.claude", "file": "CLAUDE.md"},
+    {"key": "codex", "label": "Codex CLI", "home_env": "CODEX_HOME",
+     "home": "~/.codex", "file": "AGENTS.md"},
+    {"key": "gemini", "label": "Gemini CLI", "home_env": "GEMINI_CLI_HOME",
+     "home": "~/.gemini", "file": "GEMINI.md"},
+    {"key": "copilot", "label": "GitHub Copilot CLI", "home_env": "COPILOT_HOME",
+     "home": "~/.copilot", "file": "copilot-instructions.md"},
+    {"key": "opencode", "label": "opencode", "home_env": "OPENCODE_CONFIG_DIR",
+     "home": "~/.config/opencode", "file": "AGENTS.md"},
+    # Amp は ~/.config/AGENTS.md も読むが、そちらは狙わない。~/.config は Amp を
+    # 入れていなくても大抵あるので、自動判定が誰の環境にも書き込んでしまう。
+    {"key": "amp", "label": "Amp", "home_env": "",
+     "home": "~/.config/amp", "file": "AGENTS.md"},
+    # ルール置き場が「フォルダ」の CLI。専用の1枚を置く。
+    {"key": "cline", "label": "Cline", "home_env": "",
+     "home": "~/Documents/Cline/Rules", "file": "subagent-dashboard.md"},
+    {"key": "roo", "label": "Roo Code", "home_env": "",
+     "home": "~/.roo", "file": "rules/subagent-dashboard.md"},
+    # [未確認]
+    {"key": "windsurf", "label": "Windsurf", "home_env": "",
+     "home": "~/.codeium/windsurf/memories", "file": "global_rules.md"},
+    {"key": "qwen", "label": "Qwen Code", "home_env": "",
+     "home": "~/.qwen", "file": "QWEN.md"},
+)
+
+# 載せていない CLI と、その理由（消さないこと。次に調べ直す人が同じ道を辿らないように）:
+#   Cursor  — 利用者ごとのルールファイルが無い。読むのはリポジトリ内の AGENTS.md だけ
+#   Aider   — 起動時に必ず読む指示ファイルという仕組みが無い（設定で明示的に指すやり方）
+# どちらも、リポジトリ内のファイルを --agent-file で指せば同じことができる。
+
+#: 利用者が足した CLI を置く JSON。場所は環境変数で変えられる（試験用）。
+ENV_AGENTS_FILE = "AGENT_DASHBOARD_AGENTS_FILE"
+
+AGENT_ENTRY_KEYS = ("key", "label", "home_env", "home", "file")
+
+
+def agents_file() -> Path:
+    """利用者が足した CLI の一覧（JSON）の場所。
+
+    AGENTS_FILE を直に読まずこの関数を通すのは、環境変数での差し替えを
+    **呼ばれた時点で**効かせるため（取り込み時に固めると試験で差し替えられない）。
+    """
+    env = os.environ.get(ENV_AGENTS_FILE)
+    if env and env.strip():
+        return Path(env).expanduser()
+    return AGENTS_FILE
+
+
+def _clean_entry(raw: object) -> dict | None:
+    """JSON の1件を表の形に整える。使えないものは None（**捨てるが落とさない**）。
+
+    ここで例外にすると、書き損じた JSON が1つあるだけで update_state.py 全体が
+    動かなくなる。運用ルールを書く道具が、設定ファイルの誤字で本業を止めてよい
+    理由が無い。使える行だけ拾って進む。
+    """
+    if not isinstance(raw, dict):
+        return None
+    key = str(raw.get("key", "")).strip().lower()
+    name = str(raw.get("file", "")).strip()
+    home = str(raw.get("home", "")).strip()
+    if not key or not name or not home:
+        return None
+    # パス区切りや空白を含む鍵は、--agent の値としても JSON の見出しとしても
+    # 扱いにくいので受け付けない（フォルダ名に化ける場所がある）。
+    if any(ch in key for ch in "/\\ \t"):
+        return None
+    return {
+        "key": key,
+        "label": str(raw.get("label", "")).strip() or key,
+        "home_env": str(raw.get("home_env", "")).strip(),
+        "home": home,
+        "file": name,
+    }
+
+
+def load_user_agents() -> list[dict]:
+    """利用者が足した CLI。ファイルが無い・壊れているときは空リスト。"""
+    path = agents_file()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    # {"agents": [...]} でも [...] でも受ける。手で書く人が迷わないように。
+    if isinstance(raw, dict):
+        raw = raw.get("agents")
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in raw:
+        entry = _clean_entry(item)
+        if entry and entry["key"] not in seen:
+            seen.add(entry["key"])
+            out.append(entry)
+    return out
+
+
+def add_user_agent(entry: dict) -> None:
+    """利用者の一覧に1件足す（同じ鍵があれば置き換える）。
+
+    書けなければ OSError をそのまま投げる。ここを握り潰すと「登録したのに
+    次回いなくなっている」になり、利用者は原因を追えない。
+    """
+    cleaned = _clean_entry(entry)
+    if cleaned is None:
+        raise ValueError("invalid agent entry: %r" % (entry,))
+    others = [e for e in load_user_agents() if e["key"] != cleaned["key"]]
+    path = agents_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"agents": others + [cleaned]}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def agent_targets() -> list[dict]:
+    """組み込みと利用者定義を重ねた、いま有効な CLI の一覧。
+
+    同じ鍵があれば**利用者側が勝つ**。組み込みの想定が古くなった（CLI 側が読む
+    ファイルを変えた）ときに、配り直しを待たずに手元で直せるようにするため。
+    """
+    merged = {e["key"]: dict(e) for e in BUILTIN_AGENT_TARGETS}
+    for entry in load_user_agents():
+        merged[entry["key"]] = entry
+    return list(merged.values())
+
+
+def agent_keys() -> tuple[str, ...]:
+    return tuple(e["key"] for e in agent_targets())
+
+
+def _agent_entry(key: str) -> dict:
+    for entry in agent_targets():
+        if entry["key"] == key:
+            return entry
+    raise KeyError(key)
+
+
+def agent_label(key: str) -> str:
+    """画面に出す CLI の名前。**訳さない**（製品名なので、どの言語でも同じ綴り）。"""
+    return _agent_entry(key)["label"]
+
+
+def agent_config_dir(key: str) -> Path:
+    """その CLI の設定ディレクトリ（場所を変える環境変数があればそれを尊重する）。"""
+    entry = _agent_entry(key)
+    env_name = entry.get("home_env") or ""
+    env = os.environ.get(env_name) if env_name else None
     if env and env.strip():
         return Path(env).expanduser().resolve()
-    return (Path.home() / ".claude").resolve()
+    return Path(entry["home"]).expanduser().resolve()
 
 
-# ------------------------------------------------- CLAUDE.md に書いた運用ルールの版
+def instruction_file(key: str) -> Path:
+    """その CLI が起動時に読む、運用ルールを書き込むファイル。"""
+    return agent_config_dir(key) / _agent_entry(key)["file"]
+
+
+def claude_config_dir() -> Path:
+    """Claude の設定ディレクトリ（CLAUDE_CONFIG_DIR があればそれを尊重する）。"""
+    return agent_config_dir("claude")
+
+
+def present_agents() -> list[str]:
+    """設定フォルダが実在する CLI。**入っていない CLI に書き込まないため**の判定。
+
+    フォルダの有無だけを見る。CLI 本体を PATH から探しにいかないのは、拡張や
+    パッケージ管理ごとに置き場所が違って当てにならないうえ、置き場所が分からない
+    だけで「未対応」と表示してしまうため。設定フォルダは必ずホーム直下にできる。
+    """
+    out = []
+    for key in agent_keys():
+        try:
+            if agent_config_dir(key).is_dir():
+                out.append(key)
+        except OSError:  # 壊れたパスを書かれても、他の CLI の判定は続ける
+            continue
+    return out
+
+
+# ------------------------------------------- 運用ルールに書いた版（CLI ごとに古くなる）
 #
-# 本体（コード）と CLAUDE.md の運用ルールは**別々に古くなる**。本体は拡張の更新や
-# 上書きコピーで新しくなるが、CLAUDE.md は誰かが install.py を実行し直すまで古いまま
-# 残る（初期設定は一度成功すると自動では二度と走らない）。運用ルールが増えた版では、
-# 増えたぶんが Claude に届かないまま次の作業が始まってしまう。
+# 本体（コード）と運用ルールは**別々に古くなる**。本体は拡張の更新や上書きコピーで
+# 新しくなるが、運用ルールは誰かが install.py を実行し直すまで古いまま残る（初期設定は
+# 一度成功すると自動では二度と走らない）。運用ルールが増えた版では、増えたぶんが
+# エージェントに届かないまま次の作業が始まってしまう。
 #
 # **判定をここに置いているのは、dashlib が必ず配られるため。** 同じことを auto_setup.py に
 # 書くと、開発ディレクトリでは動くのに配布物では動かない（auto_setup.py は .vsix に
 # 同梱しない＝ build_vsix.PAYLOAD_SKIP）。書く側（install.py）もここの定数を使う。
 
-CLAUDE_BLOCK_BEGIN = "<!-- agent-dashboard:begin -->"
-CLAUDE_BLOCK_END = "<!-- agent-dashboard:end -->"
+# しるしの**中身**は CLI が増えても変えない。CLAUDE.md と AGENTS.md で別のしるしに
+# すると、片方しか外せない --uninstall ができあがる。
+BLOCK_BEGIN = "<!-- agent-dashboard:begin -->"
+BLOCK_END = "<!-- agent-dashboard:end -->"
 
 # 版のしるしは囲みの**内側**に置く。BEGIN / END は決して変えない。変えると、それ以前に
 # 書き込んだブロックを見つけられなくなり、差し替えのつもりが二重書き込みになる。
-CLAUDE_BLOCK_VERSION_MARK = "<!-- agent-dashboard:version "
+BLOCK_VERSION_MARK = "<!-- agent-dashboard:version "
 
 
 def tool_version() -> str:
@@ -162,9 +375,9 @@ def tool_version() -> str:
         return ""
 
 
-def claude_md_text() -> str | None:
-    """CLAUDE.md の中身。読めなければ None。"""
-    target = claude_config_dir() / "CLAUDE.md"
+def instruction_text(key: str) -> str | None:
+    """その CLI の運用ルールファイルの中身。読めなければ None。"""
+    target = instruction_file(key)
     if not target.is_file():
         return None
     try:
@@ -173,45 +386,94 @@ def claude_md_text() -> str | None:
         return None
 
 
-def claude_block_installed() -> bool:
-    """CLAUDE.md に、いま動いているこの本体の運用ルールが書かれているか。
+def block_installed(key: str) -> bool:
+    """その CLI の運用ルールファイルに、いま動いているこの本体の運用ルールがあるか。
 
-    マーカーだけでなくパスも見る。同じツールのコピーが複数あるとき、CLAUDE.md が別の
+    マーカーだけでなくパスも見る。同じツールのコピーが複数あるとき、運用ルールが別の
     コピーを指していれば、ここは False でなければならない（記録の書き込み先が分かれる）。
     """
-    text = claude_md_text()
+    text = instruction_text(key)
     if text is None:
         return False
-    if CLAUDE_BLOCK_BEGIN not in text or CLAUDE_BLOCK_END not in text:
+    if BLOCK_BEGIN not in text or BLOCK_END not in text:
         return False
     us = str(TOOL_ROOT / "update_state.py")
     return us in text or us.replace("\\", "/") in text
 
 
-def claude_block_version() -> str | None:
-    """CLAUDE.md に書かれているブロックの版。しるしが無ければ None。
+def installed_agents() -> list[str]:
+    """運用ルールが書き込まれている CLI。1つも無ければ空リスト（＝未設定）。"""
+    return [key for key in agent_keys() if block_installed(key)]
+
+
+def block_version(key: str) -> str | None:
+    """その CLI に書かれているブロックの版。しるしが無ければ None。
 
     0.4.1 までのブロックにはしるしが無いので、そこから更新すると必ず None になる
     ＝「古い」と判定される。実際に古いので、これが正しい。
     """
-    text = claude_md_text()
+    text = instruction_text(key)
     if text is None:
         return None
-    start = text.find(CLAUDE_BLOCK_BEGIN)
+    start = text.find(BLOCK_BEGIN)
     if start == -1:
         return None
-    stop = text.find(CLAUDE_BLOCK_END, start)
+    stop = text.find(BLOCK_END, start)
     if stop == -1:
         return None
 
     block = text[start:stop]
-    i = block.find(CLAUDE_BLOCK_VERSION_MARK)
+    i = block.find(BLOCK_VERSION_MARK)
     if i == -1:
         return None
     j = block.find("-->", i)
     if j == -1:
         return None
-    return block[i + len(CLAUDE_BLOCK_VERSION_MARK):j].strip() or None
+    return block[i + len(BLOCK_VERSION_MARK):j].strip() or None
+
+
+def unwired_agents() -> list[str]:
+    """入っているのに運用ルールが書かれていない CLI。
+
+    **セットアップのあとに CLI を入れた人が必ず落ちる穴。** 初期設定は「そのとき
+    入っていた CLI」にしか書かない（入れていない CLI のフォルダを勝手に作らない
+    ため）。あとから別の CLI を入れると、そちらには何も書かれていないまま、
+    画面には何も出ない状態が続く。
+
+    1つでも書けていれば設定済みと見なす判定だけだと、この状態が「緑」に見える。
+    見えるようにするための判定をここに1つ置き、update_state / server / diagnose /
+    auto_setup の4か所が同じ規則を使う。
+    """
+    written = set(installed_agents())
+    return [key for key in present_agents() if key not in written]
+
+
+def unwired_agent_notice() -> str | None:
+    """後から入れた CLI に運用ルールが届いていなければ、知らせる文面を返す。
+
+    まだ1つも書いていない人には返さない（その人向けの案内は初回セットアップ側が
+    持っていて、ここで重ねると初回の画面が警告だらけになる）。stale_block_notice と
+    同じ考え方で、文面を返すだけで印字はしない。
+    """
+    if not installed_agents():
+        return None
+    pending = unwired_agents()
+    if not pending:
+        return None
+
+    names = ", ".join(agent_label(key) for key in pending)
+    return (
+        t("  ⚠️  {names} is installed, but the operating rules have not been "
+          "written for it.").format(names=names)
+        + "\n"
+        + t("      It was probably installed after the setup ran. "
+            "Until you write them,")
+        + "\n"
+        + t("      subagents started from it will not show up on the screen. Please run:")
+        + "\n"
+        + f"        python {TOOL_ROOT / 'install.py'}\n"
+        + t("      (Only the marked block is written. Nothing else is touched.)")
+    )
 
 
 def stale_block_notice() -> str | None:
@@ -222,28 +484,156 @@ def stale_block_notice() -> str | None:
 
     まだ設定していない人には None を返す。その人向けの案内は初回セットアップ側が
     持っていて、ここで重ねると初回の画面が警告だらけになって肝心の手順が埋もれる。
-    """
-    if not claude_block_installed():
-        return None
 
+    書き込み先が複数あるときは**古いものだけ**を挙げる。両方に書いてあって片方だけ
+    古い（CLI を後から足した直後がこれ）ときに、全部を挙げると直す先が分からない。
+    """
+    stale: list[str] = []
     current = tool_version()
     if not current:  # 自分の版が分からないときは黙る。比較の根拠が無い
         return None
 
-    installed = claude_block_version()
-    if installed == current:
+    for key in installed_agents():
+        installed = block_version(key)
+        if installed == current:
+            continue
+        where = (t("no version recorded") if installed is None
+                 else t("version {v}").format(v=installed))
+        stale.append(t("{name} ({where})").format(
+            name=instruction_file(key).name, where=where))
+
+    if not stale:
         return None
 
-    where = t("no version recorded") if installed is None else t("version {v}").format(v=installed)
     return (
-        t("  ⚠️  The operating rules in CLAUDE.md are older than the tool "
-          "({where} / tool version {current}).").format(where=where, current=current)
+        t("  ⚠️  The operating rules are older than the tool "
+          "({stale} / tool version {current}).").format(
+              stale=" / ".join(stale), current=current)
         + "\n"
         + t("      Updating the tool does not update the rules. Please run:")
         + "\n"
         + f"        python {TOOL_ROOT / 'install.py'}\n"
         + t("      (Only the marked block is replaced. Nothing else is touched.)")
     )
+
+
+# ------------------------------------- 自由記述の言語（走っているセッションへ届ける）
+#
+# 自由記述（`--title` / `--name` / `--mission` / `--headline`）を何語で書くかは、
+# エージェントが**セッション開始時に読んだ運用ルール**で決まる。`dash lang` で設定を
+# 変えて運用ルールを書き直しても、**すでに走っているセッションには届かない**
+# （運用ルールは起動時に一度読まれるだけ）。その結果、ツールが書く既定ラベル
+# （`t()` を通る「指令塔」など）は新しい言語なのに、エージェントが書いた行は古い言語の
+# まま、という混在が起きる。**実際に起きた**（指令塔だけ日本語で、第1世代は英語）。
+#
+# **走っているセッションへ届く経路は、エージェントが必ず読むコマンドの出力しかない。**
+# だから start では毎回「この言語で書く」と1行出し、受け取った自由記述が明らかに違う
+# 言語のときは警告する。判定をここに置くのは、書く側（update_state）と読む側
+# （将来 server や diagnose が同じ判断をしたくなったとき）が同じ規則を見るため。
+#
+# **警告に留め、決して書き込みを拒否しない。** 判定は文字種を見るだけの当て推量で、
+# 固有名詞やコールサインを英語で書く運用は正しくありうる。当て推量で人の手を止めるのは
+# `--tokens` を推測で埋めないのと同じ理由で、このツールの方針に反する。
+
+#: 期待する言語ごとの「その言語で書いたなら必ず現れる文字」。
+#: 日本語と中国語は漢字を共有しているので、**互いの取り違えは検出できない**。
+#: そこまで当てようとすると誤検出のほうが増える（英語混在との区別が付かない）。
+_LANG_SCRIPTS = {
+    # かな + 漢字（かなが1文字でもあれば日本語と分かる）
+    "ja": "[぀-ヿ㐀-䶿一-鿿豈-﫿]",
+    # 漢字
+    "zh": "[㐀-䶿一-鿿豈-﫿]",
+    # ハングル（音節 + 字母）
+    "ko": "[가-힣ᄀ-ᇿ㄰-㆏]",
+}
+_CJK_ANY = re.compile("|".join(_LANG_SCRIPTS.values()))
+
+#: 英語で書かれていそうか。2文字以上の英単語を要求するので、記号や数字だけでは真にならない。
+_ASCII_WORD = re.compile(r"[A-Za-z]{2,}")
+
+#: ID・パス・版番号のような識別子。`SCOUT-A` や `src/api.py` を英語と見なさないため。
+_IDENTIFIER_LIKE = re.compile(r"^[A-Za-z0-9._/\\:-]+$")
+
+#: これより短い記述は判定しない。`42` や `---` を言語で語るのは無理がある。
+MIN_LANG_CHECK_CHARS = 6
+
+
+def free_text_lang_mismatch(text, lang: str | None = None) -> bool:
+    """その自由記述が、設定された言語で書かれていない**ように見える**か。
+
+    見えるだけで、断定はしない（呼び手は警告に使い、書き込みは止めない）。
+    誤検出を避けるため、次は最初から対象外にする。
+      - 短すぎるもの（`MIN_LANG_CHECK_CHARS` 未満）
+      - 識別子の形をしたもの（`SCOUT-A` / `src/api.py` / `v0.5.1`）
+      - 期待する言語の文字が1文字でも入っているもの（日本語の文に `API` が混ざるのは正常）
+      - 対応表に無い言語（判定の根拠が無いので黙る）
+    """
+    s = as_str(text).strip()
+    if len(s) < MIN_LANG_CHECK_CHARS:
+        return False
+    if _IDENTIFIER_LIKE.match(s):
+        return False
+    want = lang or i18n.get_lang()
+    if want == "en":
+        # 英語設定に CJK が混ざるのは稀なので、1文字でも入っていれば知らせる。
+        return bool(_CJK_ANY.search(s))
+    pattern = _LANG_SCRIPTS.get(want)
+    if pattern is None:
+        return False
+    if re.search(pattern, s):
+        return False
+    return bool(_ASCII_WORD.search(s))
+
+
+def expected_lang_notice() -> str:
+    """「自由記述はこの言語で書く」の1行。**常に返す**（警告ではなく指示）。
+
+    start の出力に無条件で出すためのもの。stale_block_notice() のように
+    「問題があるときだけ」にしてはいけない——設定を変えた直後は何も問題が起きて
+    いないのに、エージェントの手元にある運用ルールだけが古い、という状況だから。
+    """
+    lang = i18n.get_lang()
+    return t("  Write the free text (--title / --name / --mission / --headline) "
+             "in this language: {label} ({code}).").format(
+                 label=i18n.label(lang), code=lang)
+
+
+def free_text_lang_notice(mismatches, *, fixable: bool) -> str | None:
+    """食い違っていた自由記述を知らせる文面。1件も無ければ None。
+
+    文面を返すだけで印字はしない（stale_block_notice() と同じ約束）。
+
+    :param mismatches: [(オプション名, 渡された値), ...]
+    :param fixable: あとから直せるか。`add` / `done` / `finish` は同じ `--id` で
+        打ち直せば直る（実測値は保たれる）。`start` の `--title` は**直す手段が無い**
+        ので、直せると言ってはいけない。言えば、次の start で全員を履歴へ流す。
+    """
+    if not mismatches:
+        return None
+    lang = i18n.get_lang()
+    fields = " / ".join(
+        t('{flag} "{value}"').format(flag=flag, value=clip(as_str(value), 40))
+        for flag, value in mismatches
+    )
+    lines = [
+        t("  ⚠️  This does not look like {label} ({code}), the language that is set: "
+          "{fields}").format(label=i18n.label(lang), code=lang, fields=fields),
+    ]
+    if fixable:
+        lines.append(
+            t("      If that was a mistake, run the same command again with the same --id\n"
+              "      and the corrected text. The value is replaced and the measured values\n"
+              "      are kept (the event log keeps the line it already wrote).")
+        )
+    else:
+        lines.append(
+            t("      The mission title cannot be corrected afterwards. Only a new start can\n"
+              "      change it, and that archives this mission while it is still running.")
+        )
+    lines.append(
+        t("      If it was deliberate (a proper noun, a call sign), ignore this.")
+    )
+    return "\n".join(lines)
 
 
 def os_data_home() -> Path:
@@ -293,6 +683,11 @@ def resolve_data_home() -> Path:
 
 DATA_HOME = resolve_data_home()
 MISSIONS_DIR = DATA_HOME / "missions"
+
+#: 利用者が足した CLI の一覧。記録と同じ場所に置く（本体を入れ替えても残るように）。
+#: 差し替えるときは agents_file() 経由で読むこと。定義がここなのは DATA_HOME より
+#: 前には決まらないため。
+AGENTS_FILE = DATA_HOME / "agents.json"
 # 削除したプロジェクトの置き場。missions/ の外に置く。
 # 中に作ると list_slugs() がゴミ箱自身を1つのプロジェクトとして拾ってしまう。
 TRASH_DIR = DATA_HOME / "trash"
@@ -342,6 +737,34 @@ def write_lang_setting(lang: str) -> str:
 _saved_lang = read_lang_setting()
 if _saved_lang:
     i18n.set_lang(_saved_lang)
+
+#: 最後に読み込んだ設定ファイルの更新時刻。refresh_lang() が読み直すかの判断に使う。
+_lang_mtime: float | None = None
+
+
+def refresh_lang() -> str:
+    """保存された言語設定が変わっていたら読み直す。いまの言語コードを返す。
+
+    **立ち上げっぱなしのプロセス（server.py）のために要る。** 起動時に1回決めるだけだと、
+    `dash lang` で切り替えても再起動するまで古い言語のまま出し続ける。CLI は1コマンドで
+    終わるので関係ないが、サーバーは何時間も同じプロセスのまま動く。
+
+    毎リクエストで呼ばれても軽いように、**更新時刻が変わったときだけ**読む
+    （画面は1秒ごとに取りに来るので、毎回ファイルを読み解くのは無駄）。
+    読めなければ何もしない（設定ファイルが無いのは正常な状態）。
+    """
+    global _lang_mtime
+    try:
+        mtime = LANG_FILE.stat().st_mtime
+    except OSError:
+        return i18n.get_lang()
+    if mtime == _lang_mtime:
+        return i18n.get_lang()
+    _lang_mtime = mtime
+    hit = read_lang_setting()
+    if hit:
+        i18n.set_lang(hit)
+    return i18n.get_lang()
 
 
 def use_utf8_stdio() -> None:
@@ -1791,6 +2214,17 @@ def _display_path(path) -> str:
     return text
 
 
+def _instruction_paths_display() -> str:
+    """説明書に出す「運用ルールはここ」のパス。
+
+    実際に書き込まれている CLI のぶんだけを出す。未設定なら Claude Code のパスを
+    出す（これから設定する人にとっては、書き込まれる予定の場所が知りたい情報で、
+    対応 CLI を全部並べても選べない）。
+    """
+    keys = installed_agents() or ["claude"]
+    return " / ".join(_display_path(instruction_file(key)) for key in keys)
+
+
 def render_template(text: str) -> str:
     """HTML 内のプレースホルダを実際の環境の値に差し替える。
 
@@ -1801,7 +2235,7 @@ def render_template(text: str) -> str:
         text.replace("{{TOOL_ROOT}}", _display_path(TOOL_ROOT))
         .replace("{{MISSIONS_DIR}}", _display_path(MISSIONS_DIR))
         .replace("{{DATA_HOME}}", _display_path(DATA_HOME))
-        .replace("{{CLAUDE_MD}}", _display_path(claude_config_dir() / "CLAUDE.md"))
+        .replace("{{CLAUDE_MD}}", _instruction_paths_display())
         .replace("{{SERVER_PY}}", str(TOOL_ROOT / "server.py"))
         .replace("{{UPDATE_PY}}", str(TOOL_ROOT / "update_state.py"))
         .replace("{{LAUNCHER_PATH}}", str(TOOL_ROOT / LAUNCHER.lstrip("./")))

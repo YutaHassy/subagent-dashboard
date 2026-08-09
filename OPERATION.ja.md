@@ -17,7 +17,7 @@ python <このディレクトリ>/dash.py add ...      # ランチャの本体�
 python <このディレクトリ>/update_state.py add  # CLI を直接
 ```
 
-**実行時に使う完全パス付きのコマンド例は、Claude のグローバル設定 `CLAUDE.md` に書き込まれている。**
+**実行時に使う完全パス付きのコマンド例は、エージェントのグローバル設定ファイルに書き込まれている。**
 そちらをそのまま使うこと（`dash install` が環境に合わせて生成している）。
 このディレクトリの実際の場所は `dash projects` の出力先頭にも表示される。
 
@@ -155,7 +155,7 @@ dash ext install     # 1回だけ。そのあと VSCode を再読み込み
 
 1. **環境変数 `AGENT_DASHBOARD_HOME`** が既に設定されている → そのパスを使う
 2. **環境変数に未設定** → `install.py` を実行したディレクトリを検出
-3. **`CLAUDE.md` に埋め込み** → Claude が自動実行するコマンドに完全パスが含まれる
+3. **設定ファイルに埋め込み** → エージェントが自動実行するコマンドに完全パスが含まれる
 
 #### サーバーの起動
 
@@ -233,6 +233,74 @@ webbrowser.open("http://127.0.0.1:3939")
 
 ---
 
+## 0.2. AI コーディング CLI への書き込み
+
+`install.py` はマシンにインストール済みのすべての AI コーディング CLI を検出し、それぞれの設定ファイルに
+同じ運用ルールを書き込みます。以下は組み込み対応の CLI リスト。
+
+| CLI | 書き込み先 |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` |
+| opencode | `~/.config/opencode/AGENTS.md` |
+| Amp | `~/.config/amp/AGENTS.md` |
+| Cline | `~/Documents/Cline/Rules/subagent-dashboard.md` |
+| Roo Code | `~/.roo/rules/subagent-dashboard.md` |
+| Windsurf | `~/.codeium/windsurf/memories/global_rules.md` |
+| Qwen Code | `~/.qwen/QWEN.md` |
+
+**この表に無い CLI でも対応できます。** `--agent-file` オプション（下記参照）で任意のファイルを登録してください。
+
+> **Cursor と Aider について**
+> これらのツールはユーザーレベルの設定ファイルを読まないため、上の表に含まれていません。
+> Cursor はリポジトリごとの `AGENTS.md` を読み、Aider は設定で明示的にファイルを指定する必要があります。
+> これらのツールに対応させるには、リポジトリ内のファイルに `--agent-file` で指定してください。
+
+### 詳細なコマンド
+
+```bash
+python install.py --list-agents           # 見つかった全ての CLI、書き込み先、状態を表示
+python install.py                         # このマシンにインストール済みの CLI に書き込む
+python install.py --agent codex           # 特定の CLI（この例では Codex CLI）のみに書き込む
+python install.py --agent all             # 全ての既知の CLI に書き込む（インストール状況に関わらず）
+python install.py --agent-file <パス>     # 指定したファイルにも書き込む（対応していない CLI 用）
+python install.py --uninstall             # すべての CLI から運用ルールを削除する
+```
+
+### agents.json
+
+`--agent-file` で登録したファイルは `agents.json`（記録の保存先の隣）に永続的に記録されます。
+以降は `--list-agents` に表示され、次に `install.py` を実行するときに更新され、`--uninstall` で削除されます。
+
+`agents.json` を手で編集することもできます。各エントリには以下のフィールドがあります：
+
+- `key` — `--agent` で使う短い ID
+- `label` — 画面に表示される名前
+- `home_env` — ホームフォルダ位置を指定する環境変数（無い場合は空文字列）
+- `home` — フォルダパス（`~` で始められる。環境変数はサポートしない）
+- `file` — ファイル名（サブフォルダを含められる）
+
+組み込みの設定と同じ `key` を持つエントリは、組み込みの設定を上書きします。
+これにより、CLI が設定ファイルの場所を変えた場合、更新を待たずに自分のコピーで対応できます。
+
+### 新しい CLI のインストール
+
+セットアップは、**その時点でマシンにインストール済みの CLI を検出します。** セットアップ後に新しい AI CLI を
+インストールした場合、それには運用ルールが書き込まれていません。サブエージェントを起動してもダッシュボードに
+表示されません。
+
+**解決策：** `python install.py` をもう一度実行してください。
+
+ツールは新しく見つかった未設定の CLI を自動で検出します。以下のタイミングで警告が出ます：
+
+- `dash start` を実行したとき
+- サーバーを起動したとき
+- `python diagnose.py` を実行したとき（インストール済みだが未設定の CLI がある場合は失敗扱いになります）
+
+---
+
 ## 1. ミッション開始時
 
 サブエージェントを1体でも起動する**前**に、作業中のプロジェクトのディレクトリで1回だけ実行する。
@@ -246,7 +314,7 @@ webbrowser.open("http://127.0.0.1:3939")
 開始できない方が困るため。
 
 ```bash
-dash start --title "リファクタ影響範囲調査"
+dash start --title "リファクタ影響範囲調査" --model claude-opus-5
 ```
 
 **同じディレクトリで2本目のミッションを同時に走らせるときは、`--project` で記録先を
@@ -275,8 +343,9 @@ dash add --id SCOUT-A --name "偵察A" --model claude-sonnet-5 --mission "src/ �
 
 **自由記述は日本語で書く**（`--title` / `--name` / `--mission` / `--headline`）。書いたとおりに記録され、
 記録したとおりに画面へ出る——あとから翻訳はされない。会話の言語ではなく、この手順書の言語に合わせること。
-その言語を変えるには `dash lang <en|ja|zh|ko>` を実行し、続けて `python install.py` で `CLAUDE.md` の
-記述を書き直す。**既にある記録は書かれたときのまま**で、あとから訳し直されることはない。
+その言語を変えるには `dash lang <en|ja|zh|ko>` を実行する。**各 AI CLI の設定ファイルの記述もその場で新しい言語に
+書き直される**ので、設定した言語がそのままチームを組む言語になる（反映されるのは次のセッションから。
+設定ファイルは起動時に読まれる）。**既にある記録は書かれたときのまま**で、あとから訳し直されることはない。
 
 世代（何列目か）は `--parent` から自動算出されるので指定しない。
 **「報告待ち」も `--parent` から自動で付く**ので、指令塔が待ちに入ったことを申告する必要はない
@@ -306,6 +375,9 @@ dash done --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "呼び出�
 画面は「—」と表示する。それが正しい状態であり、埋めるべき欠損ではない。
 「だいたい2万トークンくらいだろう」で `--tokens 20000` と書くのは、
 このダッシュボードの目的（実際に何が起きたかを見る）を壊す行為なので絶対にしない。
+
+同じ原則が指令塔（ミッション開始者）のモデル ID にも適用される。`--model` を指定しなければ、
+画面のモデル欄は「不明」になる（数値欄の「—」とは別の表示）。これは故障ではなく、指令塔の実際のモデル ID が分からないという正しい表示だ。
 
 ---
 
@@ -460,7 +532,7 @@ dash done --id SCOUT-A --project learning --headline "..."
 ```bash
 # 同じディレクトリで並行するときは、start に --project で一意な名前を付けて分ける
 # （存在しない名前を渡せば、その名前で新しいプロジェクトが作られる）
-dash start --project PAVS_ER-issue51 --title "issue51 の影響範囲調査"
+dash start --project PAVS_ER-issue51 --title "issue51 の影響範囲調査" --model claude-opus-5
 
 # そのミッションの add / done / finish にも、すべて同じ --project を付ける
 dash add --project PAVS_ER-issue51 --id SCOUT-A --name "偵察A" --model claude-sonnet-5 --mission "..."
@@ -554,7 +626,7 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 | 映すチームの決定 | サーバー側だけで決まる。ブラウザは覚えないので、どの端末で開いても同じチームが出る |
 | 並列稼働 | 稼働中のチームは全部、縦に積んで同時に映る。並び順は開始が新しい順 |
 | 記録先の数 | プロジェクト（＝作業ディレクトリ）ごとに1つだけ。同じディレクトリで2本目を `start` すると1本目は稼働中のまま履歴へ押し出され、以後書き込めない。並行させるなら `--project` で分ける（→ 6.1） |
-| 本体と運用ルールの版 | 別々に古くなる。本体を更新しても `CLAUDE.md` の運用ルールは `install.py` を実行し直すまで古いまま残る。ずれていれば `start` とサーバー起動時に知らせが出る（`diagnose.py` の「運用ルールの版」でも確認できる） |
+| 本体と運用ルールの版 | 別々に古くなる。本体を更新しても各 CLI の設定ファイルの運用ルールは `install.py` を実行し直すまで古いまま残る。ずれていれば `start` とサーバー起動時に知らせが出る（`diagnose.py` の「運用ルールの版」でも確認できる） |
 | チームの入れ替わり | `/api/state` の `teams` から居なくなったチームは、その場で器ごと片付ける |
 | 同じフォルダで start し直したとき | スラッグは変わらないので、`mission.startedAt` の変化を見て前のミッションのログを捨てる |
 | 通信断のとき | 直前の表示を保持し、右上の接続インジケータが赤くなる |
@@ -572,7 +644,7 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 ├─ dash.py            統合エントリポイント
 ├─ server.py          配信サーバー（全プロジェクト共通・1つだけ起動する）
 ├─ update_state.py    状態更新CLI（状態への唯一の書き込み口）
-├─ install.py         初期設定（CLAUDE.md への書き込み）
+├─ install.py         初期設定（各 AI CLI の設定ファイルへの書き込み）
 ├─ dashlib.py         共通ロジック（パス解決・プロジェクト識別・マージ・書式）
 ├─ build_vsix.py      VSCode 拡張機能を組み立てて入れる（dash ext ...）
 ├─ test_tabs.py       タブ一覧の動作確認。python test_tabs.py で走る（記録には触らない）
@@ -600,7 +672,12 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 | `AGENT_DASHBOARD_HOME` | 記録の保存先を変える（既定はこのディレクトリ。書き込み不可なら OS のユーザーデータ領域） |
 | `AGENT_DASHBOARD_PROJECT` | 対象プロジェクトを固定する（`--project` の方が優先） |
 | `PORT` | サーバーの既定ポート（`--port` の方が優先） |
-| `CLAUDE_CONFIG_DIR` | `install.py` が書き込む `CLAUDE.md` の場所 |
+| `CLAUDE_CONFIG_DIR` | Claude Code の `CLAUDE.md` の場所 |
+| `CODEX_HOME` | Codex CLI の `AGENTS.md` の場所 |
+| `GEMINI_CLI_HOME` | Gemini CLI の `GEMINI.md` の場所 |
+| `COPILOT_HOME` | GitHub Copilot CLI の設定ファイルの場所 |
+| `OPENCODE_CONFIG_DIR` | opencode の `AGENTS.md` の場所 |
+| `AGENT_DASHBOARD_AGENTS_FILE` | 自分で追加した CLI のリスト（既定：`agents.json`、記録の保存先の隣） |
 | `AGENT_DASHBOARD_LANG` | 出力の言語（`en` / `ja` / `zh` / `ko`）。保存された設定より優先される |
 
 ### 表示言語
