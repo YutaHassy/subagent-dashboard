@@ -295,6 +295,13 @@ block in your instructions file is rewritten in the new language on the spot**, 
 language teams are formed in (it applies from the next session — the file is read at startup). Records that already
 exist are left as written.
 
+**A session that is already running cannot be told by this file that the language changed.** So `start` prints the
+language to write in every single time, and `start` / `add` / `done` / `finish` warn you when what you passed does not
+look like that language. **Trust the command output over this file** — the output is produced right now, while this
+file was written the last time the language was set. A warning never blocks the write. To correct a `--name`,
+`--mission` or `--headline`, run the same command again with the same `--id` and the corrected text (the measured
+values are kept). A mission title cannot be corrected afterwards.
+
 The generation (which column it sits in) is computed automatically from `--parent`, so do not specify it.
 **"awaiting report" is also derived automatically from `--parent`**, so there is no need to declare that the
 command post has started waiting (specifying `--parent` correctly is exactly what makes "awaiting report" accurate).

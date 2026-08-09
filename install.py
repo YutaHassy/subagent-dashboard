@@ -769,7 +769,7 @@ def write_text_atomic(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def rewrite_blocks() -> tuple[list[Path], list[tuple[Path, str]]]:
+def rewrite_blocks() -> tuple[list[Path], list[Path], list[tuple[Path, str]]]:
     """書き込んである運用ルールを、**いまの表示言語で**書き直す。
 
     `dash lang <コード>` から呼ぶ。表示言語を変えても、エージェントが実際に読む運用
@@ -785,24 +785,29 @@ def rewrite_blocks() -> tuple[list[Path], list[tuple[Path, str]]]:
     新しく書き込むこともしない（初期設定は do_install の仕事で、あちらは環境チェックと
     キーバインドまで面倒を見る。言語を選んだだけの人に、それを黙って始めてはいけない）。
 
-    返すのは (書き直せたファイル, [(書けなかったファイル, 理由)])。**失敗をここで
+    返すのは (書き直したファイル, 既にその言語だったファイル, [(書けなかったファイル, 理由)])。
+    **書き換えていないものを「書き直した」と言わない**ために3つに分ける（同じ言語を
+    選び直したときに4本とも「書き直した」と出るのは、事実と違う）。**失敗をここで
     握り潰さない**（黙って旧言語のまま残るのが、いちばん気づけない壊れ方）。
     """
     block = build_block(detect_python_command())
-    done: list[Path] = []
+    changed: list[Path] = []
+    kept: list[Path] = []
     failed: list[tuple[Path, str]] = []
     for key in dashlib.installed_agents():
         target = dashlib.instruction_file(key)
         try:
             existing = target.read_text(encoding="utf-8")
             updated, _action, _tidied = apply_block(existing, block)
-            if updated != existing:
-                write_text_atomic(target, updated)
+            if updated == existing:
+                kept.append(target)
+                continue
+            write_text_atomic(target, updated)
         except (OSError, BrokenMarkerError) as e:
             failed.append((target, str(e)))
             continue
-        done.append(target)
-    return done, failed
+        changed.append(target)
+    return changed, kept, failed
 
 
 def make_launcher_executable() -> str | None:

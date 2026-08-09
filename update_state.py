@@ -1122,7 +1122,7 @@ def _relanguage_instructions() -> None:
     hint = "  python %s" % (dashlib.TOOL_ROOT / "install.py")
     try:
         import install  # 遅延 import。lang 以外のコマンドに install.py を巻き込まない
-        done, failed = install.rewrite_blocks()
+        changed, kept, failed = install.rewrite_blocks()
     except Exception as e:  # install.py が無い／読めない配布物でも lang は成立させる
         print(t("  ⚠️  Could not rewrite the operating rules ({path}): {err}")
               .format(path=dashlib.TOOL_ROOT / "install.py", err=e))
@@ -1137,12 +1137,16 @@ def _relanguage_instructions() -> None:
         print(t("      Rewrite them in the new language by running:"))
         print(hint)
 
-    for path in done:
+    for path in changed:
         print(t("  The operating rules were rewritten in this language: {path}")
               .format(path=path))
-    if done:
+    if changed:
         print(t("  Restart the agent's session "
                 "(the operating rules are read when it starts)."))
+    elif kept:
+        # 同じ言語を選び直した場合。「書き直した」と言うと事実と違う。
+        print(t("  The operating rules are already in this language ({n} files).")
+              .format(n=len(kept)))
     elif not failed:
         # 未設定のコピー（開発用など）。ここで install.py を勧めておかないと、
         # 「言語は設定できたのにチームは英語のまま」の原因が最後まで分からない。

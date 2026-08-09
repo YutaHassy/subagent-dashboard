@@ -48,28 +48,30 @@ CATALOG["ja"] = {
         '言語を設定できませんでした: {err}',
 
     # ---- 自由記述の言語チェック
+    "  The operating rules are already in this language ({n} files).":
+        "  運用ルールは既にこの言語です（{n} 件）。",
     "  Write the free text (--title / --name / --mission / --headline) "
     "in this language: {label} ({code}).":
-        "  自由記述（--title / --name / --mission / --headline）を"
-        "この言語で書いてください: {label}（{code}）。",
+        "  自由記述（--title / --name / --mission / --headline）は"
+        "{label}（{code}）で書いてください。",
     '{flag} "{value}"':
         '{flag} "{value}"',
-    "  ⚠️  This does not look like {label} ({code}), the language that is set: "
-    "{fields}":
-        "  ⚠️  {label}（{code}）には見えません（設定されている言語です）: "
-        "{fields}",
-    "      If that was a mistake, run the same command again with the same --id\n"
-    "      and the corrected text. The value is replaced and the measured values\n"
-    "      are kept (the event log keeps the line it already wrote).":
-        "      間違っていたら、同じ --id で同じコマンドを実行し直してください\n"
-        "      テキストを修正してください。値は置き換わり、実測値は保たれます\n"
-        "      （イベントログはすでに書いた行を保ちます）。",
-    "      The mission title cannot be corrected afterwards. Only a new start can\n"
-    "      change it, and that archives this mission while it is still running.":
-        "      ミッションのタイトルはあとから直せません。新しい start だけで\n"
-        "      変えられます。稼働中のまま、このミッションをアーカイブします。",
+    "  ⚠️  The language is set to {label} ({code}), but this does not look like "
+    "it: {fields}":
+        "  ⚠️  言語設定は {label}（{code}）ですが、この記述はその言語で"
+        "書かれていないようです: {fields}",
+    "      If that was not deliberate, run the same command again with the same\n"
+    "      --id and the corrected text. The value is replaced, and the measured\n"
+    "      values are kept (the event log keeps the line it already wrote).":
+        "      意図したものでなければ、同じ --id のまま、直した文で同じコマンドを\n"
+        "      打ち直してください。値は置き換わり、実測値は保たれます\n"
+        "      （イベントログに既に書かれた行はそのまま残ります）。",
+    "      A mission title cannot be corrected afterwards. Only a new start can\n"
+    "      change it, and that archives the current mission while it is running.":
+        "      ミッションのタイトルはあとから直せません。直せるのは次の start だけで、\n"
+        "      それは稼働中のこのミッションを履歴へ退避してしまいます。",
     "      If it was deliberate (a proper noun, a call sign), ignore this.":
-        "      もしそれが意図的なもの（固有名詞、コールサイン）なら、無視してください。",
+        "      意図してそう書いたのなら（固有名詞・コールサインなど）、無視してください。",
     "         The measured values and the status are kept "
     "(only what you passed is replaced).":
         "         実測値と状態は保たれます"
@@ -361,25 +363,28 @@ CATALOG["zh"] = {
         '无法设置语言: {err}',
 
     # ---- 自由记述的语言检查
+    "  The operating rules are already in this language ({n} files).":
+        "  运行规则已经是这个语言（{n} 个文件）。",
     "  Write the free text (--title / --name / --mission / --headline) "
     "in this language: {label} ({code}).":
-        "  请用这个语言写自由文本（--title / --name / --mission / --headline）: {label}（{code}）。",
+        "  自由文本（--title / --name / --mission / --headline）请用 "
+        "{label}（{code}） 书写。",
     '{flag} "{value}"':
         '{flag} "{value}"',
-    "  ⚠️  This does not look like {label} ({code}), the language that is set: "
-    "{fields}":
-        "  ⚠️  看起来不像 {label}（{code}），即设定的语言: "
+    "  ⚠️  The language is set to {label} ({code}), but this does not look like "
+    "it: {fields}":
+        "  ⚠️  语言设置是 {label}（{code}），但这段文字看起来不是用它写的: "
         "{fields}",
-    "      If that was a mistake, run the same command again with the same --id\n"
-    "      and the corrected text. The value is replaced and the measured values\n"
-    "      are kept (the event log keeps the line it already wrote).":
-        "      如果那是个错误，用相同的 --id 再运行一次相同的命令\n"
-        "      并更正文本。值会被替换，实测值保持不变\n"
-        "      （事件日志保留它已经写过的那一行）。",
-    "      The mission title cannot be corrected afterwards. Only a new start can\n"
-    "      change it, and that archives this mission while it is still running.":
-        "      任务标题之后无法更正。只有新的 start 才能\n"
-        "      改变它，并且该任务在仍在运行时被存档。",
+    "      If that was not deliberate, run the same command again with the same\n"
+    "      --id and the corrected text. The value is replaced, and the measured\n"
+    "      values are kept (the event log keeps the line it already wrote).":
+        "      如果那不是有意的，就用相同的 --id 和改好的文字再执行一次同样的命令。\n"
+        "      值会被替换，实测值会保留\n"
+        "      （事件日志中已经写下的那一行仍旧留着）。",
+    "      A mission title cannot be corrected afterwards. Only a new start can\n"
+    "      change it, and that archives the current mission while it is running.":
+        "      任务标题事后无法更正。能改它的只有下一次 start，而那会把仍在运行的\n"
+        "      这条任务转存进历史。",
     "      If it was deliberate (a proper noun, a call sign), ignore this.":
         "      如果那是故意的（专有名词、呼号），请忽略。",
     "         The measured values and the status are kept "
@@ -653,26 +658,28 @@ CATALOG["ko"] = {
         '언어를 설정하지 못했습니다: {err}',
 
     # ---- 자유 기술의 언어 확인
+    "  The operating rules are already in this language ({n} files).":
+        "  운용 규칙은 이미 이 언어입니다({n} 건).",
     "  Write the free text (--title / --name / --mission / --headline) "
     "in this language: {label} ({code}).":
-        "  자유 기술(--title / --name / --mission / --headline) 을 "
-        "이 언어로 써주세요: {label}({code}).",
+        "  자유 기술(--title / --name / --mission / --headline)은 "
+        "{label}({code}) 로 써 주세요.",
     '{flag} "{value}"':
         '{flag} "{value}"',
-    "  ⚠️  This does not look like {label} ({code}), the language that is set: "
-    "{fields}":
-        "  ⚠️  {label}({code}), 설정된 언어 같지 않습니다: "
-        "{fields}",
-    "      If that was a mistake, run the same command again with the same --id\n"
-    "      and the corrected text. The value is replaced and the measured values\n"
-    "      are kept (the event log keeps the line it already wrote).":
-        "      실수였다면 같은 --id 로 같은 명령을 다시 실행하고\n"
-        "      수정된 텍스트를 입력하세요. 값은 교체되고 측정값은\n"
-        "      보관됩니다(이벤트 로그는 이미 쓴 줄을 유지합니다).",
-    "      The mission title cannot be corrected afterwards. Only a new start can\n"
-    "      change it, and that archives this mission while it is still running.":
-        "      미션 제목은 나중에 수정할 수 없습니다. 새로운 start 만이\n"
-        "      이를 변경할 수 있으며, 이것은 실행 중인 미션을 보관합니다.",
+    "  ⚠️  The language is set to {label} ({code}), but this does not look like "
+    "it: {fields}":
+        "  ⚠️  언어 설정은 {label}({code}) 인데, 이 기술은 그 언어로 쓰이지 "
+        "않은 것 같습니다: {fields}",
+    "      If that was not deliberate, run the same command again with the same\n"
+    "      --id and the corrected text. The value is replaced, and the measured\n"
+    "      values are kept (the event log keeps the line it already wrote).":
+        "      의도한 것이 아니라면 같은 --id 로, 고친 문장으로 같은 명령을 다시\n"
+        "      실행해 주세요. 값은 교체되고 측정값은 그대로 유지됩니다\n"
+        "      (이벤트 로그에 이미 쓰인 줄은 그대로 남습니다).",
+    "      A mission title cannot be corrected afterwards. Only a new start can\n"
+    "      change it, and that archives the current mission while it is running.":
+        "      미션 제목은 나중에 고칠 수 없습니다. 고칠 수 있는 것은 다음 start 뿐이며,\n"
+        "      그것은 가동 중인 이 미션을 이력으로 옮겨 버립니다.",
     "      If it was deliberate (a proper noun, a call sign), ignore this.":
         "      의도적인 것(고유명사, 호출 신호)이면 무시하세요.",
     "         The measured values and the status are kept "

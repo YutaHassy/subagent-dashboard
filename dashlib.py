@@ -616,19 +616,19 @@ def free_text_lang_notice(mismatches, *, fixable: bool) -> str | None:
         for flag, value in mismatches
     )
     lines = [
-        t("  ⚠️  This does not look like {label} ({code}), the language that is set: "
-          "{fields}").format(label=i18n.label(lang), code=lang, fields=fields),
+        t("  ⚠️  The language is set to {label} ({code}), but this does not look like "
+          "it: {fields}").format(label=i18n.label(lang), code=lang, fields=fields),
     ]
     if fixable:
         lines.append(
-            t("      If that was a mistake, run the same command again with the same --id\n"
-              "      and the corrected text. The value is replaced and the measured values\n"
-              "      are kept (the event log keeps the line it already wrote).")
+            t("      If that was not deliberate, run the same command again with the same\n"
+              "      --id and the corrected text. The value is replaced, and the measured\n"
+              "      values are kept (the event log keeps the line it already wrote).")
         )
     else:
         lines.append(
-            t("      The mission title cannot be corrected afterwards. Only a new start can\n"
-              "      change it, and that archives this mission while it is still running.")
+            t("      A mission title cannot be corrected afterwards. Only a new start can\n"
+              "      change it, and that archives the current mission while it is running.")
         )
     lines.append(
         t("      If it was deliberate (a proper noun, a call sign), ignore this.")
