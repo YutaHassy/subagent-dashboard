@@ -29,7 +29,7 @@ The target project is detected automatically from the current directory, so the 
 
 ```bash
 # once, before the mission starts
-{py} {us} start --title "<name of the work>"
+{py} {us} start --title "<name of the work>" --model <your own model ID>
 
 # right after you launch each subagent, one at a time
 {py} {us} add --id SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
@@ -60,7 +60,7 @@ When you run missions in parallel in the same directory, give each `start` a uni
 `--project` (passing a name that does not exist creates a new project under that name).
 
 ```bash
-{py} {us} start --project <a unique name> --title "<name of the work>"
+{py} {us} start --project <a unique name> --title "<name of the work>" --model <your own model ID>
 {py} {us} add --project <a unique name> --id SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
 {py} {us} done --project <a unique name> --id SCOUT-A --headline "<one-line result summary>"
 {py} {us} finish --project <a unique name> --headline "<one-line overall summary>"
@@ -79,7 +79,7 @@ BLOCK_JA = """## Subagent Dashboard
 
 ```bash
 # ミッション開始前に1回
-{py} {us} start --title "<作業の名前>"
+{py} {us} start --title "<作業の名前>" --model <自分のモデル ID>
 
 # サブエージェントを起動した直後に、1体ずつ
 {py} {us} add --id SCOUT-A --name "<読みやすい名前>" --model <モデルID> --mission "<任務内容>"
@@ -109,7 +109,7 @@ BLOCK_JA = """## Subagent Dashboard
 （存在しない名前を渡せば、その名前で新しいプロジェクトが作られます）。
 
 ```bash
-{py} {us} start --project <一意な名前> --title "<作業の名前>"
+{py} {us} start --project <一意な名前> --title "<作業の名前>" --model <自分のモデル ID>
 {py} {us} add --project <一意な名前> --id SCOUT-A --name "<読みやすい名前>" --model <モデルID> --mission "<任務内容>"
 {py} {us} done --project <一意な名前> --id SCOUT-A --headline "<結果の一行要約>"
 {py} {us} finish --project <一意な名前> --headline "<全体の一行要約>"
@@ -127,7 +127,7 @@ BLOCK_ZH = """## Subagent Dashboard
 
 ```bash
 # 任务开始前执行一次
-{py} {us} start --title "<工作的名称>"
+{py} {us} start --title "<工作的名称>" --model <你自己的模型 ID>
 
 # 启动子代理之后立刻，一体一体地登记
 {py} {us} add --id SCOUT-A --name "<好读的名字>" --model <模型ID> --mission "<任务内容>"
@@ -157,7 +157,7 @@ BLOCK_ZH = """## Subagent Dashboard
 （传一个不存在的名字，就会用那个名字新建一个项目）。
 
 ```bash
-{py} {us} start --project <唯一的名字> --title "<工作的名称>"
+{py} {us} start --project <唯一的名字> --title "<工作的名称>" --model <你自己的模型 ID>
 {py} {us} add --project <唯一的名字> --id SCOUT-A --name "<好读的名字>" --model <模型ID> --mission "<任务内容>"
 {py} {us} done --project <唯一的名字> --id SCOUT-A --headline "<结果的一行摘要>"
 {py} {us} finish --project <唯一的名字> --headline "<整体的一行摘要>"
@@ -175,7 +175,7 @@ BLOCK_KO = """## Subagent Dashboard
 
 ```bash
 # 미션 시작 전에 한 번
-{py} {us} start --title "<작업의 이름>"
+{py} {us} start --title "<작업의 이름>" --model <자신의 모델 ID>
 
 # 서브에이전트를 띄운 직후에, 한 대씩
 {py} {us} add --id SCOUT-A --name "<읽기 쉬운 이름>" --model <모델ID> --mission "<임무 내용>"
@@ -205,7 +205,7 @@ BLOCK_KO = """## Subagent Dashboard
 (존재하지 않는 이름을 넘기면 그 이름으로 새 프로젝트가 만들어집니다).
 
 ```bash
-{py} {us} start --project <고유한 이름> --title "<작업의 이름>"
+{py} {us} start --project <고유한 이름> --title "<작업의 이름>" --model <자신의 모델 ID>
 {py} {us} add --project <고유한 이름> --id SCOUT-A --name "<읽기 쉬운 이름>" --model <모델ID> --mission "<임무 내용>"
 {py} {us} done --project <고유한 이름> --id SCOUT-A --headline "<결과의 한 줄 요약>"
 {py} {us} finish --project <고유한 이름> --headline "<전체의 한 줄 요약>"
@@ -226,11 +226,11 @@ CATALOG["ja"] = {
     # ---- install: CLAUDE.md の差し替え
     "the markers ({begin} / {end}) are not paired":
         "マーカー（{begin} / {end}）が対になっていません",
-    "  ✓ CLAUDE.md was created.": "  ✓ CLAUDE.md を新規作成しました",
-    "  ✓ The settings were appended to CLAUDE.md.": "  ✓ CLAUDE.md に追記しました",
-    "  ✓ CLAUDE.md was updated.": "  ✓ CLAUDE.md を更新しました",
-    "  ✓ CLAUDE.md was updated (also tidied up {n} duplicated old blocks).":
-        "  ✓ CLAUDE.md を更新しました（重複していた古いブロック {n} 個も整理）",
+    "  ✓ {name} was created.": "  ✓ {name} を新規作成しました",
+    "  ✓ The settings were appended to {name}.": "  ✓ {name} に追記しました",
+    "  ✓ {name} was updated.": "  ✓ {name} を更新しました",
+    "  ✓ {name} was updated (also tidied up {n} duplicated old blocks).":
+        "  ✓ {name} を更新しました（重複していた古いブロック {n} 個も整理）",
     "    (only the marked block is updated; anything already there is kept)":
         "    （マーカーで囲まれた範囲のみ更新。既存の記述は保持されます）",
 
@@ -283,16 +283,16 @@ CATALOG["ja"] = {
         "次のファイルが見つかりません（ファイルが揃っていない可能性があります）: {list}",
     "cannot write to the mission storage ({path} / {reason})":
         "ミッション保存先に書き込めません（{path} / {reason}）",
-    "cannot write to Claude's config folder ({path} / {reason})":
-        "Claude の設定フォルダに書き込めません（{path} / {reason}）",
+    "cannot write to the config folder of {name} ({path} / {reason})":
+        "{name} の設定フォルダに書き込めません（{path} / {reason}）",
 
     # ---- install: 見出しと --print
     "  Subagent Dashboard — installer":
         "  Subagent Dashboard — インストーラー",
     "  What would be written (--print, so nothing is actually changed)":
         "  書き込む内容（--print なので実際には変更しません）",
-    "What will be added to CLAUDE.md ({path}):":
-        "CLAUDE.md（{path}）に追記する内容:",
+    "What will be added to {name} ({path}):":
+        "{name}（{path}）に追記する内容:",
     "The entry that will be added to keybindings.json ({path}):":
         "keybindings.json（{path}）に追加するエントリ:",
     "* The old location ({path}) still holds":
@@ -311,7 +311,7 @@ CATALOG["ja"] = {
     "Tool location": "ツールの場所",
     "VSCode keybinding": "VSCode キーバインド",
     "OK ({n} files, all present)": "OK（{n} 件すべて確認）",
-    "OK ({missions} / {claude})": "OK（{missions} / {claude}）",
+    "OK ({missions} / {config})": "OK（{missions} / {config}）",
     "OK ({path})": "OK（{path}）",
     "cannot write ({reason})": "書き込めません（{reason}）",
     "the settings folder was not found ({path})":
@@ -328,7 +328,7 @@ CATALOG["ja"] = {
         "ステップ 2/4: 環境の自動検出",
     "Dashboard location": "ダッシュボードの場所",
     "Python command": "Python 実行コマンド",
-    "Claude config file": "Claude 設定ファイル",
+    "Config file ({name})": "設定ファイル（{name}）",
     "  (leftovers in the old location: {path} / {n})":
         "  （古い場所に残骸あり: {path} / {n} 個）",
 
@@ -344,8 +344,8 @@ CATALOG["ja"] = {
         "    {path} のマーカーを対にしてから、もう一度実行してください。",
     "  ✗ Error: cannot write to {path} ({err})":
         "  ✗ エラー: {path} に書き込めません（{err}）",
-    "  ✓ CLAUDE.md is already up to date (no change)":
-        "  ✓ CLAUDE.md は既に最新です（変更なし）",
+    "  ✓ {name} is already up to date (no change)":
+        "  ✓ {name} は既に最新です（変更なし）",
     "  ✓ keybindings.json was updated ({msg})":
         "  ✓ keybindings.json を更新しました（{msg}）",
     "    (Ctrl+Shift+D → agentDashboard.open. "
@@ -408,13 +408,13 @@ CATALOG["ja"] = {
     "Config file": "設定ファイル",
     "Keybinding settings": "キーバインド設定",
     "(the old location)": "（古い場所）",
-    "  CLAUDE.md does not exist.": "  CLAUDE.md がありません。",
+    "  {name} does not exist.": "  {name} がありません。",
     "Error: cannot read {path} ({err})": "エラー: {path} を読めません（{err}）",
     "Error: cannot write to {path} ({err})": "エラー: {path} に書き込めません（{err}）",
-    "  Removed the settings from CLAUDE.md (anything else was left alone).":
-        "  CLAUDE.md から設定を削除しました（他の記述は残しています）。",
-    "  CLAUDE.md has no settings from this tool.":
-        "  CLAUDE.md にはこのツールの設定がありません。",
+    "  Removed the settings from {name} (anything else was left alone).":
+        "  {name} から設定を削除しました（他の記述は残しています）。",
+    "  {name} has no settings from this tool.":
+        "  {name} にはこのツールの設定がありません。",
     "the keybindings.json in the old location": "古い場所の keybindings.json",
     "  Removed the settings from {label} ({msg}).":
         "  {label} から設定を削除しました（{msg}）。",
@@ -426,12 +426,34 @@ CATALOG["ja"] = {
     "  The mission records are still there: {path}":
         "  ミッションの記録は残っています: {path}",
 
+    # ---- install: CLI の検出と一覧
+    "The CLIs this tool knows about:": "このツール対応の CLI:",
+    "For a CLI that is not on this list, point at its file directly:":
+        "リストにない CLI を指す場合は、そのファイルを直接指定してください:",
+    "--agent-file needs a path to a file, not a folder":
+        "--agent-file はファイルのパスが必要です（フォルダではなく）",
+    " (added by you)": "（ユーザーが追加）",
+    "write to this file as well, for a CLI that is not in the list "
+    "(it gets remembered)":
+        "リストにない CLI 用に、このファイルにも書き込む（記憶されます）",
+    "show the CLIs this tool knows about, and stop":
+        "このツール対応の CLI を表示して終了する",
+    "written": "書き込み済み",
+    "Entries you add are remembered in {path}":
+        "追加したエントリは {path} に記録されます",
+    "installed, not written yet": "インストール済みですが、未書き込み",
+    "not found on this machine": "このマシンに見つかりません",
+    "Error: {err}": "エラー: {err}",
+
     # ---- install: 引数
     "First-time setup for the Subagent Dashboard":
         "Subagent Dashboard の初期設定",
     "only show what would be written (changes nothing)":
         "書き込む内容を表示するだけ（何も変更しない）",
     "undo the settings that were written": "書き込んだ設定を取り消す",
+    "which CLI to write the operating rules for "
+    "(the default writes to every one that is installed)":
+        "運用ルールを書き込む CLI（既定では入っている CLI 全部に書きます）",
 }
 
 # ============================================================ 中文（简体）
@@ -442,11 +464,11 @@ CATALOG["zh"] = {
     # ---- install: CLAUDE.md の差し替え
     "the markers ({begin} / {end}) are not paired":
         "标记（{begin} / {end}）没有成对",
-    "  ✓ CLAUDE.md was created.": "  ✓ 已新建 CLAUDE.md",
-    "  ✓ The settings were appended to CLAUDE.md.": "  ✓ 已向 CLAUDE.md 追加写入",
-    "  ✓ CLAUDE.md was updated.": "  ✓ 已更新 CLAUDE.md",
-    "  ✓ CLAUDE.md was updated (also tidied up {n} duplicated old blocks).":
-        "  ✓ 已更新 CLAUDE.md（顺便整理了重复的 {n} 个旧块）",
+    "  ✓ {name} was created.": "  ✓ 已新建 {name}",
+    "  ✓ The settings were appended to {name}.": "  ✓ 已向 {name} 追加写入",
+    "  ✓ {name} was updated.": "  ✓ 已更新 {name}",
+    "  ✓ {name} was updated (also tidied up {n} duplicated old blocks).":
+        "  ✓ 已更新 {name}（顺便整理了重复的 {n} 个旧块）",
     "    (only the marked block is updated; anything already there is kept)":
         "    （只更新标记包围的范围。已有的记述会保留）",
 
@@ -498,16 +520,16 @@ CATALOG["zh"] = {
         "找不到以下文件（可能是文件不齐全）: {list}",
     "cannot write to the mission storage ({path} / {reason})":
         "无法写入任务保存位置（{path} / {reason}）",
-    "cannot write to Claude's config folder ({path} / {reason})":
-        "无法写入 Claude 的配置文件夹（{path} / {reason}）",
+    "cannot write to the config folder of {name} ({path} / {reason})":
+        "无法写入 {name} 的配置文件夹（{path} / {reason}）",
 
     # ---- install: 見出しと --print
     "  Subagent Dashboard — installer":
         "  Subagent Dashboard — 安装程序",
     "  What would be written (--print, so nothing is actually changed)":
         "  将要写入的内容（因为带了 --print，实际上不做任何修改）",
-    "What will be added to CLAUDE.md ({path}):":
-        "要追加写入 CLAUDE.md（{path}）的内容:",
+    "What will be added to {name} ({path}):":
+        "要追加写入 {name}（{path}）的内容:",
     "The entry that will be added to keybindings.json ({path}):":
         "要添加到 keybindings.json（{path}）的条目:",
     "* The old location ({path}) still holds":
@@ -526,7 +548,7 @@ CATALOG["zh"] = {
     "Tool location": "本体的位置",
     "VSCode keybinding": "VSCode 键绑定",
     "OK ({n} files, all present)": "OK（{n} 个全部确认）",
-    "OK ({missions} / {claude})": "OK（{missions} / {claude}）",
+    "OK ({missions} / {config})": "OK（{missions} / {config}）",
     "OK ({path})": "OK（{path}）",
     "cannot write ({reason})": "无法写入（{reason}）",
     "the settings folder was not found ({path})":
@@ -542,7 +564,7 @@ CATALOG["zh"] = {
     "Step 2/4: Automatic detection of the environment": "步骤 2/4: 环境的自动检测",
     "Dashboard location": "面板的位置",
     "Python command": "Python 执行命令",
-    "Claude config file": "Claude 配置文件",
+    "Config file ({name})": "配置文件（{name}）",
     "  (leftovers in the old location: {path} / {n})":
         "  （旧的位置有残留: {path} / {n} 个）",
 
@@ -556,8 +578,8 @@ CATALOG["zh"] = {
     "    Pair up the markers in {path}, then run this again.":
         "    请把 {path} 里的标记配成对，然后再执行一次。",
     "  ✗ Error: cannot write to {path} ({err})": "  ✗ 错误: 无法写入 {path}（{err}）",
-    "  ✓ CLAUDE.md is already up to date (no change)":
-        "  ✓ CLAUDE.md 已经是最新的了（无变更）",
+    "  ✓ {name} is already up to date (no change)":
+        "  ✓ {name} 已经是最新的了（无变更）",
     "  ✓ keybindings.json was updated ({msg})":
         "  ✓ 已更新 keybindings.json（{msg}）",
     "    (Ctrl+Shift+D → agentDashboard.open. "
@@ -620,13 +642,13 @@ CATALOG["zh"] = {
     "Config file": "配置文件",
     "Keybinding settings": "键绑定设置",
     "(the old location)": "（旧的位置）",
-    "  CLAUDE.md does not exist.": "  没有 CLAUDE.md。",
+    "  {name} does not exist.": "  没有 {name}。",
     "Error: cannot read {path} ({err})": "错误: 无法读取 {path}（{err}）",
     "Error: cannot write to {path} ({err})": "错误: 无法写入 {path}（{err}）",
-    "  Removed the settings from CLAUDE.md (anything else was left alone).":
-        "  已从 CLAUDE.md 删除设置（其他记述都保留着）。",
-    "  CLAUDE.md has no settings from this tool.":
-        "  CLAUDE.md 里没有这个工具的设置。",
+    "  Removed the settings from {name} (anything else was left alone).":
+        "  已从 {name} 删除设置（其他记述都保留着）。",
+    "  {name} has no settings from this tool.":
+        "  {name} 里没有这个工具的设置。",
     "the keybindings.json in the old location": "旧位置的 keybindings.json",
     "  Removed the settings from {label} ({msg}).":
         "  已从 {label} 删除设置（{msg}）。",
@@ -638,11 +660,33 @@ CATALOG["zh"] = {
     "  The mission records are still there: {path}":
         "  任务的记录还留着: {path}",
 
+    # ---- install: CLI 的检测和列表
+    "The CLIs this tool knows about:": "本工具支持的 CLI:",
+    "For a CLI that is not on this list, point at its file directly:":
+        "对于不在这个列表里的 CLI，直接指向它的文件:",
+    "--agent-file needs a path to a file, not a folder":
+        "--agent-file 需要一个文件路径，而不是文件夹",
+    " (added by you)": "（由你添加）",
+    "write to this file as well, for a CLI that is not in the list "
+    "(it gets remembered)":
+        "对于不在列表里的 CLI 也写入这个文件（会被记录）",
+    "show the CLIs this tool knows about, and stop":
+        "显示本工具支持的 CLI 并停止",
+    "written": "已写入",
+    "Entries you add are remembered in {path}":
+        "你添加的条目会存储在 {path}",
+    "installed, not written yet": "已安装，尚未写入",
+    "not found on this machine": "在这台机器上找不到",
+    "Error: {err}": "错误: {err}",
+
     # ---- install: 引数
     "First-time setup for the Subagent Dashboard": "Subagent Dashboard 的初始设置",
     "only show what would be written (changes nothing)":
         "只显示将要写入的内容（不做任何修改）",
     "undo the settings that were written": "取消已经写入的设置",
+    "which CLI to write the operating rules for "
+    "(the default writes to every one that is installed)":
+        "写入运行规则的 CLI（默认写入所有已安装的 CLI）",
 }
 
 # ============================================================ 한국어
@@ -653,11 +697,11 @@ CATALOG["ko"] = {
     # ---- install: CLAUDE.md の差し替え
     "the markers ({begin} / {end}) are not paired":
         "마커({begin} / {end})가 짝을 이루고 있지 않습니다",
-    "  ✓ CLAUDE.md was created.": "  ✓ CLAUDE.md 를 새로 만들었습니다",
-    "  ✓ The settings were appended to CLAUDE.md.": "  ✓ CLAUDE.md 에 추가로 기록했습니다",
-    "  ✓ CLAUDE.md was updated.": "  ✓ CLAUDE.md 를 갱신했습니다",
-    "  ✓ CLAUDE.md was updated (also tidied up {n} duplicated old blocks).":
-        "  ✓ CLAUDE.md 를 갱신했습니다 (중복되어 있던 오래된 블록 {n} 개도 정리)",
+    "  ✓ {name} was created.": "  ✓ {name} 를 새로 만들었습니다",
+    "  ✓ The settings were appended to {name}.": "  ✓ {name} 에 추가로 기록했습니다",
+    "  ✓ {name} was updated.": "  ✓ {name} 를 갱신했습니다",
+    "  ✓ {name} was updated (also tidied up {n} duplicated old blocks).":
+        "  ✓ {name} 를 갱신했습니다 (중복되어 있던 오래된 블록 {n} 개도 정리)",
     "    (only the marked block is updated; anything already there is kept)":
         "    (마커로 둘러싸인 범위만 갱신합니다. 기존의 기술은 유지됩니다)",
 
@@ -710,16 +754,16 @@ CATALOG["ko"] = {
         "다음 파일을 찾을 수 없습니다 (파일이 갖춰져 있지 않을 수 있습니다): {list}",
     "cannot write to the mission storage ({path} / {reason})":
         "미션 저장 위치에 쓸 수 없습니다 ({path} / {reason})",
-    "cannot write to Claude's config folder ({path} / {reason})":
-        "Claude 의 설정 폴더에 쓸 수 없습니다 ({path} / {reason})",
+    "cannot write to the config folder of {name} ({path} / {reason})":
+        "{name} 의 설정 폴더에 쓸 수 없습니다 ({path} / {reason})",
 
     # ---- install: 見出しと --print
     "  Subagent Dashboard — installer":
         "  Subagent Dashboard — 설치 프로그램",
     "  What would be written (--print, so nothing is actually changed)":
         "  기록할 내용 (--print 이므로 실제로는 변경하지 않습니다)",
-    "What will be added to CLAUDE.md ({path}):":
-        "CLAUDE.md ({path}) 에 추가로 기록할 내용:",
+    "What will be added to {name} ({path}):":
+        "{name} ({path}) 에 추가로 기록할 내용:",
     "The entry that will be added to keybindings.json ({path}):":
         "keybindings.json ({path}) 에 추가할 항목:",
     "* The old location ({path}) still holds":
@@ -738,7 +782,7 @@ CATALOG["ko"] = {
     "Tool location": "도구의 위치",
     "VSCode keybinding": "VSCode 키 바인딩",
     "OK ({n} files, all present)": "OK ({n} 건 모두 확인)",
-    "OK ({missions} / {claude})": "OK ({missions} / {claude})",
+    "OK ({missions} / {config})": "OK ({missions} / {config})",
     "OK ({path})": "OK ({path})",
     "cannot write ({reason})": "쓸 수 없습니다 ({reason})",
     "the settings folder was not found ({path})":
@@ -754,7 +798,7 @@ CATALOG["ko"] = {
     "Step 2/4: Automatic detection of the environment": "단계 2/4: 환경 자동 검출",
     "Dashboard location": "대시보드의 위치",
     "Python command": "Python 실행 명령",
-    "Claude config file": "Claude 설정 파일",
+    "Config file ({name})": "설정 파일 ({name})",
     "  (leftovers in the old location: {path} / {n})":
         "  (옛 위치에 잔재 있음: {path} / {n} 개)",
 
@@ -770,8 +814,8 @@ CATALOG["ko"] = {
         "    {path} 의 마커를 짝으로 맞춘 뒤 다시 실행하세요.",
     "  ✗ Error: cannot write to {path} ({err})":
         "  ✗ 오류: {path} 에 쓸 수 없습니다 ({err})",
-    "  ✓ CLAUDE.md is already up to date (no change)":
-        "  ✓ CLAUDE.md 는 이미 최신입니다 (변경 없음)",
+    "  ✓ {name} is already up to date (no change)":
+        "  ✓ {name} 는 이미 최신입니다 (변경 없음)",
     "  ✓ keybindings.json was updated ({msg})":
         "  ✓ keybindings.json 을 갱신했습니다 ({msg})",
     "    (Ctrl+Shift+D → agentDashboard.open. "
@@ -834,13 +878,13 @@ CATALOG["ko"] = {
     "Config file": "설정 파일",
     "Keybinding settings": "키 바인딩 설정",
     "(the old location)": "(옛 위치)",
-    "  CLAUDE.md does not exist.": "  CLAUDE.md 가 없습니다.",
+    "  {name} does not exist.": "  {name} 가 없습니다.",
     "Error: cannot read {path} ({err})": "오류: {path} 를 읽을 수 없습니다 ({err})",
     "Error: cannot write to {path} ({err})": "오류: {path} 에 쓸 수 없습니다 ({err})",
-    "  Removed the settings from CLAUDE.md (anything else was left alone).":
-        "  CLAUDE.md 에서 설정을 삭제했습니다 (다른 기술은 남겨 두었습니다).",
-    "  CLAUDE.md has no settings from this tool.":
-        "  CLAUDE.md 에는 이 도구의 설정이 없습니다.",
+    "  Removed the settings from {name} (anything else was left alone).":
+        "  {name} 에서 설정을 삭제했습니다 (다른 기술은 남겨 두었습니다).",
+    "  {name} has no settings from this tool.":
+        "  {name} 에는 이 도구의 설정이 없습니다.",
     "the keybindings.json in the old location": "옛 위치의 keybindings.json",
     "  Removed the settings from {label} ({msg}).":
         "  {label} 에서 설정을 삭제했습니다 ({msg}).",
@@ -852,10 +896,32 @@ CATALOG["ko"] = {
     "  The mission records are still there: {path}":
         "  미션의 기록은 남아 있습니다: {path}",
 
+    # ---- install: CLI 의 검출과 목록
+    "The CLIs this tool knows about:": "이 도구가 지원하는 CLI:",
+    "For a CLI that is not on this list, point at its file directly:":
+        "목록에 없는 CLI 는 파일을 직접 가리키세요:",
+    "--agent-file needs a path to a file, not a folder":
+        "--agent-file 은 폴더가 아닌 파일 경로가 필요합니다",
+    " (added by you)": "（직접 추가함）",
+    "write to this file as well, for a CLI that is not in the list "
+    "(it gets remembered)":
+        "목록에 없는 CLI 용으로도 이 파일에 기록합니다 (저장됩니다)",
+    "show the CLIs this tool knows about, and stop":
+        "이 도구가 지원하는 CLI 를 표시하고 종료합니다",
+    "written": "기록 완료",
+    "Entries you add are remembered in {path}":
+        "추가한 항목은 {path} 에 저장됩니다",
+    "installed, not written yet": "설치되어 있지만 아직 기록되지 않음",
+    "not found on this machine": "이 컴퓨터에서 찾을 수 없습니다",
+    "Error: {err}": "오류: {err}",
+
     # ---- install: 引数
     "First-time setup for the Subagent Dashboard":
         "Subagent Dashboard 의 초기 설정",
     "only show what would be written (changes nothing)":
         "기록할 내용을 표시만 한다 (아무것도 변경하지 않는다)",
     "undo the settings that were written": "기록한 설정을 취소한다",
+    "which CLI to write the operating rules for "
+    "(the default writes to every one that is installed)":
+        "운용 규칙을 기록할 CLI (기본값은 설치되어 있는 CLI 전부)",
 }

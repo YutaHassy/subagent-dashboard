@@ -296,6 +296,10 @@ def cmd_start(args) -> None:
 
     print(t("Mission started: {title}").format(title=title))
     print(t("  Target project: {name}").format(name=project_label(project)))
+    # **自由記述の言語は、ここでしか伝えられない。** 運用ルールはエージェントの
+    # セッション開始時に一度読まれるだけなので、途中で dash lang しても届かない。
+    # start は1ミッションに1回しか打たれないので、毎回出しても埋もれない。
+    print(dashlib.expected_lang_notice())
     if archived["runId"]:
         print(t("  Archived the previous mission into history: history/{run_id}/")
               .format(run_id=archived["runId"]))
@@ -347,6 +351,25 @@ def cmd_start(args) -> None:
         print(notice)
         print()
 
+    # セットアップのあとで別の CLI を入れた人は、この知らせが出るまで何も気づけない
+    # （画面には何も出ないだけで、エラーにはならない）。add / done は1ミッションで
+    # 何度も打たれるので、そちらに出すと読み飛ばされる。start だけに出す。
+    unwired = dashlib.unwired_agent_notice()
+    if unwired:
+        print()
+        print(unwired)
+        print()
+
+    # タイトルが設定言語で書かれていないように見えたら知らせる。**あとから直せない**
+    # ので（title を書き換えるコマンドは無い）、直せると言ってはいけない。
+    if args.title:
+        notice = dashlib.free_text_lang_notice(
+            [("--title", args.title)] if dashlib.free_text_lang_mismatch(args.title) else [],
+            fixable=False,
+        )
+        if notice:
+            print(notice)
+
 
 def cmd_add(args) -> None:
     project = pick_project(args)
@@ -361,49 +384,79 @@ def cmd_add(args) -> None:
             file=sys.stderr,
         )
 
+    existing = find_agent(state, args.id)
+
+    # **打ち直しで実測値を消さない。** 言語を直すには同じ ID で add を打ち直すことになる
+    # ので、ここが無条件の上書きだと、その操作が done 済みの result（所要・トークン・
+    # ツール・要約）を消し、ミッションまで running へ巻き戻して summary を消す。
+    # 記述を直したいだけの人が集計を失うのは、黙って壊れる側の挙動。
+    # 渡されなかったものは既存の値を残す（--status を省いたら状態も保つ）。
+    status = args.status or (existing or {}).get("status") or "running"
+
     agent = {
         "id": args.id,
-        "name": args.name or args.id,
+        "name": args.name or (existing or {}).get("name") or args.id,
         "parentId": parent_id,
         "generation": generation_of(state, parent_id),
         # 空のままにして、表示の直前に dashlib.normalize_agent が t("unknown") を
         # 当てる。ここで訳文を書き込むと、記録した言語がそのまま state.json に残る。
-        "model": args.model,
-        "mission": args.mission,
-        "status": args.status,
-        "startedAt": None if args.status == "standby" else now_iso(),
-        "finishedAt": None,
-        "result": None,
+        "model": args.model or (existing or {}).get("model") or "",
+        "mission": args.mission or (existing or {}).get("mission") or "",
+        "status": status,
+        "startedAt": ((existing or {}).get("startedAt")
+                      or (None if status == "standby" else now_iso())),
+        "finishedAt": (existing or {}).get("finishedAt"),
+        "result": (existing or {}).get("result"),
     }
 
-    existing = find_agent(state, args.id)
     if existing is not None:
         print(t("Warning: {id} is already registered. Overwriting it.").format(id=args.id),
               file=sys.stderr)
+        print(t("         The measured values and the status are kept "
+                "(only what you passed is replaced)."), file=sys.stderr)
         existing.update(agent)
     else:
         state["agents"].append(agent)
 
     parent = find_agent(state, parent_id)
     parent_name = t("Command") if parent_id == COMMAND_ID else (parent or {}).get("name", parent_id)
-    if args.status == "standby":
+    if existing is not None:
+        # 「誕生」と書くと、同じ機体が2回生まれたことになる。ログは追記しかしないので、
+        # 打ち直しは打ち直しとして残す（古い行も消さない。書いたとおりに残すのが約束）。
+        push_log(state, parent_name,
+                 t("{name} ({id}) was rewritten — {mission}")
+                 .format(name=agent["name"], id=args.id,
+                         mission=agent["mission"] or t("no mission recorded")))
+    elif status == "standby":
         push_log(state, parent_name,
                  t("{name} ({id}) is standing by").format(name=agent["name"], id=args.id))
     else:
         push_log(state, parent_name,
                  t("{name} ({id}) was born — {mission}")
                  .format(name=agent["name"], id=args.id,
-                         mission=args.mission or t("no mission recorded")))
+                         mission=agent["mission"] or t("no mission recorded")))
 
-    if state["mission"].get("phase") != "running":
+    # 完了済みのミッションに**新しく**機体を足したときは running に戻す（作業が再開した）。
+    # 既存機体の打ち直しでは戻さない。戻すと summary（合計）が消える。
+    if state["mission"].get("phase") != "running" and existing is None:
         state["mission"].update({"phase": "running", "finishedAt": None, "summary": None})
 
     dashlib.write_state(slug, state)
 
     print(t("Registered: {id} ({name} / {status} / column {gen})")
-          .format(id=args.id, name=agent["name"], status=args.status,
+          .format(id=args.id, name=agent["name"], status=status,
                   gen=agent["generation"]))
     print(t("  Target project: {name}").format(name=project_label(project)))
+
+    # 設定された言語で書かれていないように見えたら知らせる。**書き込みは止めない。**
+    checks = []
+    if args.name and args.name != args.id and dashlib.free_text_lang_mismatch(args.name):
+        checks.append(("--name", args.name))
+    if args.mission and dashlib.free_text_lang_mismatch(args.mission):
+        checks.append(("--mission", args.mission))
+    notice = dashlib.free_text_lang_notice(checks, fixable=True)
+    if notice:
+        print(notice)
 
 
 def cmd_done(args) -> None:
@@ -444,6 +497,11 @@ def cmd_done(args) -> None:
         print(t('  * No token count was given, so it is null (the screen shows "—").'))
     if args.tools is None:
         print(t('  * No tool-call count was given, so it is null (the screen shows "—").'))
+
+    if args.headline and dashlib.free_text_lang_mismatch(args.headline):
+        notice = dashlib.free_text_lang_notice([("--headline", args.headline)], fixable=True)
+        if notice:
+            print(notice)
 
     # 締め忘れが起きる瞬間はここ。最後の1体を done にした直後、報告をまとめる作業に
     # 意識が移り、その手前にある finish が抜ける。だから催促はこの出口に置く。
@@ -539,6 +597,11 @@ def cmd_finish(args) -> None:
     print(pad(t("  Total tokens"), w) + fmt_num(total_tokens)
           + (t(" (nothing measured)") if total_tokens is None else ""))
     print(pad(t("  Elapsed"), w) + fmt_sec(elapsed))
+
+    if args.headline and dashlib.free_text_lang_mismatch(args.headline):
+        notice = dashlib.free_text_lang_notice([("--headline", args.headline)], fixable=True)
+        if notice:
+            print(notice)
 
 
 def cmd_log(args) -> None:
@@ -1043,6 +1106,56 @@ def add_project_arg(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _relanguage_instructions() -> None:
+    """運用ルールを、いま選ばれた言語で書き直す（書き込んである CLI だけ）。
+
+    **言語の設定と、エージェントがチームを組む言語は同じものでなければならない。**
+    運用ルールの言語は「`--title` / `--name` / `--mission` / `--headline` を何語で
+    書くか」そのものなので、設定だけ変えて運用ルールを置いていくと、設定は日本語なのに
+    チームは英語で組まれる。しかも食い違いは画面の見た目ではなく**記録の中身**に出る
+    ので、気づいたときには過去の記録が全部その言語で残っている。だから保存した直後に
+    ここで書き直す（利用者に install.py の再実行を覚えておいてもらうのは無理）。
+
+    書き直す先は install.rewrite_blocks() が選ぶ（このコピーを指しているものだけ）。
+    **失敗は必ず知らせる。** 黙って旧言語のまま残るのが、いちばん気づけない壊れ方。
+    """
+    hint = "  python %s" % (dashlib.TOOL_ROOT / "install.py")
+    try:
+        import install  # 遅延 import。lang 以外のコマンドに install.py を巻き込まない
+        changed, kept, failed = install.rewrite_blocks()
+    except Exception as e:  # install.py が無い／読めない配布物でも lang は成立させる
+        print(t("  ⚠️  Could not rewrite the operating rules ({path}): {err}")
+              .format(path=dashlib.TOOL_ROOT / "install.py", err=e))
+        print(t("      Rewrite them in the new language by running:"))
+        print(hint)
+        return
+
+    for path, err in failed:
+        print(t("  ⚠️  Could not rewrite the operating rules ({path}): {err}")
+              .format(path=path, err=err))
+    if failed:
+        print(t("      Rewrite them in the new language by running:"))
+        print(hint)
+
+    for path in changed:
+        print(t("  The operating rules were rewritten in this language: {path}")
+              .format(path=path))
+    if changed:
+        print(t("  Restart the agent's session "
+                "(the operating rules are read when it starts)."))
+    elif kept:
+        # 同じ言語を選び直した場合。「書き直した」と言うと事実と違う。
+        print(t("  The operating rules are already in this language ({n} files).")
+              .format(n=len(kept)))
+    elif not failed:
+        # 未設定のコピー（開発用など）。ここで install.py を勧めておかないと、
+        # 「言語は設定できたのにチームは英語のまま」の原因が最後まで分からない。
+        print(t("  note: the operating rules of this copy are not written anywhere, "
+                "so only the messages above changed."))
+        print(t("      Rewrite them in the new language by running:"))
+        print(hint)
+
+
 def cmd_lang(args) -> None:
     """表示言語を見る／決める。
 
@@ -1059,6 +1172,7 @@ def cmd_lang(args) -> None:
         print(t("Language set to {label} ({code}).")
               .format(label=i18n.label(chosen), code=chosen))
         print(t("  saved in {path}").format(path=dashlib.LANG_FILE))
+        _relanguage_instructions()
         if os.environ.get(i18n.ENV_LANG):
             # 環境変数のほうが強い。保存はしたが、この端末では効かないと言っておく。
             print(t("  note: {var} is set, so it takes precedence over this setting.")
@@ -1097,7 +1211,12 @@ def build_parser() -> argparse.ArgumentParser:
                "where history can look them up)"),
     )
     s.add_argument("--title", default="", help=t("name of the mission"))
-    s.add_argument("--model", default="claude-opus-5",
+    # 既定を空にしてあるのは、司令塔のモデルを**このツールが知る手段が無い**ため。
+    # 特定のモデル ID を既定に置くと、別のモデル（Codex の GPT など）が回したときに
+    # 画面が黙って嘘をつく。--tokens を推測で埋めないのと同じ理由で、分からないものは
+    # 空のまま「—」と出す。運用ルールの start 行に --model を書いてあるので、
+    # 手順どおりに動くエージェントは自分の ID を渡してくる。
+    s.add_argument("--model", default="",
                    help=t("model ID of the command post"))
     add_project_arg(s)
     s.set_defaults(func=cmd_start)
@@ -1110,8 +1229,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help=t("ID of the parent (the command post when omitted)"))
     a.add_argument("--model", default="", help=t("model ID that was used"))
     a.add_argument("--mission", default="", help=t("what the task is"))
-    a.add_argument("--status", default="running", choices=STATUSES,
-                   help=t("initial state"))
+    # 既定を None にしてあるのは「省略された」と「running を指定した」を区別するため。
+    # 区別できないと、打ち直しのたびに done 済みの機体が running へ戻ってしまう。
+    a.add_argument("--status", default=None, choices=STATUSES,
+                   help=t("initial state (running when omitted; kept as it is "
+                          "when the unit already exists)"))
     add_project_arg(a)
     a.set_defaults(func=cmd_add)
 

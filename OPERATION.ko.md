@@ -17,7 +17,7 @@ python <이 디렉터리>/dash.py add ...             # 런처의 본체를 직�
 python <이 디렉터리>/update_state.py add         # CLI 를 직접
 ```
 
-**실행할 때 쓰는 전체 경로가 붙은 명령 예시는 Claude 의 전역 설정 `CLAUDE.md` 에 기록되어 있다.**
+**실행할 때 쓰는 전체 경로가 붙은 명령 예시는 각 AI 코딩 CLI 의 운용 규칙 파일에 기록되어 있다.**
 그쪽을 그대로 쓸 것(`dash install` 이 환경에 맞춰 생성한 것이다).
 이 디렉터리의 실제 위치는 `dash projects` 출력의 맨 앞에도 표시된다.
 
@@ -155,7 +155,7 @@ dash ext install     # 한 번만. 그 뒤 VSCode 를 다시 읽어들인다
 
 1. **환경 변수 `AGENT_DASHBOARD_HOME`** 이 이미 설정되어 있음 → 그 경로를 사용
 2. **환경 변수에 미설정** → `install.py` 를 실행한 디렉터리를 검출
-3. **`CLAUDE.md` 에 삽입** → Claude 가 자동 실행하는 명령에 전체 경로가 포함됨
+3. **운용 규칙 파일에 삽입** → 에이전트가 자동 실행하는 명령에 전체 경로가 포함됨
 
 #### 서버의 시작
 
@@ -233,6 +233,55 @@ webbrowser.open("http://127.0.0.1:3939")
 
 ---
 
+## 0.2. 지원하는 AI 코딩 CLI 와 설정
+
+초기 설정(`install.py`)은 이 도구가 발견하는 모든 AI 코딩 CLI 에 운용 규칙을 쓰입니다.
+
+### 지원하는 CLI 들
+
+| CLI | 운용 규칙이 쓰이는 위치 |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` |
+| opencode | `~/.config/opencode/AGENTS.md` |
+| Amp | `~/.config/amp/AGENTS.md` |
+| Cline | `~/Documents/Cline/Rules/subagent-dashboard.md` |
+| Roo Code | `~/.roo/rules/subagent-dashboard.md` |
+| Windsurf | `~/.codeium/windsurf/memories/global_rules.md` |
+| Qwen Code | `~/.qwen/QWEN.md` |
+
+**Cline 과 Roo Code 는 규칙 파일들을 폴더에서 읽으므로**, 이 도구는 사용자 설정 파일을 편집하는 대신 그 폴더에 전용 파일을 하나 떨어뜨립니다.
+
+**Cursor 와 Aider 는 의도적으로 표에 없습니다.** 이 두 도구는 사용자 레벨의 자동 읽기 설정 파일이 없기 때문입니다(Cursor 는 저장소별 `AGENTS.md` 를, Aider 는 설정에 명시된 파일을 읽습니다). 저장소별 설정 파일을 가리키는 `--agent-file` 옵션으로 지정하세요.
+
+### CLI 설정
+
+특정 CLI 만 대상으로 하거나, 표에 없는 CLI 를 추가하려면 다음 명령을 씁니다.
+
+```bash
+python install.py --list-agents          # 발견된 CLI 들과 설정 상태를 표시
+python install.py --agent codex          # 특정 CLI 만 대상으로 하기
+python install.py --agent all            # 알려진 모든 CLI 에 쓰기 (설치 여부와 상관없이)
+python install.py --agent-file <경로>    # 이 경로에도 쓰기 (새로운 CLI 나 사내용 도구)
+```
+
+`--agent-file` 로 추가한 경로는 `agents.json` 에 영구적으로 등록되어, 이후 기록의 갱신과 정리에 포함됩니다. 이 메커니즘으로 새로운 CLI 를 지원하면서 도구 버전 업그레이드를 기다릴 필요가 없습니다.
+
+`agents.json` 은 수동으로도 편집할 수 있습니다. 기존 항목의 `key` 가 일치하면 내장 설정을 무시하므로, CLI 가 운용 규칙 파일 위치를 바꾼 경우 도구 업그레이드를 기다리지 않고 로컬에서 고칠 수 있습니다.
+
+각 항목은 다음 필드를 가집니다:
+- `key` — `--agent` 에서 쓰는 짧은 ID
+- `label` — 화면에 표시되는 이름
+- `home_env` — 폴더 위치를 바꾸는 환경 변수 (선택사항)
+- `home` — 폴더 경로 (`~` 로 시작할 수 있음)
+- `file` — 파일 이름 (하위 폴더를 포함할 수 있음)
+
+**초기 설정 후 새로운 AI 코딩 CLI 를 설치한 경우, `python install.py` 를 다시 실행해야 합니다.** 설정 시점에 없던 CLI 에는 규칙이 쓰이지 않아서, 그 CLI 로 시작한 서브에이전트는 대시보드에 나타나지 않습니다. 이 상태는 `start` 또는 서버 시작 시에 경고로 나타나며, `python diagnose.py` 에서도 확인할 수 있습니다.
+
+---
+
 ## 1. 미션 시작 시
 
 서브에이전트를 한 대라도 시작하기 **전에**, 작업 중인 프로젝트의 디렉터리에서 한 번만 실행한다.
@@ -246,7 +295,7 @@ webbrowser.open("http://127.0.0.1:3939")
 시작할 수 없는 쪽이 더 곤란하기 때문이다.
 
 ```bash
-dash start --title "리팩터링 영향 범위 조사"
+dash start --title "리팩터링 영향 범위 조사" --model claude-opus-5
 ```
 
 **같은 디렉터리에서 두 번째 미션을 동시에 돌릴 때는 `--project` 로 기록 위치를
@@ -275,8 +324,16 @@ dash add --id SCOUT-A --name "정찰A" --model claude-sonnet-5 --mission "src/ �
 
 **자유 기술은 한국어로 쓴다**(`--title` / `--name` / `--mission` / `--headline`). 적은 그대로 기록되고,
 기록된 그대로 화면에 나온다——나중에 번역되지 않는다. 대화의 언어가 아니라 이 절차서의 언어에 맞출 것.
-그 언어를 바꾸려면 `dash lang <en|ja|zh|ko>` 를 실행하고, 이어서 `python install.py` 로 `CLAUDE.md` 의
-기술을 다시 쓴다. **이미 있는 기록은 쓰였을 때 그대로**이며, 나중에 다시 번역되지 않는다.
+그 언어를 바꾸려면 `dash lang <en|ja|zh|ko>` 를 실행한다. **각 CLI 의 운용 규칙 파일의 기술도 그 자리에서 새 언어로
+다시 쓰이므로**, 설정한 언어가 그대로 팀을 짜는 언어가 된다(반영되는 것은 다음 세션부터 —— 운용 규칙은
+시작할 때 읽힌다). **이미 있는 기록은 쓰였을 때 그대로**이며, 나중에 다시 번역되지 않는다.
+
+**이미 가동 중인 세션에는, 이 절차서로 언어가 바뀌었음을 알릴 수 없다.** 그래서 `start` 는 매번
+「자유 기술은 이 언어로 쓴다」를 한 줄 출력하고, `start` / `add` / `done` / `finish` 는 넘겨받은 기술이
+그 언어로 쓰이지 않은 것처럼 보일 때 경고한다. **이 절차서보다 명령의 출력을 믿을 것.** 출력은 지금
+만들어진 것이고, 이 절차서는 마지막으로 언어를 설정했을 때 쓰인 것이기 때문이다. 경고가 나와도 쓰기는
+멈추지 않는다. `--name` / `--mission` / `--headline` 을 고치려면 같은 `--id` 로 같은 명령을 다시 실행한다
+(측정값은 유지된다). 미션 제목은 나중에 고칠 수 없다.
 
 세대(몇 번째 열인지)는 `--parent` 에서 자동으로 산출되므로 지정하지 않는다.
 **「보고 대기」도 `--parent` 에서 자동으로 붙으므로**, 지휘탑이 대기에 들어갔음을 신고할 필요는 없다
@@ -306,6 +363,8 @@ dash done --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "호출 지
 화면은 「—」로 표시한다. 그것이 올바른 상태이지, 메워야 할 결손이 아니다.
 「대충 2만 토큰쯤 되겠지」라고 `--tokens 20000` 이라고 적는 것은
 이 대시보드의 목적(실제로 무슨 일이 일어났는지를 본다)을 망가뜨리는 행위이므로 절대 하지 않는다.
+
+**지휘탑(command post)의 모델도 같은 원칙을 따른다.** `dash start` 에서 `--model` 을 지정하지 않으면 화면에 「알 수 없음」으로 표시된다(숫자 칸의 「—」와는 다른 표시다).
 
 ---
 
@@ -554,7 +613,7 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 | 화면에 띄울 팀의 결정 | 서버 쪽에서만 정해진다. 브라우저는 기억하지 않으므로 어느 단말에서 열어도 같은 팀이 나온다 |
 | 병렬 가동 | 가동 중인 팀은 전부 세로로 쌓아 동시에 표시한다. 나열 순서는 시작이 최근인 순 |
 | 기록 위치의 수 | 프로젝트(＝작업 디렉터리)마다 하나뿐. 같은 디렉터리에서 두 번째를 `start` 하면 첫 번째는 가동 중인 채로 이력으로 밀려나 이후 쓸 수 없다. 병렬로 돌릴 거라면 `--project` 로 나눈다(→ 6.1) |
-| 본체와 운용 규칙의 버전 | 따로따로 낡는다. 본체를 갱신해도 `CLAUDE.md` 의 운용 규칙은 `install.py` 를 다시 실행할 때까지 낡은 채로 남는다. 어긋나 있으면 `start` 와 서버 시작 시에 알림이 나온다(`diagnose.py` 의 「운용 규칙의 버전」에서도 확인할 수 있다) |
+| 본체와 운용 규칙의 버전 | 따로따로 낡는다. 본체를 갱신해도 각 CLI 의 운용 규칙은 `install.py` 를 다시 실행할 때까지 낡은 채로 남는다. 어긋나 있으면 `start` 와 서버 시작 시에 알림이 나온다(`diagnose.py` 의 「운용 규칙의 버전」에서도 확인할 수 있다) |
 | 팀의 교체 | `/api/state` 의 `teams` 에서 없어진 팀은 그 자리에서 틀째 정리한다 |
 | 같은 폴더에서 start 를 다시 했을 때 | slug 는 바뀌지 않으므로, `mission.startedAt` 의 변화를 보고 이전 미션의 로그를 버린다 |
 | 통신이 끊겼을 때 | 직전의 표시를 유지하고, 오른쪽 위의 접속 표시등이 빨갛게 된다 |
@@ -572,7 +631,7 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 ├─ dash.py            통합 진입점
 ├─ server.py          배포 서버(전체 프로젝트 공통·하나만 시작한다)
 ├─ update_state.py    상태 갱신 CLI(상태에 대한 유일한 기록 창구)
-├─ install.py         초기 설정(CLAUDE.md 에 기록)
+├─ install.py         초기 설정(각 CLI 의 운용 규칙 파일에 기록)
 ├─ dashlib.py         공통 로직(경로 해결·프로젝트 식별·병합·서식)
 ├─ build_vsix.py      VSCode 확장을 조립해서 설치한다(dash ext ...)
 ├─ test_tabs.py       탭 목록의 동작 확인. python test_tabs.py 로 실행된다(기록에는 손대지 않는다)
@@ -600,7 +659,12 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 | `AGENT_DASHBOARD_HOME` | 기록의 저장 위치를 바꾼다(기본값은 이 디렉터리. 쓸 수 없으면 OS 의 사용자 데이터 영역) |
 | `AGENT_DASHBOARD_PROJECT` | 대상 프로젝트를 고정한다(`--project` 쪽이 우선) |
 | `PORT` | 서버의 기본 포트(`--port` 쪽이 우선) |
-| `CLAUDE_CONFIG_DIR` | `install.py` 가 기록하는 `CLAUDE.md` 의 위치 |
+| `CLAUDE_CONFIG_DIR` | Claude Code 의 `CLAUDE.md` 가 있는 위치 |
+| `CODEX_HOME` | Codex CLI 의 `AGENTS.md` 가 있는 위치 |
+| `GEMINI_CLI_HOME` | Gemini CLI 의 `GEMINI.md` 가 있는 위치 |
+| `COPILOT_HOME` | GitHub Copilot CLI 의 설정 파일이 있는 위치 |
+| `OPENCODE_CONFIG_DIR` | opencode 의 `AGENTS.md` 가 있는 위치 |
+| `AGENT_DASHBOARD_AGENTS_FILE` | 직접 추가한 CLI 목록이 저장되는 위치 (기본값: 기록 폴더의 `agents.json`) |
 | `AGENT_DASHBOARD_LANG` | 출력의 언어(`en` / `ja` / `zh` / `ko`). 저장된 설정보다 우선된다 |
 
 ### 표시 언어

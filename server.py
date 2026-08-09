@@ -65,6 +65,15 @@ if _stale:
     print(_stale)
     print()
 
+# 同じ理由で、セットアップのあとに別の CLI を入れた人もここで気づけるようにする。
+# 何も書かれていない CLI からの起動は、画面に何も出ないだけでエラーにはならない
+# ので、サーバー起動時のこの一瞬を逃すと気づく場所が無くなる。
+_unwired = dashlib.unwired_agent_notice()
+if _unwired:
+    print()
+    print(_unwired)
+    print()
+
 DEFAULT_PORT = 3939
 PORT_RETRY = 10
 MAX_BODY = 64 * 1024  # POST 本文の上限（削除要求は数十バイトで足りる）
@@ -455,6 +464,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+
+        # 言語設定を読み直す（変わっていたときだけ）。サーバーは何時間も同じプロセスで
+        # 動くので、起動時に決めたままにすると dash lang で切り替えても画面側のフォール
+        # バック文言（「（ミッション未開始）」など）が古い言語のまま出続ける。
+        dashlib.refresh_lang()
 
         if path == "/api/state":
             # 映すチームはサーバーが決めるので、クエリでの指定は受け付けない。

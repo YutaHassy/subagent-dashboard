@@ -291,7 +291,6 @@ CATALOG["ja"] = {
     "ID of the parent (the command post when omitted)": "親のID（省略時は指令塔）",
     "model ID that was used": "使用したモデルID",
     "what the task is": "任務内容",
-    "initial state": "初期状態",
     "copy the measured values in once the report arrives":
         "完了通知を受け取ったら実測値を転記する",
     "seconds taken (computed from the start time when omitted)":
@@ -592,7 +591,6 @@ CATALOG["zh"] = {
     "ID of the parent (the command post when omitted)": "父级的 ID（省略时为指挥塔）",
     "model ID that was used": "使用的模型 ID",
     "what the task is": "任务内容",
-    "initial state": "初始状态",
     "copy the measured values in once the report arrives":
         "收到完成通知后把实测值转记进来",
     "seconds taken (computed from the start time when omitted)":
@@ -893,7 +891,6 @@ CATALOG["ko"] = {
     "ID of the parent (the command post when omitted)": "부모의 ID (생략하면 지휘탑)",
     "model ID that was used": "사용한 모델 ID",
     "what the task is": "임무 내용",
-    "initial state": "초기 상태",
     "copy the measured values in once the report arrives":
         "완료 통지를 받으면 실측값을 옮겨 적는다",
     "seconds taken (computed from the start time when omitted)":

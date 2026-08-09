@@ -47,9 +47,59 @@ CATALOG["ja"] = {
     'Could not set the language: {err}':
         '言語を設定できませんでした: {err}',
 
+    # ---- 自由記述の言語チェック
+    "  The operating rules are already in this language ({n} files).":
+        "  運用ルールは既にこの言語です（{n} 件）。",
+    "  Write the free text (--title / --name / --mission / --headline) "
+    "in this language: {label} ({code}).":
+        "  自由記述（--title / --name / --mission / --headline）は"
+        "{label}（{code}）で書いてください。",
+    '{flag} "{value}"':
+        '{flag} "{value}"',
+    "  ⚠️  The language is set to {label} ({code}), but this does not look like "
+    "it: {fields}":
+        "  ⚠️  言語設定は {label}（{code}）ですが、この記述はその言語で"
+        "書かれていないようです: {fields}",
+    "      If that was not deliberate, run the same command again with the same\n"
+    "      --id and the corrected text. The value is replaced, and the measured\n"
+    "      values are kept (the event log keeps the line it already wrote).":
+        "      意図したものでなければ、同じ --id のまま、直した文で同じコマンドを\n"
+        "      打ち直してください。値は置き換わり、実測値は保たれます\n"
+        "      （イベントログに既に書かれた行はそのまま残ります）。",
+    "      A mission title cannot be corrected afterwards. Only a new start can\n"
+    "      change it, and that archives the current mission while it is running.":
+        "      ミッションのタイトルはあとから直せません。直せるのは次の start だけで、\n"
+        "      それは稼働中のこのミッションを履歴へ退避してしまいます。",
+    "      If it was deliberate (a proper noun, a call sign), ignore this.":
+        "      意図してそう書いたのなら（固有名詞・コールサインなど）、無視してください。",
+    "         The measured values and the status are kept "
+    "(only what you passed is replaced).":
+        "         実測値と状態は保たれます"
+        "（渡されたものだけが置き換わります）。",
+    "{name} ({id}) was rewritten — {mission}":
+        "{name}（{id}）は書き直されました — {mission}",
+    "initial state (running when omitted; kept as it is "
+    "when the unit already exists)":
+        "初期状態（省略時は running；機体が既に存在するときは保持）",
+
+    '  The operating rules were rewritten in this language: {path}':
+        '  運用ルールをこの言語で書き直しました: {path}',
+    "  Restart the agent's session "
+    "(the operating rules are read when it starts).":
+        '  エージェントのセッションを開き直してください'
+        '（運用ルールは開始時に読み込まれます）。',
+    '  ⚠️  Could not rewrite the operating rules ({path}): {err}':
+        '  ⚠️  運用ルールを書き直せませんでした（{path}）: {err}',
+    '      Rewrite them in the new language by running:':
+        '      新しい言語で書き直すには、次を実行してください:',
+    '  note: the operating rules of this copy are not written anywhere, '
+    'so only the messages above changed.':
+        '  注意: このコピーの運用ルールはどこにも書かれていないので、'
+        '変わったのは上のメッセージだけです。',
+
     # ---- dash: コマンド一覧（dash --help）
-    '\nSubagent Dashboard\n\n  Open the screen\n    dash serve                 start the server (leave it running)\n    dash serve --open          start it and open a browser too\n    dash serve --port 4000     choose the port\n\n  First-time setup\n    dash install               write the operating rules into Claude\'s config file\n    dash install --print       only show what would be written (changes nothing)\n\n  Build a distribution package\n    dash package               build the full package (ZIP + VSIX + setup guide)\n\n  VSCode extension\n    dash ext install           build the extension and install it into VSCode\n    dash ext package           build the full distribution (.vsix + guide, to email)\n    dash ext build             build only the .vsix (lands in dist/)\n    dash ext status            check whether it is installed\n    dash ext uninstall         remove the extension\n\n  Update the state (normally Claude runs these automatically)\n    dash start  --title "name of the work"\n    dash add    --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "the task"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "result summary"\n    dash finish --headline "overall summary"\n\n  Inspect and misc\n    dash status                show the contents of the current project\n    dash projects              list the registered projects\n    dash demo                  fill in dummy data for checking the display\n    dash reset [--purge]       empty the current project (the tab stays)\n    dash remove [--yes]        delete the current project\'s records (the tab goes)\n    dash log --text "..."      append one line to the event log\n    dash lang <en|ja|zh|ko>    choose the language of these messages\n\n  For details on each command, run  dash <command> --help\n':
-        '\nSubagent Dashboard\n\n  画面を開く\n    dash serve                 サーバーを起動する（そのまま起動しっぱなしにする）\n    dash serve --open          起動してブラウザも開く\n    dash serve --port 4000     ポートを指定する\n\n  初期設定\n    dash install               Claude の設定ファイルに運用ルールを書き込む\n    dash install --print       書き込む内容を確認するだけ（変更しない）\n\n  配布パッケージ作成\n    dash package               配布用パッケージ一式を作る（ZIP + VSIX + 手順書）\n\n  VSCode 拡張機能\n    dash ext install           拡張機能を組み立てて VSCode に入れる\n    dash ext package           配布物一式を作る（.vsix と手順書。メール添付用）\n    dash ext build             .vsix を作るだけ（dist/ に出る）\n    dash ext status            入っているか確認する\n    dash ext uninstall         拡張機能を抜く\n\n  状態の更新（通常は Claude が自動で実行する）\n    dash start  --title "作業の名前"\n    dash add    --id SCOUT-A --name "偵察A" --model claude-sonnet-5 --mission "任務内容"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "結果の要約"\n    dash finish --headline "全体の要約"\n\n  確認・その他\n    dash status                いまのプロジェクトの中身を表示\n    dash projects              登録済みプロジェクトの一覧\n    dash demo                  表示確認用のダミーデータを入れる\n    dash reset [--purge]       いまのプロジェクトを空にする（タブは残る）\n    dash remove [--yes]        いまのプロジェクトの記録ごと削除（タブが消える）\n    dash log --text "..."      イベントログに1行足す\n    dash lang <en|ja|zh|ko>    これらのメッセージの言語を選ぶ\n\n  各コマンドの詳細は  dash <コマンド> --help  で表示されます。\n',
+    '\nSubagent Dashboard\n\n  Open the screen\n    dash serve                 start the server (leave it running)\n    dash serve --open          start it and open a browser too\n    dash serve --port 4000     choose the port\n\n  First-time setup\n    dash install               write the operating rules into the agent\'s config file\n    dash install --print       only show what would be written (changes nothing)\n\n  Build a distribution package\n    dash package               build the full package (ZIP + VSIX + setup guide)\n\n  VSCode extension\n    dash ext install           build the extension and install it into VSCode\n    dash ext package           build the full distribution (.vsix + guide, to email)\n    dash ext build             build only the .vsix (lands in dist/)\n    dash ext status            check whether it is installed\n    dash ext uninstall         remove the extension\n\n  Update the state (normally the agent runs these automatically)\n    dash start  --title "name of the work"\n    dash add    --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "the task"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "result summary"\n    dash finish --headline "overall summary"\n\n  Inspect and misc\n    dash status                show the contents of the current project\n    dash projects              list the registered projects\n    dash demo                  fill in dummy data for checking the display\n    dash reset [--purge]       empty the current project (the tab stays)\n    dash remove [--yes]        delete the current project\'s records (the tab goes)\n    dash log --text "..."      append one line to the event log\n    dash lang <en|ja|zh|ko>    choose the language of these messages\n\n  For details on each command, run  dash <command> --help\n':
+        '\nSubagent Dashboard\n\n  画面を開く\n    dash serve                 サーバーを起動する（そのまま起動しっぱなしにする）\n    dash serve --open          起動してブラウザも開く\n    dash serve --port 4000     ポートを指定する\n\n  初期設定\n    dash install               エージェントの設定ファイルに運用ルールを書き込む\n    dash install --print       書き込む内容を確認するだけ（変更しない）\n\n  配布パッケージ作成\n    dash package               配布用パッケージ一式を作る（ZIP + VSIX + 手順書）\n\n  VSCode 拡張機能\n    dash ext install           拡張機能を組み立てて VSCode に入れる\n    dash ext package           配布物一式を作る（.vsix と手順書。メール添付用）\n    dash ext build             .vsix を作るだけ（dist/ に出る）\n    dash ext status            入っているか確認する\n    dash ext uninstall         拡張機能を抜く\n\n  状態の更新（通常はエージェントが自動で実行する）\n    dash start  --title "作業の名前"\n    dash add    --id SCOUT-A --name "偵察A" --model claude-sonnet-5 --mission "任務内容"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "結果の要約"\n    dash finish --headline "全体の要約"\n\n  確認・その他\n    dash status                いまのプロジェクトの中身を表示\n    dash projects              登録済みプロジェクトの一覧\n    dash demo                  表示確認用のダミーデータを入れる\n    dash reset [--purge]       いまのプロジェクトを空にする（タブは残る）\n    dash remove [--yes]        いまのプロジェクトの記録ごと削除（タブが消える）\n    dash log --text "..."      イベントログに1行足す\n    dash lang <en|ja|zh|ko>    これらのメッセージの言語を選ぶ\n\n  各コマンドの詳細は  dash <コマンド> --help  で表示されます。\n',
 
     # ---- dashlib: JSON の読み取り
     "not created yet": "未作成",
@@ -61,14 +111,25 @@ CATALOG["ja"] = {
 
     # ---- dashlib: 版のずれ
     "no version recorded": "版の記載なし",
+    "{name} ({where})": "{name}（{where}）",
     "version {v}": "版 {v}",
-    "  ⚠️  The operating rules in CLAUDE.md are older than the tool "
-    "({where} / tool version {current}).":
-        "  ⚠️  CLAUDE.md の運用ルールが本体より古いままです（{where} / 本体 版 {current}）。",
+    "  ⚠️  The operating rules are older than the tool "
+    "({stale} / tool version {current}).":
+        "  ⚠️  運用ルールが本体より古いままです（{stale} / 本体 版 {current}）。",
     "      Updating the tool does not update the rules. Please run:":
         "      本体を新しくしても、運用ルールは自動では更新されません。次を実行してください:",
     "      (Only the marked block is replaced. Nothing else is touched.)":
         "      （マーカーで囲まれた範囲だけが差し替わります。他の記述には触れません）",
+    "  ⚠️  {names} is installed, but the operating rules have not been written for it.":
+        "  ⚠️  {names} がインストールされていますが、このツール向けの運用ルールが書かれていません。",
+    "      It was probably installed after the setup ran. Until you write them,":
+        "      セットアップ実行後にインストールされた可能性があります。書き込むまでの間、",
+    "      subagents started from it will not show up on the screen. Please run:":
+        "      そこから起動したサブエージェントは画面に表示されません。次を実行してください:",
+    "      (Only the marked block is written. Nothing else is touched.)":
+        "      （マーカーで囲まれた範囲だけが書き込まれます。他の記述には触れません）",
+    "      Cause: a CLI was installed after the setup ran, so it has no operating rules":
+        "      原因: セットアップ実行後に CLI がインストールされたため、運用ルールがない",
 
     # ---- dashlib: 警告と失敗
     "⚠️  Warning: {what}": "⚠️  警告: {what}",
@@ -182,7 +243,7 @@ CATALOG["ja"] = {
     "Running system checks...": "システムチェック実行中...",
     "Python version": "Python バージョン",
     "File layout": "ファイル構成",
-    "CLAUDE.md settings": "CLAUDE.md 設定",
+    "Operating-rules settings": "運用ルール設定",
     "Operating-rules version": "運用ルールの版",
     "Mission storage": "ミッション保存先",
     "Project for this folder": "カレントディレクトリの対象",
@@ -190,19 +251,21 @@ CATALOG["ja"] = {
     "Python {v} (3.9 or newer is required)": "Python {v}（3.9 以降が必要）",
     "all required files are present ({n})": "必要なファイルがすべて揃っています（{n} 件）",
     "missing: {list}": "不足: {list}",
-    "CLAUDE.md does not exist ({path})": "CLAUDE.md が存在しません（{path}）",
+    "{name} does not exist ({path})": "{name} が存在しません（{path}）",
     "read error: {err}": "読み込みエラー: {err}",
     "the settings are not written (no marker found)":
         "設定が書き込まれていません（マーカーが見つからない）",
     "the path does not match. Please run install.py (expected: {path})":
         "パスが一致しません。install.py を実行してください（期待: {path}）",
     "configured ({path})": "設定済み（{path}）",
+    "not written for {names} (run install.py to add it)":
+        "{names} には未記入（install.py を実行すると追加されます）",
     "not configured (fix the item above first)": "未設定（上の項目を先に直してください）",
     "cannot read the tool's VERSION": "本体の VERSION が読めません",
     "up to date (version {v})": "最新（版 {v}）",
     "no version recorded (0.4.1 or earlier)": "版の記載なし（0.4.1 以前）",
-    "out of date (CLAUDE.md: {where} / tool: version {current}). Please run python {path}":
-        "古いままです（CLAUDE.md: {where} / 本体: 版 {current}）。python {path} を実行してください",
+    "out of date ({stale} / tool: version {current}). Please run python {path}":
+        "古いままです（{stale} / 本体: 版 {current}）。python {path} を実行してください",
     "writable ({path})": "書き込み可能（{path}）",
     "not writable: {err}": "書き込めません: {err}",
     "none (fresh install)": "なし（新規インストール）",
@@ -219,12 +282,12 @@ CATALOG["ja"] = {
     "      Cause: required files are missing": "      原因: 必要なファイルが不足しています",
     "      Fix:   get a complete package from wherever you obtained this":
         "      対処: 配布元から完全なパッケージを受け取り直してください",
-    "      Cause: Claude has not been configured yet": "      原因: Claude への設定が未完了です",
+    "      Cause: no agent CLI has been configured yet": "      原因: エージェント CLI への設定が未完了です",
     "      Fix:   run the following command": "      対処: 次のコマンドを実行してください",
-    "      Cause: the tool was updated, but the operating rules in CLAUDE.md are still old":
-        "      原因: 本体を更新したあと、CLAUDE.md の運用ルールが古いまま残っています",
-    "             (updating the tool does not rewrite CLAUDE.md)":
-        "           （本体の更新では CLAUDE.md は書き換わりません）",
+    "      Cause: the tool was updated, but the operating rules are still old":
+        "      原因: 本体を更新したあと、運用ルールが古いまま残っています",
+    "             (updating the tool does not rewrite them)":
+        "           （本体の更新では運用ルールは書き換わりません）",
     "            only the marked block is replaced":
         "            マーカーで囲まれた範囲だけが差し替わります",
     "      Cause: the mission storage folder is not writable":
@@ -239,10 +302,11 @@ CATALOG["ja"] = {
         "  問題が解決しない場合は、次のファイルを確認してください:",
 
     # ---- auto_setup
-    "  ⚠️  First-time setup is not done yet (CLAUDE.md has no operating rules).":
-        "  ⚠️  初期設定がまだ済んでいません（CLAUDE.md に運用ルールがありません）。",
-    "      The screen still opens, but Claude does not know how to use":
-        "      このままでも画面は開きますが、Claude は Subagent Dashboard の使い方を知らないので、",
+    "  ⚠️  First-time setup is not done yet "
+    "(the operating rules have not been written anywhere).":
+        "  ⚠️  初期設定がまだ済んでいません（運用ルールがどこにも書かれていません）。",
+    "      The screen still opens, but the agent does not know how to use":
+        "      このままでも画面は開きますが、エージェントは Subagent Dashboard の使い方を知らないので、",
     "      Subagent Dashboard, so starting subagents will show nothing.":
         "      サブエージェントを起動しても何も映りません。",
     "      install.py not found. Please unpack the distribution again.":
@@ -298,9 +362,58 @@ CATALOG["zh"] = {
     'Could not set the language: {err}':
         '无法设置语言: {err}',
 
+    # ---- 自由记述的语言检查
+    "  The operating rules are already in this language ({n} files).":
+        "  运行规则已经是这个语言（{n} 个文件）。",
+    "  Write the free text (--title / --name / --mission / --headline) "
+    "in this language: {label} ({code}).":
+        "  自由文本（--title / --name / --mission / --headline）请用 "
+        "{label}（{code}） 书写。",
+    '{flag} "{value}"':
+        '{flag} "{value}"',
+    "  ⚠️  The language is set to {label} ({code}), but this does not look like "
+    "it: {fields}":
+        "  ⚠️  语言设置是 {label}（{code}），但这段文字看起来不是用它写的: "
+        "{fields}",
+    "      If that was not deliberate, run the same command again with the same\n"
+    "      --id and the corrected text. The value is replaced, and the measured\n"
+    "      values are kept (the event log keeps the line it already wrote).":
+        "      如果那不是有意的，就用相同的 --id 和改好的文字再执行一次同样的命令。\n"
+        "      值会被替换，实测值会保留\n"
+        "      （事件日志中已经写下的那一行仍旧留着）。",
+    "      A mission title cannot be corrected afterwards. Only a new start can\n"
+    "      change it, and that archives the current mission while it is running.":
+        "      任务标题事后无法更正。能改它的只有下一次 start，而那会把仍在运行的\n"
+        "      这条任务转存进历史。",
+    "      If it was deliberate (a proper noun, a call sign), ignore this.":
+        "      如果那是故意的（专有名词、呼号），请忽略。",
+    "         The measured values and the status are kept "
+    "(only what you passed is replaced).":
+        "         实测值和状态保持不变"
+        "（只有您传递的值被替换）。",
+    "{name} ({id}) was rewritten — {mission}":
+        "{name}（{id}）已重写 — {mission}",
+    "initial state (running when omitted; kept as it is "
+    "when the unit already exists)":
+        "初始状态（省略时为 running；当该单位已存在时保持不变）",
+
+    '  The operating rules were rewritten in this language: {path}':
+        '  已用这个语言重写了运行规则: {path}',
+    "  Restart the agent's session "
+    "(the operating rules are read when it starts).":
+        '  请重新打开代理的会话（运行规则是在开始时读入的）。',
+    '  ⚠️  Could not rewrite the operating rules ({path}): {err}':
+        '  ⚠️  无法重写运行规则（{path}）: {err}',
+    '      Rewrite them in the new language by running:':
+        '      要用新的语言重写，请执行:',
+    '  note: the operating rules of this copy are not written anywhere, '
+    'so only the messages above changed.':
+        '  注意: 这份副本的运行规则没有写在任何地方，'
+        '所以改变的只有上面的消息。',
+
     # ---- dash: コマンド一覧（dash --help）
-    '\nSubagent Dashboard\n\n  Open the screen\n    dash serve                 start the server (leave it running)\n    dash serve --open          start it and open a browser too\n    dash serve --port 4000     choose the port\n\n  First-time setup\n    dash install               write the operating rules into Claude\'s config file\n    dash install --print       only show what would be written (changes nothing)\n\n  Build a distribution package\n    dash package               build the full package (ZIP + VSIX + setup guide)\n\n  VSCode extension\n    dash ext install           build the extension and install it into VSCode\n    dash ext package           build the full distribution (.vsix + guide, to email)\n    dash ext build             build only the .vsix (lands in dist/)\n    dash ext status            check whether it is installed\n    dash ext uninstall         remove the extension\n\n  Update the state (normally Claude runs these automatically)\n    dash start  --title "name of the work"\n    dash add    --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "the task"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "result summary"\n    dash finish --headline "overall summary"\n\n  Inspect and misc\n    dash status                show the contents of the current project\n    dash projects              list the registered projects\n    dash demo                  fill in dummy data for checking the display\n    dash reset [--purge]       empty the current project (the tab stays)\n    dash remove [--yes]        delete the current project\'s records (the tab goes)\n    dash log --text "..."      append one line to the event log\n    dash lang <en|ja|zh|ko>    choose the language of these messages\n\n  For details on each command, run  dash <command> --help\n':
-        '\nSubagent Dashboard\n\n  打开画面\n    dash serve                 启动服务器（保持运行）\n    dash serve --open          启动并打开浏览器\n    dash serve --port 4000     指定端口\n\n  初始设置\n    dash install               把运行规则写入 Claude 的配置文件\n    dash install --print       只显示将要写入的内容（不做修改）\n\n  制作分发包\n    dash package               制作完整的分发包（ZIP + VSIX + 说明书）\n\n  VSCode 扩展\n    dash ext install           构建扩展并安装到 VSCode\n    dash ext package           制作完整分发物（.vsix 和说明书，可作邮件附件）\n    dash ext build             只构建 .vsix（输出到 dist/）\n    dash ext status            确认是否已安装\n    dash ext uninstall         卸载扩展\n\n  更新状态（通常由 Claude 自动执行）\n    dash start  --title "工作的名称"\n    dash add    --id SCOUT-A --name "侦察A" --model claude-sonnet-5 --mission "任务内容"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "结果摘要"\n    dash finish --headline "整体摘要"\n\n  查看及其他\n    dash status                显示当前项目的内容\n    dash projects              列出已注册的项目\n    dash demo                  写入用于确认显示的示例数据\n    dash reset [--purge]       清空当前项目（标签保留）\n    dash remove [--yes]        连同记录删除当前项目（标签消失）\n    dash log --text "..."      向事件日志追加一行\n    dash lang <en|ja|zh|ko>    选择这些消息的语言\n\n  各命令的详细说明请用  dash <命令> --help  查看。\n',
+    '\nSubagent Dashboard\n\n  Open the screen\n    dash serve                 start the server (leave it running)\n    dash serve --open          start it and open a browser too\n    dash serve --port 4000     choose the port\n\n  First-time setup\n    dash install               write the operating rules into the agent\'s config file\n    dash install --print       only show what would be written (changes nothing)\n\n  Build a distribution package\n    dash package               build the full package (ZIP + VSIX + setup guide)\n\n  VSCode extension\n    dash ext install           build the extension and install it into VSCode\n    dash ext package           build the full distribution (.vsix + guide, to email)\n    dash ext build             build only the .vsix (lands in dist/)\n    dash ext status            check whether it is installed\n    dash ext uninstall         remove the extension\n\n  Update the state (normally the agent runs these automatically)\n    dash start  --title "name of the work"\n    dash add    --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "the task"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "result summary"\n    dash finish --headline "overall summary"\n\n  Inspect and misc\n    dash status                show the contents of the current project\n    dash projects              list the registered projects\n    dash demo                  fill in dummy data for checking the display\n    dash reset [--purge]       empty the current project (the tab stays)\n    dash remove [--yes]        delete the current project\'s records (the tab goes)\n    dash log --text "..."      append one line to the event log\n    dash lang <en|ja|zh|ko>    choose the language of these messages\n\n  For details on each command, run  dash <command> --help\n':
+        '\nSubagent Dashboard\n\n  打开画面\n    dash serve                 启动服务器（保持运行）\n    dash serve --open          启动并打开浏览器\n    dash serve --port 4000     指定端口\n\n  初始设置\n    dash install               把运行规则写入智能体的配置文件\n    dash install --print       只显示将要写入的内容（不做修改）\n\n  制作分发包\n    dash package               制作完整的分发包（ZIP + VSIX + 说明书）\n\n  VSCode 扩展\n    dash ext install           构建扩展并安装到 VSCode\n    dash ext package           制作完整分发物（.vsix 和说明书，可作邮件附件）\n    dash ext build             只构建 .vsix（输出到 dist/）\n    dash ext status            确认是否已安装\n    dash ext uninstall         卸载扩展\n\n  更新状态（通常由智能体自动执行）\n    dash start  --title "工作的名称"\n    dash add    --id SCOUT-A --name "侦察A" --model claude-sonnet-5 --mission "任务内容"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "结果摘要"\n    dash finish --headline "整体摘要"\n\n  查看及其他\n    dash status                显示当前项目的内容\n    dash projects              列出已注册的项目\n    dash demo                  写入用于确认显示的示例数据\n    dash reset [--purge]       清空当前项目（标签保留）\n    dash remove [--yes]        连同记录删除当前项目（标签消失）\n    dash log --text "..."      向事件日志追加一行\n    dash lang <en|ja|zh|ko>    选择这些消息的语言\n\n  各命令的详细说明请用  dash <命令> --help  查看。\n',
 
     "not created yet": "尚未创建",
     "empty file": "空文件",
@@ -310,14 +423,25 @@ CATALOG["zh"] = {
     "not readable as JSON ({err})": "无法按 JSON 读取（{err}）",
 
     "no version recorded": "未记录版本",
+    "{name} ({where})": "{name}（{where}）",
     "version {v}": "版本 {v}",
-    "  ⚠️  The operating rules in CLAUDE.md are older than the tool "
-    "({where} / tool version {current}).":
-        "  ⚠️  CLAUDE.md 中的运行规则比本体旧（{where} / 本体版本 {current}）。",
+    "  ⚠️  The operating rules are older than the tool "
+    "({stale} / tool version {current}).":
+        "  ⚠️  运行规则比本体旧（{stale} / 本体版本 {current}）。",
     "      Updating the tool does not update the rules. Please run:":
         "      更新本体不会自动更新运行规则。请执行：",
     "      (Only the marked block is replaced. Nothing else is touched.)":
         "      （只会替换标记包围的范围，其他内容不受影响）",
+    "  ⚠️  {names} is installed, but the operating rules have not been written for it.":
+        "  ⚠️  已安装 {names}，但尚未为其编写运行规则。",
+    "      It was probably installed after the setup ran. Until you write them,":
+        "      它很可能在设置运行后才安装的。只要未编写规则，",
+    "      subagents started from it will not show up on the screen. Please run:":
+        "      从中启动的子代理将不会显示在屏幕上。请执行:",
+    "      (Only the marked block is written. Nothing else is touched.)":
+        "      （只会写入标记包围的范围，其他内容不受影响）",
+    "      Cause: a CLI was installed after the setup ran, so it has no operating rules":
+        "      原因: CLI 在设置运行后被安装，因此它没有运行规则",
 
     "⚠️  Warning: {what}": "⚠️  警告: {what}",
     "   Cause: {err}": "   原因: {err}",
@@ -420,7 +544,7 @@ CATALOG["zh"] = {
     "Running system checks...": "正在执行系统检查...",
     "Python version": "Python 版本",
     "File layout": "文件构成",
-    "CLAUDE.md settings": "CLAUDE.md 设置",
+    "Operating-rules settings": "运行规则设置",
     "Operating-rules version": "运行规则的版本",
     "Mission storage": "任务保存位置",
     "Project for this folder": "当前目录对应的项目",
@@ -428,18 +552,20 @@ CATALOG["zh"] = {
     "Python {v} (3.9 or newer is required)": "Python {v}（需要 3.9 以上）",
     "all required files are present ({n})": "所需文件齐全（{n} 个）",
     "missing: {list}": "缺少: {list}",
-    "CLAUDE.md does not exist ({path})": "CLAUDE.md 不存在（{path}）",
+    "{name} does not exist ({path})": "{name} 不存在（{path}）",
     "read error: {err}": "读取错误: {err}",
     "the settings are not written (no marker found)": "设置尚未写入（找不到标记）",
     "the path does not match. Please run install.py (expected: {path})":
         "路径不一致。请执行 install.py（期望: {path}）",
     "configured ({path})": "已配置（{path}）",
+    "not written for {names} (run install.py to add it)":
+        "{names} 尚未写入（执行 install.py 即可添加）",
     "not configured (fix the item above first)": "未配置（请先修复上面的项目）",
     "cannot read the tool's VERSION": "无法读取本体的 VERSION",
     "up to date (version {v})": "最新（版本 {v}）",
     "no version recorded (0.4.1 or earlier)": "未记录版本（0.4.1 及更早）",
-    "out of date (CLAUDE.md: {where} / tool: version {current}). Please run python {path}":
-        "仍是旧版（CLAUDE.md: {where} / 本体: 版本 {current}）。请执行 python {path}",
+    "out of date ({stale} / tool: version {current}). Please run python {path}":
+        "仍是旧版（{stale} / 本体: 版本 {current}）。请执行 python {path}",
     "writable ({path})": "可写入（{path}）",
     "not writable: {err}": "无法写入: {err}",
     "none (fresh install)": "无（全新安装）",
@@ -455,12 +581,12 @@ CATALOG["zh"] = {
     "      Cause: required files are missing": "      原因: 缺少必要的文件",
     "      Fix:   get a complete package from wherever you obtained this":
         "      对策: 请从分发来源重新获取完整的包",
-    "      Cause: Claude has not been configured yet": "      原因: 尚未完成对 Claude 的设置",
+    "      Cause: no agent CLI has been configured yet": "      原因: 尚未完成对智能体 CLI 的设置",
     "      Fix:   run the following command": "      对策: 请执行以下命令",
-    "      Cause: the tool was updated, but the operating rules in CLAUDE.md are still old":
-        "      原因: 更新本体后，CLAUDE.md 中的运行规则仍是旧的",
-    "             (updating the tool does not rewrite CLAUDE.md)":
-        "           （更新本体不会改写 CLAUDE.md）",
+    "      Cause: the tool was updated, but the operating rules are still old":
+        "      原因: 更新本体后，运行规则仍是旧的",
+    "             (updating the tool does not rewrite them)":
+        "           （更新本体不会改写运行规则）",
     "            only the marked block is replaced": "            只会替换标记包围的范围",
     "      Cause: the mission storage folder is not writable":
         "      原因: 无法写入任务保存位置",
@@ -472,10 +598,11 @@ CATALOG["zh"] = {
         "      对策: 请在项目的根目录中执行",
     "  If the problem persists, check these files:": "  若问题仍未解决，请查看以下文件:",
 
-    "  ⚠️  First-time setup is not done yet (CLAUDE.md has no operating rules).":
-        "  ⚠️  尚未完成初始设置（CLAUDE.md 中没有运行规则）。",
-    "      The screen still opens, but Claude does not know how to use":
-        "      画面仍可打开，但 Claude 不知道如何使用 Subagent Dashboard，",
+    "  ⚠️  First-time setup is not done yet "
+    "(the operating rules have not been written anywhere).":
+        "  ⚠️  尚未完成初始设置（运行规则尚未写入任何位置）。",
+    "      The screen still opens, but the agent does not know how to use":
+        "      画面仍可打开，但智能体不知道如何使用 Subagent Dashboard，",
     "      Subagent Dashboard, so starting subagents will show nothing.":
         "      因此即使启动子代理也不会显示任何内容。",
     "      install.py not found. Please unpack the distribution again.":
@@ -530,9 +657,59 @@ CATALOG["ko"] = {
     'Could not set the language: {err}':
         '언어를 설정하지 못했습니다: {err}',
 
+    # ---- 자유 기술의 언어 확인
+    "  The operating rules are already in this language ({n} files).":
+        "  운용 규칙은 이미 이 언어입니다({n} 건).",
+    "  Write the free text (--title / --name / --mission / --headline) "
+    "in this language: {label} ({code}).":
+        "  자유 기술(--title / --name / --mission / --headline)은 "
+        "{label}({code}) 로 써 주세요.",
+    '{flag} "{value}"':
+        '{flag} "{value}"',
+    "  ⚠️  The language is set to {label} ({code}), but this does not look like "
+    "it: {fields}":
+        "  ⚠️  언어 설정은 {label}({code}) 인데, 이 기술은 그 언어로 쓰이지 "
+        "않은 것 같습니다: {fields}",
+    "      If that was not deliberate, run the same command again with the same\n"
+    "      --id and the corrected text. The value is replaced, and the measured\n"
+    "      values are kept (the event log keeps the line it already wrote).":
+        "      의도한 것이 아니라면 같은 --id 로, 고친 문장으로 같은 명령을 다시\n"
+        "      실행해 주세요. 값은 교체되고 측정값은 그대로 유지됩니다\n"
+        "      (이벤트 로그에 이미 쓰인 줄은 그대로 남습니다).",
+    "      A mission title cannot be corrected afterwards. Only a new start can\n"
+    "      change it, and that archives the current mission while it is running.":
+        "      미션 제목은 나중에 고칠 수 없습니다. 고칠 수 있는 것은 다음 start 뿐이며,\n"
+        "      그것은 가동 중인 이 미션을 이력으로 옮겨 버립니다.",
+    "      If it was deliberate (a proper noun, a call sign), ignore this.":
+        "      의도적인 것(고유명사, 호출 신호)이면 무시하세요.",
+    "         The measured values and the status are kept "
+    "(only what you passed is replaced).":
+        "         측정값과 상태는 유지됩니다"
+        "(전달한 것만 교체됨).",
+    "{name} ({id}) was rewritten — {mission}":
+        "{name}({id})을(를) 다시 썼습니다 — {mission}",
+    "initial state (running when omitted; kept as it is "
+    "when the unit already exists)":
+        "초기 상태(생략하면 running; 기체가 이미 존재하면 현상 유지)",
+
+    '  The operating rules were rewritten in this language: {path}':
+        '  운용 규칙을 이 언어로 다시 썼습니다: {path}',
+    "  Restart the agent's session "
+    "(the operating rules are read when it starts).":
+        '  에이전트의 세션을 다시 열어 주세요'
+        '(운용 규칙은 시작할 때 읽어 들입니다).',
+    '  ⚠️  Could not rewrite the operating rules ({path}): {err}':
+        '  ⚠️  운용 규칙을 다시 쓰지 못했습니다({path}): {err}',
+    '      Rewrite them in the new language by running:':
+        '      새 언어로 다시 쓰려면 다음을 실행해 주세요:',
+    '  note: the operating rules of this copy are not written anywhere, '
+    'so only the messages above changed.':
+        '  주의: 이 복사본의 운용 규칙은 어디에도 쓰여 있지 않으므로, '
+        '바뀐 것은 위의 메시지뿐입니다.',
+
     # ---- dash: コマンド一覧（dash --help）
-    '\nSubagent Dashboard\n\n  Open the screen\n    dash serve                 start the server (leave it running)\n    dash serve --open          start it and open a browser too\n    dash serve --port 4000     choose the port\n\n  First-time setup\n    dash install               write the operating rules into Claude\'s config file\n    dash install --print       only show what would be written (changes nothing)\n\n  Build a distribution package\n    dash package               build the full package (ZIP + VSIX + setup guide)\n\n  VSCode extension\n    dash ext install           build the extension and install it into VSCode\n    dash ext package           build the full distribution (.vsix + guide, to email)\n    dash ext build             build only the .vsix (lands in dist/)\n    dash ext status            check whether it is installed\n    dash ext uninstall         remove the extension\n\n  Update the state (normally Claude runs these automatically)\n    dash start  --title "name of the work"\n    dash add    --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "the task"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "result summary"\n    dash finish --headline "overall summary"\n\n  Inspect and misc\n    dash status                show the contents of the current project\n    dash projects              list the registered projects\n    dash demo                  fill in dummy data for checking the display\n    dash reset [--purge]       empty the current project (the tab stays)\n    dash remove [--yes]        delete the current project\'s records (the tab goes)\n    dash log --text "..."      append one line to the event log\n    dash lang <en|ja|zh|ko>    choose the language of these messages\n\n  For details on each command, run  dash <command> --help\n':
-        '\nSubagent Dashboard\n\n  화면 열기\n    dash serve                 서버를 시작한다 (그대로 계속 띄워 둔다)\n    dash serve --open          시작하고 브라우저도 연다\n    dash serve --port 4000     포트를 지정한다\n\n  초기 설정\n    dash install               Claude 의 설정 파일에 운용 규칙을 기록한다\n    dash install --print       기록할 내용을 확인만 한다 (변경하지 않는다)\n\n  배포 패키지 만들기\n    dash package               배포용 패키지 일체를 만든다 (ZIP + VSIX + 설명서)\n\n  VSCode 확장\n    dash ext install           확장을 빌드해 VSCode 에 설치한다\n    dash ext package           배포물 일체를 만든다 (.vsix 와 설명서. 메일 첨부용)\n    dash ext build             .vsix 만 만든다 (dist/ 에 나온다)\n    dash ext status            설치되어 있는지 확인한다\n    dash ext uninstall         확장을 제거한다\n\n  상태 갱신 (보통은 Claude 가 자동으로 실행한다)\n    dash start  --title "작업의 이름"\n    dash add    --id SCOUT-A --name "정찰A" --model claude-sonnet-5 --mission "임무 내용"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "결과 요약"\n    dash finish --headline "전체 요약"\n\n  확인 및 기타\n    dash status                지금 프로젝트의 내용을 표시\n    dash projects              등록된 프로젝트 목록\n    dash demo                  표시 확인용 더미 데이터를 넣는다\n    dash reset [--purge]       지금 프로젝트를 비운다 (탭은 남는다)\n    dash remove [--yes]        지금 프로젝트를 기록째 삭제 (탭이 사라진다)\n    dash log --text "..."      이벤트 로그에 한 줄 추가\n    dash lang <en|ja|zh|ko>    이 메시지들의 언어를 고른다\n\n  각 명령의 자세한 내용은  dash <명령> --help  로 표시됩니다.\n',
+    '\nSubagent Dashboard\n\n  Open the screen\n    dash serve                 start the server (leave it running)\n    dash serve --open          start it and open a browser too\n    dash serve --port 4000     choose the port\n\n  First-time setup\n    dash install               write the operating rules into the agent\'s config file\n    dash install --print       only show what would be written (changes nothing)\n\n  Build a distribution package\n    dash package               build the full package (ZIP + VSIX + setup guide)\n\n  VSCode extension\n    dash ext install           build the extension and install it into VSCode\n    dash ext package           build the full distribution (.vsix + guide, to email)\n    dash ext build             build only the .vsix (lands in dist/)\n    dash ext status            check whether it is installed\n    dash ext uninstall         remove the extension\n\n  Update the state (normally the agent runs these automatically)\n    dash start  --title "name of the work"\n    dash add    --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "the task"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "result summary"\n    dash finish --headline "overall summary"\n\n  Inspect and misc\n    dash status                show the contents of the current project\n    dash projects              list the registered projects\n    dash demo                  fill in dummy data for checking the display\n    dash reset [--purge]       empty the current project (the tab stays)\n    dash remove [--yes]        delete the current project\'s records (the tab goes)\n    dash log --text "..."      append one line to the event log\n    dash lang <en|ja|zh|ko>    choose the language of these messages\n\n  For details on each command, run  dash <command> --help\n':
+        '\nSubagent Dashboard\n\n  화면 열기\n    dash serve                 서버를 시작한다 (그대로 계속 띄워 둔다)\n    dash serve --open          시작하고 브라우저도 연다\n    dash serve --port 4000     포트를 지정한다\n\n  초기 설정\n    dash install               에이전트의 설정 파일에 운용 규칙을 기록한다\n    dash install --print       기록할 내용을 확인만 한다 (변경하지 않는다)\n\n  배포 패키지 만들기\n    dash package               배포용 패키지 일체를 만든다 (ZIP + VSIX + 설명서)\n\n  VSCode 확장\n    dash ext install           확장을 빌드해 VSCode 에 설치한다\n    dash ext package           배포물 일체를 만든다 (.vsix 와 설명서. 메일 첨부용)\n    dash ext build             .vsix 만 만든다 (dist/ 에 나온다)\n    dash ext status            설치되어 있는지 확인한다\n    dash ext uninstall         확장을 제거한다\n\n  상태 갱신 (보통은 에이전트가 자동으로 실행한다)\n    dash start  --title "작업의 이름"\n    dash add    --id SCOUT-A --name "정찰A" --model claude-sonnet-5 --mission "임무 내용"\n    dash done   --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "결과 요약"\n    dash finish --headline "전체 요약"\n\n  확인 및 기타\n    dash status                지금 프로젝트의 내용을 표시\n    dash projects              등록된 프로젝트 목록\n    dash demo                  표시 확인용 더미 데이터를 넣는다\n    dash reset [--purge]       지금 프로젝트를 비운다 (탭은 남는다)\n    dash remove [--yes]        지금 프로젝트를 기록째 삭제 (탭이 사라진다)\n    dash log --text "..."      이벤트 로그에 한 줄 추가\n    dash lang <en|ja|zh|ko>    이 메시지들의 언어를 고른다\n\n  각 명령의 자세한 내용은  dash <명령> --help  로 표시됩니다.\n',
 
     "not created yet": "아직 생성되지 않음",
     "empty file": "빈 파일",
@@ -542,14 +719,25 @@ CATALOG["ko"] = {
     "not readable as JSON ({err})": "JSON 으로 읽을 수 없습니다 ({err})",
 
     "no version recorded": "버전 기록 없음",
+    "{name} ({where})": "{name} ({where})",
     "version {v}": "버전 {v}",
-    "  ⚠️  The operating rules in CLAUDE.md are older than the tool "
-    "({where} / tool version {current}).":
-        "  ⚠️  CLAUDE.md 의 운용 규칙이 본체보다 오래되었습니다 ({where} / 본체 버전 {current}).",
+    "  ⚠️  The operating rules are older than the tool "
+    "({stale} / tool version {current}).":
+        "  ⚠️  운용 규칙이 본체보다 오래되었습니다 ({stale} / 본체 버전 {current}).",
     "      Updating the tool does not update the rules. Please run:":
         "      본체를 갱신해도 운용 규칙은 자동으로 갱신되지 않습니다. 다음을 실행하세요:",
     "      (Only the marked block is replaced. Nothing else is touched.)":
         "      (마커로 둘러싸인 범위만 교체됩니다. 다른 내용은 건드리지 않습니다.)",
+    "  ⚠️  {names} is installed, but the operating rules have not been written for it.":
+        "  ⚠️  {names} 이(가) 설치되었지만, 이에 대한 운용 규칙이 아직 기록되지 않았습니다.",
+    "      It was probably installed after the setup ran. Until you write them,":
+        "      설정 실행 후에 설치되었을 가능성이 있습니다. 기록할 때까지",
+    "      subagents started from it will not show up on the screen. Please run:":
+        "      여기서 시작한 서브에이전트는 화면에 표시되지 않습니다. 다음을 실행하세요:",
+    "      (Only the marked block is written. Nothing else is touched.)":
+        "      (마커로 둘러싸인 범위만 기록됩니다. 다른 내용은 건드리지 않습니다.)",
+    "      Cause: a CLI was installed after the setup ran, so it has no operating rules":
+        "      원인: CLI 가 설정 실행 후 설치되었으므로, 운용 규칙이 없습니다",
 
     "⚠️  Warning: {what}": "⚠️  경고: {what}",
     "   Cause: {err}": "   원인: {err}",
@@ -655,7 +843,7 @@ CATALOG["ko"] = {
     "Running system checks...": "시스템 점검 실행 중...",
     "Python version": "Python 버전",
     "File layout": "파일 구성",
-    "CLAUDE.md settings": "CLAUDE.md 설정",
+    "Operating-rules settings": "운용 규칙 설정",
     "Operating-rules version": "운용 규칙의 버전",
     "Mission storage": "미션 저장 위치",
     "Project for this folder": "현재 디렉터리의 대상",
@@ -663,19 +851,21 @@ CATALOG["ko"] = {
     "Python {v} (3.9 or newer is required)": "Python {v} (3.9 이상이 필요합니다)",
     "all required files are present ({n})": "필요한 파일이 모두 있습니다 ({n} 건)",
     "missing: {list}": "부족: {list}",
-    "CLAUDE.md does not exist ({path})": "CLAUDE.md 가 존재하지 않습니다 ({path})",
+    "{name} does not exist ({path})": "{name} 가 존재하지 않습니다 ({path})",
     "read error: {err}": "읽기 오류: {err}",
     "the settings are not written (no marker found)":
         "설정이 기록되어 있지 않습니다 (마커를 찾을 수 없음)",
     "the path does not match. Please run install.py (expected: {path})":
         "경로가 일치하지 않습니다. install.py 를 실행하세요 (기대: {path})",
     "configured ({path})": "설정됨 ({path})",
+    "not written for {names} (run install.py to add it)":
+        "{names} 에는 기록되지 않음 (install.py 를 실행하면 추가됩니다)",
     "not configured (fix the item above first)": "미설정 (위 항목을 먼저 고치세요)",
     "cannot read the tool's VERSION": "본체의 VERSION 을 읽을 수 없습니다",
     "up to date (version {v})": "최신 (버전 {v})",
     "no version recorded (0.4.1 or earlier)": "버전 기록 없음 (0.4.1 이전)",
-    "out of date (CLAUDE.md: {where} / tool: version {current}). Please run python {path}":
-        "오래된 상태입니다 (CLAUDE.md: {where} / 본체: 버전 {current}). python {path} 를 실행하세요",
+    "out of date ({stale} / tool: version {current}). Please run python {path}":
+        "오래된 상태입니다 ({stale} / 본체: 버전 {current}). python {path} 를 실행하세요",
     "writable ({path})": "쓰기 가능 ({path})",
     "not writable: {err}": "쓸 수 없습니다: {err}",
     "none (fresh install)": "없음 (신규 설치)",
@@ -691,12 +881,12 @@ CATALOG["ko"] = {
     "      Cause: required files are missing": "      원인: 필요한 파일이 부족합니다",
     "      Fix:   get a complete package from wherever you obtained this":
         "      조치: 배포처에서 완전한 패키지를 다시 받으세요",
-    "      Cause: Claude has not been configured yet": "      원인: Claude 설정이 완료되지 않았습니다",
+    "      Cause: no agent CLI has been configured yet": "      원인: 에이전트 CLI 설정이 완료되지 않았습니다",
     "      Fix:   run the following command": "      조치: 다음 명령을 실행하세요",
-    "      Cause: the tool was updated, but the operating rules in CLAUDE.md are still old":
-        "      원인: 본체를 갱신한 뒤 CLAUDE.md 의 운용 규칙이 오래된 채로 남아 있습니다",
-    "             (updating the tool does not rewrite CLAUDE.md)":
-        "           (본체 갱신으로는 CLAUDE.md 가 바뀌지 않습니다)",
+    "      Cause: the tool was updated, but the operating rules are still old":
+        "      원인: 본체를 갱신한 뒤 운용 규칙이 오래된 채로 남아 있습니다",
+    "             (updating the tool does not rewrite them)":
+        "           (본체 갱신으로는 운용 규칙이 바뀌지 않습니다)",
     "            only the marked block is replaced":
         "            마커로 둘러싸인 범위만 교체됩니다",
     "      Cause: the mission storage folder is not writable":
@@ -710,10 +900,11 @@ CATALOG["ko"] = {
     "  If the problem persists, check these files:":
         "  문제가 해결되지 않으면 다음 파일을 확인하세요:",
 
-    "  ⚠️  First-time setup is not done yet (CLAUDE.md has no operating rules).":
-        "  ⚠️  초기 설정이 아직 끝나지 않았습니다 (CLAUDE.md 에 운용 규칙이 없습니다).",
-    "      The screen still opens, but Claude does not know how to use":
-        "      이대로도 화면은 열리지만, Claude 는 Subagent Dashboard 사용법을 모르므로",
+    "  ⚠️  First-time setup is not done yet "
+    "(the operating rules have not been written anywhere).":
+        "  ⚠️  초기 설정이 아직 끝나지 않았습니다 (운용 규칙이 어디에도 기록되어 있지 않습니다).",
+    "      The screen still opens, but the agent does not know how to use":
+        "      이대로도 화면은 열리지만, 에이전트는 Subagent Dashboard 사용법을 모르므로",
     "      Subagent Dashboard, so starting subagents will show nothing.":
         "      서브에이전트를 시작해도 아무것도 표시되지 않습니다.",
     "      install.py not found. Please unpack the distribution again.":

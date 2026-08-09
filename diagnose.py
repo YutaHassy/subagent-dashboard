@@ -9,7 +9,7 @@
 何をチェックするか:
     1. Python のバージョン
     2. ダッシュボードのファイル構成
-    3. CLAUDE.md の設定状態
+    3. 運用ルール（CLAUDE.md / AGENTS.md）の設定状態
     4. ミッション保存先の書き込み権限
     5. カレントディレクトリから判定される対象プロジェクト
     6. 既存のミッション記録
@@ -89,21 +89,19 @@ def check_file_structure() -> tuple[bool, str]:
         list=", ".join(f.name for f in missing))
 
 
-def check_claude_md() -> tuple[bool, str]:
-    """CLAUDE.md に設定が書き込まれているか。"""
-    target = dashlib.claude_config_dir() / "CLAUDE.md"
+def _check_one_instruction_file(key: str) -> tuple[bool, str]:
+    """1つの CLI の運用ルールファイルを見る。"""
+    target = dashlib.instruction_file(key)
     if not target.is_file():
-        return False, t("CLAUDE.md does not exist ({path})").format(path=target)
+        return False, t("{name} does not exist ({path})").format(
+            name=target.name, path=target)
 
     try:
         text = target.read_text(encoding="utf-8")
     except OSError as e:
         return False, t("read error: {err}").format(err=e)
 
-    begin = "<!-- agent-dashboard:begin -->"
-    end = "<!-- agent-dashboard:end -->"
-
-    if begin not in text or end not in text:
+    if dashlib.BLOCK_BEGIN not in text or dashlib.BLOCK_END not in text:
         return False, t("the settings are not written (no marker found)")
 
     # パスが正しいか確認
@@ -118,32 +116,76 @@ def check_claude_md() -> tuple[bool, str]:
     return True, t("configured ({path})").format(path=target)
 
 
+def check_claude_md() -> tuple[bool, str]:
+    """どれか1つの CLI に設定が書き込まれているか。
+
+    **全部そろっている必要は無い。** 入れていない CLI のぶんまで「未設定」と出すと、
+    Claude Code だけで使っている人の診断が毎回赤くなり、本当の異常が埋もれる。
+    設定フォルダが存在する CLI に限って、書かれていないものを付記する。
+
+    ただし、**入っているのに書かれていない CLI が残っている間は合格にしない。** ここを
+    緑のまま通すと、セットアップのあとに別の CLI を入れた人だけが、診断でも気づけない
+    状態になる（dashlib.unwired_agents の説明を参照。update_state / server / auto_setup
+    と同じ判定をここでも使う）。
+    """
+    results = {key: _check_one_instruction_file(key) for key in dashlib.agent_keys()}
+    ok_keys = [key for key, (ok, _) in results.items() if ok]
+
+    if not ok_keys:
+        # 1つも無いときは、入っている CLI の理由を並べる（入れていない CLI の
+        # 「ファイルがありません」を出しても、直しようがないので混乱するだけ）。
+        present = dashlib.present_agents() or ["claude"]
+        detail = " / ".join(
+            "{0}: {1}".format(dashlib.agent_label(key), results[key][1])
+            for key in present
+        )
+        return False, detail
+
+    msg = " / ".join(
+        "{0}: {1}".format(dashlib.agent_label(key), results[key][1]) for key in ok_keys
+    )
+    # 入っているのに書かれていない CLI があれば、そこを付け足したうえで不合格にする。
+    pending = dashlib.unwired_agents()
+    if pending:
+        msg += " / " + t("not written for {names} (run install.py to add it)").format(
+            names=", ".join(dashlib.agent_label(key) for key in pending))
+        return False, msg
+    return True, msg
+
+
 def check_claude_md_version() -> tuple[bool, str]:
-    """CLAUDE.md の運用ルールが本体と同じ版か。
+    """書き込んだ運用ルールが本体と同じ版か。
 
     本体と運用ルールは別々に古くなる。本体は拡張の更新や上書きコピーで新しくなるが、
-    CLAUDE.md は install.py を実行し直すまで古いまま残る（初期設定は一度成功すると
+    運用ルールは install.py を実行し直すまで古いまま残る（初期設定は一度成功すると
     自動では二度と走らない）。ここで版を突き合わせておかないと、増えた運用ルールが
     誰にも届いていないことに、事故が起きるまで気づけない。
     """
-    if not dashlib.claude_block_installed():
+    keys = dashlib.installed_agents()
+    if not keys:
         return False, t("not configured (fix the item above first)")
 
     current = dashlib.tool_version()
     if not current:
         return False, t("cannot read the tool's VERSION")
 
-    installed = dashlib.claude_block_version()
-    if installed == current:
+    stale = []
+    for key in keys:
+        installed = dashlib.block_version(key)
+        if installed == current:
+            continue
+        where = (t("no version recorded (0.4.1 or earlier)") if installed is None
+                 else t("version {v}").format(v=installed))
+        stale.append("{0}: {1}".format(dashlib.instruction_file(key).name, where))
+
+    if not stale:
         return True, t("up to date (version {v})").format(v=current)
 
-    where = (t("no version recorded (0.4.1 or earlier)") if installed is None
-             else t("version {v}").format(v=installed))
     return (
         False,
-        t("out of date (CLAUDE.md: {where} / tool: version {current}). "
+        t("out of date ({stale} / tool: version {current}). "
           "Please run python {path}").format(
-              where=where, current=current, path=HERE / "install.py"),
+              stale=" / ".join(stale), current=current, path=HERE / "install.py"),
     )
 
 
@@ -189,7 +231,7 @@ def main() -> None:
     checks = [
         ("python",   t("Python version"),           check_python_version),
         ("files",    t("File layout"),              check_file_structure),
-        ("claude",   t("CLAUDE.md settings"),       check_claude_md),
+        ("claude",   t("Operating-rules settings"), check_claude_md),
         ("version",  t("Operating-rules version"),  check_claude_md_version),
         ("missions", t("Mission storage"),          check_missions_dir),
         ("project",  t("Project for this folder"),  check_current_project),
@@ -264,13 +306,20 @@ def main() -> None:
                 print(t("      Fix:   get a complete package from wherever you "
                         "obtained this"))
             elif key == "claude":
-                print(t("      Cause: Claude has not been configured yet"))
+                # 「1つも設定されていない」のと「一部の CLI だけ後から入れて
+                # 書けていない」のとでは原因が違う。dashlib.unwired_agents() が
+                # 空かどうかで見分ける（check_claude_md と同じ判定）。
+                if dashlib.unwired_agents():
+                    print(t("      Cause: a CLI was installed after the setup ran, "
+                            "so it has no operating rules"))
+                else:
+                    print(t("      Cause: no agent CLI has been configured yet"))
                 print(t("      Fix:   run the following command"))
                 print(installer)
             elif key == "version":
-                print(t("      Cause: the tool was updated, but the operating rules "
-                        "in CLAUDE.md are still old"))
-                print(t("             (updating the tool does not rewrite CLAUDE.md)"))
+                print(t("      Cause: the tool was updated, but the operating "
+                        "rules are still old"))
+                print(t("             (updating the tool does not rewrite them)"))
                 print(t("      Fix:   run the following command"))
                 print(installer)
                 print(t("            only the marked block is replaced"))

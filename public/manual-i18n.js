@@ -228,7 +228,7 @@
     'm.s9.a8b':    'To change where records are stored, point the environment variable <code>AGENT_DASHBOARD_HOME</code> at a folder (useful for a shared drive or a different disk).',
     'm.s9.q9':     'The unit names are in a different language from the screen',
     'm.s9.a9a':    'Names and mission text are <strong>never translated</strong>. They are free text Claude wrote when it registered the unit, and the screen shows them exactly as recorded — switching the language at the top right changes the headings and labels around them, not the records themselves.',
-    'm.s9.a9b':    'Which language Claude writes them in is decided separately, on the command side. Run <code>dash lang en</code> (or <code>ja</code> / <code>zh</code> / <code>ko</code>), then <code>dash install</code>, then restart Claude. Missions already recorded stay as they were written, because this screen is here to show what actually happened.',
+    'm.s9.a9b':    'Which language Claude writes them in is decided separately, on the command side. Run <code>dash lang en</code> (or <code>ja</code> / <code>zh</code> / <code>ko</code>), then restart Claude — that one command also rewrites the operating rules in the new language, so the language you set is the language teams are formed in. Missions already recorded stay as they were written, because this screen is here to show what actually happened.',
 
     // --- 10
     'm.s10.title': 'Where everything lives',
@@ -453,7 +453,7 @@
     'm.s9.a8b':    '記録の保存先を変えたい場合は、環境変数 <code>AGENT_DASHBOARD_HOME</code> にフォルダを指定してください（共有ドライブや別ドライブに置きたいときに使います）。',
     'm.s9.q9':     '名前や任務内容だけ、画面と違う言語で出ている',
     'm.s9.a9a':    '名前と任務内容は<strong>翻訳されません</strong>。これらは Claude が部隊を登録したときに書いた自由記述で、画面は記録されたとおりに出しています——右上で言語を切り替えると、その周りの見出しやラベルは変わりますが、記録そのものは変わりません。',
-    'm.s9.a9b':    'Claude が何語で書くかは、コマンド側で別に決まっています。<code>dash lang ja</code>（または <code>en</code> / <code>zh</code> / <code>ko</code>）を実行し、続けて <code>dash install</code>、そのあと Claude を再起動してください。すでに記録されたミッションは書かれたときのままです。この画面は「実際に起きたこと」を映すためのものだからです。',
+    'm.s9.a9b':    'Claude が何語で書くかは、コマンド側で別に決まっています。<code>dash lang ja</code>（または <code>en</code> / <code>zh</code> / <code>ko</code>）を実行して、Claude を再起動してください。このコマンドが運用ルールも新しい言語に書き直すので、設定した言語がそのままチームを組む言語になります。すでに記録されたミッションは書かれたときのままです。この画面は「実際に起きたこと」を映すためのものだからです。',
 
     'm.s10.title': 'どこに何があるか',
     'm.s10.p1':    'このツールは次の場所にあります。',
@@ -677,7 +677,7 @@
     'm.s9.a8b':    '想更改记录的保存位置时，请把环境变量 <code>AGENT_DASHBOARD_HOME</code> 指向某个文件夹（适用于想放在共享盘或其他磁盘的场合）。',
     'm.s9.q9':     '只有名字和任务内容跟画面是不同的语言',
     'm.s9.a9a':    '名字和任务内容<strong>不会被翻译</strong>。它们是 Claude 登记部队时写下的自由文本，画面照记录的样子显示——在右上角切换语言，改变的是它们周围的标题和标签，记录本身不会变。',
-    'm.s9.a9b':    'Claude 用什么语言来写，是在命令那一侧另外定下的。执行 <code>dash lang zh</code>（或 <code>en</code> / <code>ja</code> / <code>ko</code>），接着执行 <code>dash install</code>，然后重启 Claude。已经记录下来的任务保持写下时的样子，因为这个画面是用来映照「实际发生的事情」的。',
+    'm.s9.a9b':    'Claude 用什么语言来写，是在命令那一侧另外定下的。执行 <code>dash lang zh</code>（或 <code>en</code> / <code>ja</code> / <code>ko</code>），然后重启 Claude——这一条命令也会把运行规则改写成新的语言，所以你设置的语言就是组队时使用的语言。已经记录下来的任务保持写下时的样子，因为这个画面是用来映照「实际发生的事情」的。',
 
     'm.s10.title': '什么东西在什么位置',
     'm.s10.p1':    '本工具位于以下位置。',
@@ -901,7 +901,7 @@
     'm.s9.a8b':    '기록의 저장 위치를 바꾸고 싶다면 환경 변수 <code>AGENT_DASHBOARD_HOME</code> 에 폴더를 지정하세요（공유 드라이브나 다른 드라이브에 두고 싶을 때 씁니다）.',
     'm.s9.q9':     '이름과 임무 내용만 화면과 다른 언어로 나온다',
     'm.s9.a9a':    '이름과 임무 내용은 <strong>번역되지 않습니다</strong>. 이것들은 Claude 가 부대를 등록할 때 적은 자유 기술이며, 화면은 기록된 그대로 내보냅니다——오른쪽 위에서 언어를 바꾸면 그 주위의 제목과 라벨은 바뀌지만, 기록 자체는 바뀌지 않습니다.',
-    'm.s9.a9b':    'Claude 가 어느 언어로 쓸지는 명령 쪽에서 따로 정해져 있습니다. <code>dash lang ko</code>(또는 <code>en</code> / <code>ja</code> / <code>zh</code>)를 실행하고, 이어서 <code>dash install</code>, 그다음 Claude 를 재시작하세요. 이미 기록된 미션은 쓰였을 때 그대로입니다. 이 화면은 「실제로 일어난 일」을 비추기 위한 것이기 때문입니다.',
+    'm.s9.a9b':    'Claude 가 어느 언어로 쓸지는 명령 쪽에서 따로 정해져 있습니다. <code>dash lang ko</code>(또는 <code>en</code> / <code>ja</code> / <code>zh</code>)를 실행하고 Claude 를 재시작하세요 —— 이 명령 하나가 운용 규칙도 새 언어로 다시 쓰므로, 설정한 언어가 그대로 팀을 짜는 언어가 됩니다. 이미 기록된 미션은 쓰였을 때 그대로입니다. 이 화면은 「실제로 일어난 일」을 비추기 위한 것이기 때문입니다.',
 
     'm.s10.title': '무엇이 어디에 있는가',
     'm.s10.p1':    '이 도구는 다음 위치에 있습니다.',

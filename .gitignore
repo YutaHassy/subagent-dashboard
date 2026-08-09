@@ -4,6 +4,9 @@ dist/
 # 実行時にできる記録。ここは利用者のデータであってソースではない
 missions/
 trash/
+lang
+# 利用者が足したエージェント CLI の登録。手元の環境の話なので配らない
+agents.json
 
 # Python
 __pycache__/

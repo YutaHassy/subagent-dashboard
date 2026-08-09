@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """Subagent Dashboard — 初期設定
 
-    python install.py             設定する
-    python install.py --print     書き込む内容を表示するだけ（何も変更しない）
-    python install.py --uninstall 書き込んだ設定を取り消す
+    python install.py                 設定する（入っている CLI を全部見つけて書く）
+    python install.py --print         書き込む内容を表示するだけ（何も変更しない）
+    python install.py --uninstall     書き込んだ設定を取り消す
+    python install.py --list-agents   知っている CLI と書き込み先の一覧
+    python install.py --agent codex   書き込む先を1つに絞る（all で登録済み全部）
+    python install.py --agent-file <パス>
+                                      一覧に無い CLI のファイルを名指しで足す
 
 やること:
   1. Python の起動コマンド（python / python3 / py -3）を実測で判定する
-  2. Claude のグローバル設定ファイル（CLAUDE.md）に運用ルールを書き込む
+  2. エージェント CLI のグローバル設定ファイルに運用ルールを書き込む
+     （Claude Code なら CLAUDE.md、Codex CLI なら AGENTS.md。本文はどれも同じ）
+     - 入っている CLI を設定フォルダの有無で判定し、見つかった全部に書く
+     - 対応表は dashlib.BUILTIN_AGENT_TARGETS。**そこに無い CLI にも書ける**
+       （--agent-file で足すと agents.json に覚え、次回から一覧に出る）
      - このツールの実際の場所を埋め込むので、どのPCでも同じ手順で動く
      - マーカーで囲んだ範囲だけを更新するので、既存の記述は壊さない
   3. VSCode のユーザーキーバインド（keybindings.json）に Ctrl+Shift+D を登録する
@@ -42,9 +50,9 @@ dashlib.use_utf8_stdio()
 
 # 書く側と読む側が同じものを見るように、マーカーは dashlib のものを使う。
 # ここでベタ書きに戻すと、片方だけ直したときに黙ってすれ違う（読む側は dashlib）。
-BEGIN = dashlib.CLAUDE_BLOCK_BEGIN
-END = dashlib.CLAUDE_BLOCK_END
-VERSION_MARK = dashlib.CLAUDE_BLOCK_VERSION_MARK
+BEGIN = dashlib.BLOCK_BEGIN
+END = dashlib.BLOCK_END
+VERSION_MARK = dashlib.BLOCK_VERSION_MARK
 tool_version = dashlib.tool_version
 
 
@@ -80,10 +88,84 @@ def quote(path: str) -> str:
 
 
 def claude_config_dir() -> Path:
-    env = os.environ.get("CLAUDE_CONFIG_DIR")
-    if env and env.strip():
-        return Path(env).expanduser().resolve()
-    return (Path.home() / ".claude").resolve()
+    return dashlib.agent_config_dir("claude")
+
+
+def select_agents(choice: str) -> list[str]:
+    """運用ルールを書き込む CLI を決める。
+
+    既定（auto）は「設定フォルダが実在する CLI 全部」。入れていない CLI のフォルダを
+    こちらが作ってしまうと、その CLI 側の初回セットアップが「もう設定済み」と誤認する
+    ことがあるので、**自動では既にある所にしか書かない**。
+
+    **利用者が自分で足した CLI は、フォルダの有無に関わらず必ず含める。** 組み込みは
+    「入っていそうなら書く」という当て推量だが、--agent-file で足した1件は本人が
+    名指しした意思表示で、当てに行く必要が無い。ここを present だけで絞ると、
+    登録した直後に「書かれない」という一番腹の立つ挙動になる。
+
+    1つも見つからないときは Claude Code に書く。これから入れる人にとっては、
+    何も書かずに終わるより「置いてある」ほうが必ず得（読まれないだけで害は無い）。
+    名指しの --agent は、その CLI をこれから入れる人の指定なのでフォルダを作る。
+    all は登録済みの全部（使っていない CLI にも置いておきたい人向け）。
+    """
+    if choice == "all":
+        return list(dashlib.agent_keys())
+    if choice != "auto":
+        return [choice]
+    chosen = list(dashlib.present_agents())
+    for entry in dashlib.load_user_agents():
+        if entry["key"] not in chosen:
+            chosen.append(entry["key"])
+    return chosen or ["claude"]
+
+
+def register_agent_file(path_text: str) -> str:
+    """--agent-file で渡された「そのファイル」を CLI として登録し、鍵を返す。
+
+    表に無い CLI（社内ツール、出たばかりのもの、まだ誰も知らないもの）に対応する
+    ための逃げ道。ここで一覧に足しておくのは、次回の --uninstall と diagnose が
+    同じ場所を見られるようにするため。**書いた場所を覚えていないと消せない。**
+
+    鍵は置き場のフォルダ名から作る（~/.foo/AGENTS.md なら foo）。ただし rules や
+    memories のような**どの CLI にもある一般名**は飛ばして、その上の名前を採る。
+    ~/.foo/rules/AGENTS.md を "rules" と呼んでしまうと、次に別の CLI の rules/ を
+    足したときに見分けが付かない。
+
+    既にある鍵とぶつかったら番号を足す。勝手に上書きすると、名前が似ているだけの
+    別物を黙って壊すことになる。
+    """
+    target = Path(path_text).expanduser()
+    if not target.name:
+        raise ValueError(t("--agent-file needs a path to a file, not a folder"))
+    home = target.parent if str(target.parent) not in ("", ".") else Path.cwd()
+
+    # 置き場そのものではなく「その CLI の名前」に当たる所まで遡る。
+    GENERIC = {"rules", "memories", "instructions", "config", "prompts", "agents",
+               "settings", ".config", "documents"}
+    named = home
+    while named.parent != named and named.name.lstrip(".").lower() in GENERIC:
+        named = named.parent
+
+    base = named.name.lstrip(".").lower() or "custom"
+    base = "".join(ch for ch in base if ch.isalnum() or ch in "-_") or "custom"
+    existing = {e["key"]: e for e in dashlib.agent_targets()}
+    key = base
+    n = 2
+    while key in existing and (
+        existing[key]["file"] != target.name
+        or Path(existing[key]["home"]).expanduser().resolve() != home.resolve()
+    ):
+        key = "%s-%d" % (base, n)
+        n += 1
+
+    dashlib.add_user_agent({
+        "key": key,
+        "label": existing.get(key, {}).get("label") or named.name.lstrip(".") or key,
+        "home_env": existing.get(key, {}).get("home_env", ""),
+        "home": str(home),
+        "file": target.name,
+    })
+    return key
 
 
 # ---------------------------------------------------------------- 書き込む内容
@@ -92,7 +174,7 @@ def claude_config_dir() -> Path:
 def operation_manual() -> Path:
     """いまの表示言語に合わせた手引きのパス。
 
-    CLAUDE.md に書く案内は「Claude が実際に開いて読む本」なので、本文と同じ
+    運用ルールに書く案内は「エージェントが実際に開いて読む本」なので、本文と同じ
     言語のものを指さないと、書いた運用ルールと手引きで言葉が食い違う。
     対応表は dashlib に1つだけ置いてある（diagnose.py も同じものを使う）。
     """
@@ -111,7 +193,7 @@ The target project is detected automatically from the current directory, so the 
 
 ```bash
 # once, before the mission starts
-{py} {us} start --title "<name of the work>"
+{py} {us} start --title "<name of the work>" --model <your own model ID>
 
 # right after you launch each subagent, one at a time
 {py} {us} add --id SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
@@ -142,7 +224,7 @@ When you run missions in parallel in the same directory, give each `start` a uni
 `--project` (passing a name that does not exist creates a new project under that name).
 
 ```bash
-{py} {us} start --project <a unique name> --title "<name of the work>"
+{py} {us} start --project <a unique name> --title "<name of the work>" --model <your own model ID>
 {py} {us} add --project <a unique name> --id SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
 {py} {us} done --project <a unique name> --id SCOUT-A --headline "<one-line result summary>"
 {py} {us} finish --project <a unique name> --headline "<one-line overall summary>"
@@ -157,7 +239,7 @@ When you run missions in parallel in the same directory, give each `start` a uni
 
 
 class BrokenMarkerError(Exception):
-    """CLAUDE.md のマーカーが片方しか無い（手で編集して壊れた）。
+    """運用ルールファイルのマーカーが片方しか無い（手で編集して壊れた）。
 
     このまま追記すると BEGIN が2つ・END が1つの状態になり、次に --uninstall した
     ときに利用者が自分で書いた記述まで丸ごと消える。だから書かずに止める。
@@ -687,6 +769,47 @@ def write_text_atomic(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+def rewrite_blocks() -> tuple[list[Path], list[Path], list[tuple[Path, str]]]:
+    """書き込んである運用ルールを、**いまの表示言語で**書き直す。
+
+    `dash lang <コード>` から呼ぶ。表示言語を変えても、エージェントが実際に読む運用
+    ルールは書き込んだときの言語のまま残る。運用ルールの言語は
+    「エージェントが `--title` / `--name` / `--mission` / `--headline` を何語で書くか」
+    そのものなので、放っておくと **設定は日本語なのにチームは英語で組まれる** という、
+    画面のどこを見ても原因の分からない食い違いになる（食い違いは画面の見た目ではなく
+    記録の中身に出るため、気づいたときには過去の記録が全部その言語で残っている）。
+
+    書く先は **dashlib.installed_agents() が返したものだけ**。あれは「ブロックがこの
+    コピーを指している」CLI しか返さないので、開発用の別コピーで lang を変えても、
+    本番の運用ルールを別のディレクトリへ向け替えてしまう事故は起きない。未設定の CLI に
+    新しく書き込むこともしない（初期設定は do_install の仕事で、あちらは環境チェックと
+    キーバインドまで面倒を見る。言語を選んだだけの人に、それを黙って始めてはいけない）。
+
+    返すのは (書き直したファイル, 既にその言語だったファイル, [(書けなかったファイル, 理由)])。
+    **書き換えていないものを「書き直した」と言わない**ために3つに分ける（同じ言語を
+    選び直したときに4本とも「書き直した」と出るのは、事実と違う）。**失敗をここで
+    握り潰さない**（黙って旧言語のまま残るのが、いちばん気づけない壊れ方）。
+    """
+    block = build_block(detect_python_command())
+    changed: list[Path] = []
+    kept: list[Path] = []
+    failed: list[tuple[Path, str]] = []
+    for key in dashlib.installed_agents():
+        target = dashlib.instruction_file(key)
+        try:
+            existing = target.read_text(encoding="utf-8")
+            updated, _action, _tidied = apply_block(existing, block)
+            if updated == existing:
+                kept.append(target)
+                continue
+            write_text_atomic(target, updated)
+        except (OSError, BrokenMarkerError) as e:
+            failed.append((target, str(e)))
+            continue
+        changed.append(target)
+    return changed, kept, failed
+
+
 def make_launcher_executable() -> str | None:
     if sys.platform == "win32":
         return None
@@ -715,7 +838,7 @@ def _probe_writable(directory: Path) -> str | None:
         return str(e)
 
 
-# CLAUDE.md に書く手順が指し示すファイル。1つでも欠けると、書いた手順が
+# 運用ルールに書く手順が指し示すファイル。1つでも欠けると、書いた手順が
 # 「実行できないコマンド」になる。
 REQUIRED_FILES = [
     Path("dashlib.py"),
@@ -725,7 +848,7 @@ REQUIRED_FILES = [
 ]
 
 
-def check_environment() -> list[str]:
+def check_environment(agents: list[str]) -> list[str]:
     """先に進めない条件だけを返す。VSCode の有無などは致命的ではないので含めない。"""
     problems: list[str] = []
 
@@ -752,13 +875,14 @@ def check_environment() -> list[str]:
             .format(path=dashlib.MISSIONS_DIR, reason=reason)
         )
 
-    claude_dir = claude_config_dir()
-    reason = _probe_writable(claude_dir)
-    if reason:
-        problems.append(
-            t("cannot write to Claude's config folder ({path} / {reason})")
-            .format(path=claude_dir, reason=reason)
-        )
+    for key in agents:
+        directory = dashlib.agent_config_dir(key)
+        reason = _probe_writable(directory)
+        if reason:
+            problems.append(
+                t("cannot write to the config folder of {name} ({path} / {reason})")
+                .format(name=dashlib.agent_label(key), path=directory, reason=reason)
+            )
 
     return problems
 
@@ -783,10 +907,11 @@ def _row(mark: str, label: str, value: str, width: int) -> None:
     print(head + dashlib.pad(label, width) + ": " + value)
 
 
-def do_install(print_only: bool) -> int:
+def do_install(print_only: bool, agent_choice: str = "auto") -> int:
     py = detect_python_command()
     block = build_block(py)
-    target = claude_config_dir() / "CLAUDE.md"
+    agents = select_agents(agent_choice)
+    targets = [(key, dashlib.instruction_file(key)) for key in agents]
     keybindings_target = keybindings_path()
     legacy_target = legacy_keybindings_path()
     keybinding_entry = build_keybinding_entry()
@@ -802,7 +927,9 @@ def do_install(print_only: bool) -> int:
         print(t("  What would be written (--print, so nothing is actually changed)"))
         print("  --------------------------------------------------")
         print()
-        print(t("What will be added to CLAUDE.md ({path}):").format(path=target))
+        for _, target in targets:
+            print(t("What will be added to {name} ({path}):")
+                  .format(name=target.name, path=target))
         print(block)
         print()
         print(t("The entry that will be added to keybindings.json ({path}):")
@@ -822,7 +949,7 @@ def do_install(print_only: bool) -> int:
     _box(t("Step 1/4: Environment check"))
     print()
 
-    problems = check_environment()
+    problems = check_environment(agents)
     if problems:
         print(t("  ✗ The following problems were found:"))
         for p in problems:
@@ -837,8 +964,9 @@ def do_install(print_only: bool) -> int:
     _row("✓", t("File layout"),
          t("OK ({n} files, all present)").format(n=len(REQUIRED_FILES)), 21)
     _row("✓", t("Write permission"),
-         t("OK ({missions} / {claude})").format(
-             missions=dashlib.MISSIONS_DIR, claude=claude_config_dir()), 21)
+         t("OK ({missions} / {config})").format(
+             missions=dashlib.MISSIONS_DIR,
+             config=" / ".join(str(dashlib.agent_config_dir(k)) for k in agents)), 21)
     _row("✓", t("Tool location"), str(HERE), 21)
 
     # VSCode のキーバインドは無くても致命的ではない（方法1と方法3で開ける）ので、
@@ -873,7 +1001,11 @@ def do_install(print_only: bool) -> int:
     _row("", t("Dashboard location"), str(HERE), 23)
     _row("", t("Python command"), py, 23)
     _row("", t("Mission storage"), str(dashlib.MISSIONS_DIR), 23)
-    _row("", t("Claude config file"), str(target), 23)
+    # 見つかった CLI を1行ずつ出す。まとめて1行にすると、2つ目が入っていることに
+    # 気づかないまま「片方にしか書かれていない」と誤解される。
+    for key, target in targets:
+        _row("", t("Config file ({name})").format(name=dashlib.agent_label(key)),
+             str(target), 23)
     _row("", t("VSCode keybinding"), str(keybindings_target), 23)
     stale = count_our_keybindings(legacy_target)
     if stale > 0:
@@ -885,44 +1017,53 @@ def do_install(print_only: bool) -> int:
     _box(t("Step 3/4: Writing to the config files"))
     print()
 
-    existing = ""
-    if target.is_file():
+    # 書けない CLI が1つでもあれば止める。**残りに書いて成功と表示しない。**
+    # 片方だけ書けた状態は、次に起動する CLI によって動いたり動かなかったりする
+    # 一番たちの悪い壊れ方で、しかも成功と出ていたら誰も疑わない。
+    for _, target in targets:
+        name = target.name
+        existing = ""
+        if target.is_file():
+            try:
+                existing = target.read_text(encoding="utf-8")
+            except OSError as e:
+                print(t("  ✗ Error: cannot read {path} ({err})")
+                      .format(path=target, err=e), file=sys.stderr)
+                return 1
+
         try:
-            existing = target.read_text(encoding="utf-8")
-        except OSError as e:
-            print(t("  ✗ Error: cannot read {path} ({err})").format(path=target, err=e),
-                  file=sys.stderr)
+            updated, action, tidied = apply_block(existing, block)
+        except BrokenMarkerError as e:
+            print(t("  ✗ Error: {path} cannot be touched ({err})")
+                  .format(path=target, err=e), file=sys.stderr)
+            print(t("    Writing now would wipe out your own text the next time "
+                    "--uninstall runs."), file=sys.stderr)
+            print(t("    Pair up the markers in {path}, then run this again.")
+                  .format(path=target), file=sys.stderr)
             return 1
 
-    try:
-        updated, action, tidied = apply_block(existing, block)
-    except BrokenMarkerError as e:
-        print(t("  ✗ Error: {path} cannot be touched ({err})")
-              .format(path=target, err=e), file=sys.stderr)
-        print(t("    Writing now would wipe out your own text the next time "
-                "--uninstall runs."), file=sys.stderr)
-        print(t("    Pair up the markers in {path}, then run this again.")
-              .format(path=target), file=sys.stderr)
-        return 1
+        if updated == existing:
+            print(t("  ✓ {name} is already up to date (no change)").format(name=name))
+            continue
 
-    if updated == existing:
-        print(t("  ✓ CLAUDE.md is already up to date (no change)"))
-    else:
         try:
             write_text_atomic(target, updated)
         except OSError as e:
             print(t("  ✗ Error: cannot write to {path} ({err})")
                   .format(path=target, err=e), file=sys.stderr)
             return 1
+
         if action == "created":
-            print(t("  ✓ CLAUDE.md was created."))
+            print(t("  ✓ {name} was created.").format(name=name))
         elif action == "appended":
-            print(t("  ✓ The settings were appended to CLAUDE.md."))
+            print(t("  ✓ The settings were appended to {name}.").format(name=name))
         elif tidied:
-            print(t("  ✓ CLAUDE.md was updated "
-                    "(also tidied up {n} duplicated old blocks).").format(n=tidied))
+            print(t("  ✓ {name} was updated "
+                    "(also tidied up {n} duplicated old blocks).")
+                  .format(name=name, n=tidied))
         else:
-            print(t("  ✓ CLAUDE.md was updated."))
+            print(t("  ✓ {name} was updated.").format(name=name))
+        print("    " + str(target))
         print(t("    (only the marked block is updated; "
                 "anything already there is kept)"))
 
@@ -1021,12 +1162,48 @@ def do_install(print_only: bool) -> int:
     return 0
 
 
+def do_list_agents() -> int:
+    """知っている CLI と、それぞれの書き込み先・いまの状態を並べる。
+
+    「対応しているのか」「どこに書かれるのか」「もう書いてあるのか」の3つは、
+    別々の場所を見ないと分からないと必ず取り違えられる。1画面に並べる。
+    """
+    installed = set(dashlib.installed_agents())
+    present = set(dashlib.present_agents())
+    builtin_keys = {e["key"] for e in dashlib.BUILTIN_AGENT_TARGETS}
+
+    print()
+    print(t("The CLIs this tool knows about:"))
+    print()
+    for entry in dashlib.agent_targets():
+        key = entry["key"]
+        if key in installed:
+            mark, state = "✓", t("written")
+        elif key in present:
+            mark, state = "・", t("installed, not written yet")
+        else:
+            mark, state = " ", t("not found on this machine")
+        origin = "" if key in builtin_keys else t(" (added by you)")
+        _row(mark, key, "%s%s" % (dashlib.agent_label(key), origin), 12)
+        print("       " + str(dashlib.instruction_file(key)) + "  — " + state)
+    print()
+    print(t("For a CLI that is not on this list, point at its file directly:"))
+    print("  python " + str(HERE / "install.py") + " --agent-file <path>")
+    print(t("Entries you add are remembered in {path}").format(
+        path=dashlib.agents_file()))
+    print()
+    return 0
+
+
 def do_uninstall() -> int:
-    target = claude_config_dir() / "CLAUDE.md"
+    # 取り消しは**対応 CLI 全部**を見る（--agent では絞らない）。書いた側は自動判定で
+    # 増えることがあるので、消す側を絞ると「入れた覚えのない所に残る」ようになる。
+    targets = [(key, dashlib.instruction_file(key)) for key in dashlib.agent_keys()]
     keybindings_target = keybindings_path()
     legacy_target = legacy_keybindings_path()
     print()
-    print("  " + dashlib.pad(t("Config file"), 20) + str(target))
+    for _, target in targets:
+        print("  " + dashlib.pad(t("Config file"), 20) + str(target))
     print("  " + dashlib.pad(t("Keybinding settings"), 20) + str(keybindings_target))
     if legacy_target != keybindings_target:
         print("  " + dashlib.pad(t("(the old location)"), 20) + str(legacy_target))
@@ -1035,10 +1212,12 @@ def do_uninstall() -> int:
     removed_any = False
     failed = False
 
-    # CLAUDE.md から削除
-    if not target.is_file():
-        print(t("  CLAUDE.md does not exist."))
-    else:
+    # 運用ルールファイルから削除
+    for _, target in targets:
+        name = target.name
+        if not target.is_file():
+            print(t("  {name} does not exist.").format(name=name))
+            continue
         try:
             existing = target.read_text(encoding="utf-8")
         except OSError as e:
@@ -1054,11 +1233,11 @@ def do_uninstall() -> int:
                 print(t("Error: cannot write to {path} ({err})")
                       .format(path=target, err=e), file=sys.stderr)
                 return 1
-            print(t("  Removed the settings from CLAUDE.md "
-                    "(anything else was left alone)."))
+            print(t("  Removed the settings from {name} "
+                    "(anything else was left alone).").format(name=name))
             removed_any = True
         else:
-            print(t("  CLAUDE.md has no settings from this tool."))
+            print(t("  {name} has no settings from this tool.").format(name=name))
 
     # keybindings.json から削除（今の場所と、以前間違って書いていた場所の両方）
     seen: set[Path] = set()
@@ -1100,9 +1279,31 @@ def main() -> None:
                         help=t("only show what would be written (changes nothing)"))
     parser.add_argument("--uninstall", action="store_true",
                         help=t("undo the settings that were written"))
+    parser.add_argument("--agent", choices=("auto", "all") + dashlib.agent_keys(),
+                        default="auto",
+                        help=t("which CLI to write the operating rules for "
+                               "(the default writes to every one that is installed)"))
+    parser.add_argument("--agent-file", dest="agent_file", default="",
+                        help=t("write to this file as well, for a CLI that is not "
+                               "in the list (it gets remembered)"))
+    parser.add_argument("--list-agents", dest="list_agents", action="store_true",
+                        help=t("show the CLIs this tool knows about, and stop"))
     args = parser.parse_args()
 
-    code = do_uninstall() if args.uninstall else do_install(args.print_only)
+    if args.list_agents:
+        sys.exit(do_list_agents())
+
+    # --agent-file は「ここにも書く」であって「ここだけに書く」ではない。登録だけ
+    # 済ませ、選び方は --agent に任せる（既定の auto は登録した分を必ず含む）。
+    choice = args.agent
+    if args.agent_file:
+        try:
+            register_agent_file(args.agent_file)
+        except (ValueError, OSError) as e:
+            print(t("Error: {err}").format(err=e), file=sys.stderr)
+            sys.exit(1)
+
+    code = do_uninstall() if args.uninstall else do_install(args.print_only, choice)
     sys.exit(code)
 
 

@@ -29,7 +29,7 @@ Claude Code 의 서브에이전트가 지금 몇 대 움직이고 있고, 어느
 
 **이것만으로 다음이 모두 완료됩니다:**
 1. Python 환경의 검출
-2. 초기 설정 (CLAUDE.md 에 쓰기)
+2. 초기 설정 (설치된 AI 코딩 CLI 들의 운용 규칙 파일에 쓰기)
 3. VSCode 확장 기능의 설치
 
 #### 대체: 초기 설정만 (VSCode 를 쓰지 않는 경우)
@@ -57,13 +57,13 @@ dash.cmd install
 
 1. **환경 점검** — Python 버전, 파일 구성, 쓰기 권한을 확인
 2. **환경의 자동 검출** — Python 명령, 경로, 설정 파일의 위치를 검출
-3. **설정 파일에 쓰기** — CLAUDE.md 와 VSCode 키 바인딩을 갱신
+3. **설정 파일에 쓰기** — 발견된 AI 코딩 CLI 들의 운용 규칙 파일과 VSCode 키 바인딩을 갱신
 4. **셋업 완료** — 시작 방법과 다음 단계를 안내
 
 모든 항목에 ✓ 가 붙으면 완료입니다.
 
 - 이 폴더의 실제 위치를 검출해서 심어 두므로 **다른 PC 에서도 같은 명령이면 됩니다**
-- 마커로 둘러싼 범위만 고쳐 쓰므로 `CLAUDE.md` 의 기존 내용은 망가뜨리지 않습니다
+- 마커로 둘러싼 범위만 고쳐 쓰므로 각 CLI 의 기존 설정 내용은 망가뜨리지 않습니다
 - 쓸 내용을 먼저 확인하고 싶을 때는 `dash install --print`
 - 취소할 때는 `python install.py --uninstall`
 
@@ -84,6 +84,41 @@ python diagnose.py
 
 마법사 형식으로 6 개 항목을 점검하며, 모두 ✓ 가 되면 성공입니다.
 문제가 발견되면 원인과 해결책이 번호와 함께 표시됩니다.
+
+#### 지원하는 AI 코딩 CLI 들
+
+초기 설정은 머신에서 발견되는 모든 AI 코딩 CLI 에 운용 규칙을 쓰입니다. 이 도구가 인식하는 CLI 는 다음과 같습니다.
+
+| CLI | 운용 규칙이 쓰이는 위치 |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` |
+| opencode | `~/.config/opencode/AGENTS.md` |
+| Amp | `~/.config/amp/AGENTS.md` |
+| Cline | `~/Documents/Cline/Rules/subagent-dashboard.md` |
+| Roo Code | `~/.roo/rules/subagent-dashboard.md` |
+| Windsurf | `~/.codeium/windsurf/memories/global_rules.md` |
+| Qwen Code | `~/.qwen/QWEN.md` |
+
+표에 없는 CLI 도 지원됩니다(아래 참조). **Cursor** 와 **Aider** 는 사용자 레벨의 자동 읽기 설정 파일이 없으므로, 저장소별 설정 파일을 가리키는 `--agent-file` 옵션으로 지정합니다.
+
+#### 특정 CLI 를 대상으로 설정하기
+
+```bash
+python install.py --list-agents          # 발견된 모든 CLI 와 설정 상태를 표시
+python install.py                        # 이 머신에서 발견된 모든 CLI 에 쓰기
+python install.py --agent codex          # 특정 CLI 만 대상으로 하기 (codex / gemini / 등)
+python install.py --agent all            # 알려진 모든 CLI 에 쓰기 (설치 여부와 상관없이)
+python install.py --agent-file <경로>    # 이 경로의 파일도 함께 쓰기
+```
+
+`--agent-file` 로 추가한 CLI 는 `agents.json` 에 영구적으로 등록되어, 이후 `--list-agents` 에 나타나고, 다음 `install.py` 에서 갱신되며, `--uninstall` 로 정리됩니다. 새로운 CLI 나 사내용 도구를 지원하면서 도구 버전 업그레이드를 기다릴 필요가 없습니다.
+
+`agents.json` 은 수동으로도 편집할 수 있습니다. 기존 항목의 `key` 가 일치하면 내장 설정을 무시하므로, CLI 가 설정 파일 위치를 바꾼 경우 도구 업그레이드를 기다리지 않고 로컬에서 고칠 수 있습니다.
+
+**초기 설정 후 새로운 AI 코딩 CLI 를 설치한 경우, `python install.py` 를 다시 실행해야 합니다.** 설정 시점에 없던 CLI 에는 규칙이 쓰이지 않아서, 그 CLI 로 시작한 서브에이전트는 대시보드에 나타나지 않습니다. 진단 도구(`python diagnose.py`)에서 이를 감지할 수 있습니다.
 
 ### 2. 화면 열기
 
@@ -145,15 +180,15 @@ http://127.0.0.1:3939/manual.html
 (나중에 완료로 고칠 수도 없습니다). 병행할 때는 `--project` 로 기록처를 나누세요.
 
 ```bash
-dash start  --project issue51 --title "issue51 조사"
+dash start  --project issue51 --title "issue51 조사" --model claude-opus-5
 dash add    --project issue51 --id SCOUT-A --name "정찰A" --model claude-sonnet-5 --mission "..."
 dash done   --project issue51 --id SCOUT-A --headline "..."
 dash finish --project issue51 --headline "..."
 ```
 
 `--project` 는 4 개 명령 모두에 붙입니다. 하나라도 빠뜨리면 그 명령만 현재 폴더 쪽
-＝다른 한쪽 팀에 쓰이게 됩니다. 이 절차는 `dash install` 이 `CLAUDE.md` 에도 써 넣으므로
-Claude 도 같은 규칙으로 움직입니다.
+＝다른 한쪽 팀에 쓰이게 됩니다. 이 절차는 `dash install` 이 각 AI 코딩 CLI 의 운용 규칙 파일에도 써 넣으므로
+에이전트도 같은 규칙으로 움직입니다.
 
 ### 과거 기록 보기
 
@@ -230,10 +265,10 @@ dash.cmd ext package
 
 갱신판을 나눠 줄 때도 같은 절차로 덮어쓸 수 있습니다. `missions/`(작업 기록)에는 손대지 않습니다.
 
-**갱신할 때는 운영 규칙(`CLAUDE.md`)도 다시 배포됩니다.** 본체를 새것으로 해도 Claude 가 읽는
+**갱신할 때는 각 AI 코딩 CLI 의 운용 규칙 파일도 다시 배포됩니다.** 본체를 새것으로 해도 에이전트가 읽는
 안내서는 이전 판 그대로 남기 때문입니다 (초기 설정은 한 번 성공하면 자동으로는 두 번 다시
 돌지 않습니다). 확장에서 갱신하면 본체를 둔 다음에 「무엇을 어디에 쓸지」의 확인이 이어서
-나오므로, 승낙하면 `CLAUDE.md` 의 마커 안이 새 절차로 교체됩니다. 넘겼을 경우나, 확장을
+나오므로, 승낙하면 각 CLI 의 운용 규칙 파일의 마커 안이 새 절차로 교체됩니다. 넘겼을 경우나, 확장을
 쓰지 않고 덮어쓰기 복사로 갱신한 경우에는 손으로 실행하세요.
 
 ```bash
@@ -241,7 +276,7 @@ python ~/.claude/agent-dashboard/install.py
 ```
 
 낡은 채로 쓰고 있으면 `start` 할 때와 서버 시작 시에 알림이 나옵니다. 지금 맞춰져 있는지는
-`python diagnose.py` 의 「운영 규칙의 판」에서 확인할 수 있습니다.
+`python diagnose.py` 의 「운용 규칙의 판」에서 확인할 수 있습니다.
 
 > `.vsix` 는 속이 ZIP 이라서 사내 메일 관문에 걸릴 때가 있습니다.
 > 그럴 때는 확장자를 바꿔서 보내고(예 `.vsix` → `.txt`), 받은 쪽에서 되돌리게 하세요.
@@ -348,7 +383,12 @@ export AGENT_DASHBOARD_HOME=~/dashboard-data
 | `AGENT_DASHBOARD_PROJECT` | 대상 프로젝트를 고정한다 (`--project` 가 우선) |
 | `AGENT_DASHBOARD_HISTORY_KEEP` | 과거 기록을 프로젝트마다 몇 건 남길지 (기본값 20. `0` 이면 보관하지 않음) |
 | `PORT` | 서버의 기본 포트 (`--port` 가 우선) |
-| `CLAUDE_CONFIG_DIR` | `CLAUDE.md` 의 위치 (Claude Code 의 설정에 맞춘다) |
+| `CLAUDE_CONFIG_DIR` | Claude Code 의 `CLAUDE.md` 가 있는 위치 |
+| `CODEX_HOME` | Codex CLI 의 `AGENTS.md` 가 있는 위치 |
+| `GEMINI_CLI_HOME` | Gemini CLI 의 `GEMINI.md` 가 있는 위치 |
+| `COPILOT_HOME` | GitHub Copilot CLI 의 설정 파일이 있는 위치 |
+| `OPENCODE_CONFIG_DIR` | opencode 의 `AGENTS.md` 가 있는 위치 |
+| `AGENT_DASHBOARD_AGENTS_FILE` | 직접 추가한 CLI 목록이 저장되는 위치 (기본값: 기록 폴더의 `agents.json`) |
 
 ### 표시 언어
 
@@ -374,13 +414,14 @@ dash lang en     # en / ja / zh / ko
 
 환경 변수 쪽이 저장한 설정보다 강하므로, `dash lang ja` 를 실행해도 바뀌지 않는 경우에는 `AGENT_DASHBOARD_LANG` 이 설정되어 있습니다 (`dash lang` 이 그 사실을 표시합니다).
 
-**에이전트의 이름과 임무 내용은 번역되지 않습니다.** 이것들은 Claude 가 `dash add` 로 써 넣는 자유 기술이며, 적은 그대로 기록되고 기록된 그대로 화면에 나옵니다. Claude 가 어느 언어로 쓸지는 `install.py` 가 `CLAUDE.md` 에 넣는 기술로 정해지고, 그 기술은 위의 **명령의 출력** 언어로 쓰입니다——화면의 언어가 아닙니다. 오른쪽 위의 선택기를 바꿔도 달라지지 않는 것은 이 때문입니다. 바꿀 때는:
+**에이전트의 이름과 임무 내용은 번역되지 않습니다.** 이것들은 에이전트가 `dash add` 로 써 넣는 자유 기술이며, 적은 그대로 기록되고 기록된 그대로 화면에 나옵니다. 에이전트가 어느 언어로 쓸지는 `install.py` 가 각 CLI 의 운용 규칙 파일에 넣는 기술로 정해지고, 그 기술은 위의 **명령의 출력** 언어를 따릅니다——화면의 언어가 아닙니다. 오른쪽 위의 선택기를 바꿔도 달라지지 않는 것은 이 때문입니다. 바꾸는 것은 `dash lang <코드>` 이며, **그 자리에서 기술도 새 언어로 다시 쓰입니다**(설정한 언어 = 팀을 짜는 언어).
 
 ```bash
-dash lang en          # 1. 언어를 정한다
-python install.py     # 2. CLAUDE.md 의 기술을 다시 쓴다
-                      # 3. Claude 의 세션을 재시작한다 (CLAUDE.md 는 시작할 때 읽힌다)
+dash lang ko          # 1. 언어를 정한다 (기술도 이 언어로 다시 쓰인다)
+                      # 2. 에이전트의 세션을 재시작한다 (운용 규칙은 시작할 때 읽힌다)
 ```
+
+다시 쓰이는 것은 **이 복사본을 가리키는 기술뿐**이므로, 다른 복사본에서 언어를 바꿔도 다른 저장소의 운용 규칙이 가리켜지는 일은 없습니다. 「운용 규칙이 어디에도 쓰여 있지 않다」고 나오면 그 저장소는 아직 초기 설정을 하지 않은 것이므로 `python install.py` 를 한 번 실행해 주세요.
 
 **이미 있는 기록은 쓰였을 때의 언어 그대로**입니다. 나중에 다시 번역하면, 화면이 「실제로 일어난 일」과 다른 것을 비추게 됩니다.
 
@@ -500,9 +541,9 @@ Claude 가 서브에이전트를 시작 / 완료 보고를 수신
 
    모든 점검이 ✓ 가 되어 있는지 확인하세요.
 
-3. **Claude 의 세션을 다시 시작하세요**
+3. **에이전트의 세션을 다시 시작하세요**
 
-   `CLAUDE.md` 의 변경은 시작할 때 읽어들이므로, 실행 중인 세션에는 반영되지 않습니다.
+   운용 규칙의 변경은 시작할 때 읽어들이므로, 실행 중인 세션에는 반영되지 않습니다.
 
 4. **현재 디렉터리를 확인하세요**
 
