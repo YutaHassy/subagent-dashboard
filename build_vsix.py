@@ -97,6 +97,7 @@ PAYLOAD_SKIP = {
     "check_wiring.py",
     "check_i18n.py",
     "check_agents.py",
+    "check_lang.py",
     "auto_setup.py",
     "make_icons.py",
     "make_icons_simple.py",
