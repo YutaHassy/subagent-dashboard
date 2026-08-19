@@ -413,7 +413,8 @@ footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--dim)
      data-tool-root="{{TOOL_ROOT}}"
      data-missions-dir="{{MISSIONS_DIR}}"
      data-data-home="{{DATA_HOME}}"
-     data-claude-md="{{CLAUDE_MD}}"></div>
+     data-instruction-files="{{INSTRUCTION_FILES}}"
+     data-masked="{{MASKED}}"></div>
 
 <div class="lang-row">
   <select class="lang-select" id="lang-select" data-i18n-aria-label="lang.label"></select>
@@ -476,6 +477,10 @@ footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--dim)
         <p data-i18n-html="m.s2.step1.p2"></p>
         <pre><code>{{PY}} {{SERVER_PY}}</code></pre>
         <p data-i18n-html="m.s2.step1.p3"></p>
+        <div class="note info mask-note" hidden>
+          <b data-i18n="m.mask.b"></b>
+          <p data-i18n-html="m.mask.p"></p>
+        </div>
       </div>
     </div>
 
@@ -884,6 +889,7 @@ footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--dim)
       <tr><td><code>dash status</code></td><td data-i18n-html="m.s8.c3"></td></tr>
       <tr><td><code>dash demo</code></td><td data-i18n-html="m.s8.c4"></td></tr>
       <tr><td><code>dash reset</code></td><td data-i18n-html="m.s8.c5"></td></tr>
+      <tr><td><code>dash history</code></td><td data-i18n-html="m.s8.c7"></td></tr>
       <tr><td><code>dash install</code></td><td data-i18n-html="m.s8.c6"></td></tr>
     </tbody>
   </table>
@@ -988,8 +994,14 @@ footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--dim)
       TOOL_ROOT:      vars.dataset.toolRoot,
       MISSIONS_DIR:   vars.dataset.missionsDir,
       DATA_HOME:      vars.dataset.dataHome,
-      CLAUDE_MD:      vars.dataset.claudeMd,
+      INSTRUCTION_FILES: vars.dataset.instructionFiles,
     });
+  }
+
+  // パスが伏せられていない環境（ツールをホームの外に置いている等）では、
+  // <username> がどこにも出ない。読み替えの注記だけが浮くので、そのときは出さない。
+  if (vars && vars.dataset.masked) {
+    document.querySelectorAll('.mask-note').forEach((n) => { n.hidden = false; });
   }
 
   window.I18N.mountSelect(document.getElementById('lang-select'));

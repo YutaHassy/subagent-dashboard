@@ -2191,27 +2191,43 @@ def summarize_project(slug: str) -> dict:
     }
 
 
-#: ホームディレクトリを伏せるときの置き換え文字列。
+#: ユーザー名を伏せるときの置き換え文字列。
 #:
 #: **ここは訳さない。** この値は取扱説明書（manual.html）にも埋め込まれるが、
 #: 説明書の言語を決めているのは**ブラウザ側**（localStorage）で、こちらを訳すと
 #: サーバーの言語で決まってしまう。韓国語で読んでいる人の画面に日本語の
-#: 「(ご自身のユーザーフォルダ)」が1か所だけ混ざる、という食い違いが起きる。
-#: `<home>` なら、どの言語で読んでいても同じ意味に読めて、実際のパスとも
-#: 見分けが付く（コマンド例には使わないので、実行できる必要はない）。
-HOME_MASK = "<home>"
+#: 「(ご自身のユーザー名)」が1か所だけ混ざる、という食い違いが起きる。
+#: `<username>` なら、どの言語で読んでいても同じ意味に読めて、実際のパスとも
+#: 見分けが付く。
+USER_MASK = "<username>"
 
 
 def _display_path(path) -> str:
-    """説明書の「参考情報」欄に出すパス。ホームディレクトリ部分を `<home>` に
-    置き換えて、画面越しにユーザー名が見えてしまわないようにする。
-    コマンド例（コピペして実行する箇所）には使わない — 実行できなくなるため。
+    """説明書に出すパス。ホームディレクトリのうち**ユーザー名の1階層だけ**を
+    `<username>` に置き換えて、画面越しにユーザー名が見えてしまわないようにする。
+
+    ホームごと伏せずにユーザー名だけを伏せるのは、`C:/Users/<username>/.claude/…`（Windows の場合）
+    のようにパスの形が残り、自分のどこを指しているのか読み手が判断できるため。
+
+    コマンド例（コピペして実行する箇所）にもこれを使う。そのままでは実行できないが、
+    説明書は画面共有や配布資料に写ることがあり、そこにユーザー名を出さないほうを
+    優先する。読み手には `<username>` を自分のユーザー名に読み替えてもらう。
     """
     text = str(path)
     home = str(Path.home())
     if text == home or text.startswith(home + os.sep):
-        return HOME_MASK + text[len(home):]
+        return str(Path(home).parent / USER_MASK) + text[len(home):]
     return text
+
+
+def _paths_are_masked() -> bool:
+    """説明書に出るパスに `<username>` が現れるか。
+
+    ツール本体がホームの外（開発用のチェックアウトなど）にあるときは1つも
+    伏せられない。そのとき「`<username>` は読み替えてください」という注記だけが
+    残ると、画面に無いものの説明になってしまうので、出す／出さないをここで決める。
+    """
+    return _display_path(TOOL_ROOT) != str(TOOL_ROOT)
 
 
 def _instruction_paths_display() -> str:
@@ -2235,12 +2251,13 @@ def render_template(text: str) -> str:
         text.replace("{{TOOL_ROOT}}", _display_path(TOOL_ROOT))
         .replace("{{MISSIONS_DIR}}", _display_path(MISSIONS_DIR))
         .replace("{{DATA_HOME}}", _display_path(DATA_HOME))
-        .replace("{{CLAUDE_MD}}", _instruction_paths_display())
-        .replace("{{SERVER_PY}}", str(TOOL_ROOT / "server.py"))
-        .replace("{{UPDATE_PY}}", str(TOOL_ROOT / "update_state.py"))
-        .replace("{{LAUNCHER_PATH}}", str(TOOL_ROOT / LAUNCHER.lstrip("./")))
+        .replace("{{INSTRUCTION_FILES}}", _instruction_paths_display())
+        .replace("{{SERVER_PY}}", _display_path(TOOL_ROOT / "server.py"))
+        .replace("{{UPDATE_PY}}", _display_path(TOOL_ROOT / "update_state.py"))
+        .replace("{{LAUNCHER_PATH}}", _display_path(TOOL_ROOT / LAUNCHER.lstrip("./")))
         .replace("{{PY}}", PY_CMD)
         .replace("{{LAUNCHER}}", LAUNCHER)
+        .replace("{{MASKED}}", "1" if _paths_are_masked() else "")
     )
 
 
