@@ -198,6 +198,9 @@ The target project is detected automatically from the current directory, so the 
 # right after you launch each subagent, one at a time
 {py} {us} add --id SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
 
+# a unit that a subagent launched, not you: name its parent
+{py} {us} add --id SCOUT-A-1 --parent SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
+
 # every time you receive a completion report
 {py} {us} done --id SCOUT-A --sec <seconds> --tokens <number> --tools <number> --headline "<one-line result summary>"
 
@@ -207,6 +210,8 @@ The target project is detected automatically from the current directory, so the 
 
 - **Do not forget `finish`.** Nothing breaks when you forget, which is exactly why nobody notices. The screen keeps saying "running", and the next time you `start`, that record is left behind as "unfinished" - **it can never be marked complete afterwards**. A reminder to run `finish` appears the moment you mark the last unit `done`, so close the mission when you see it.
 - **Leave out any number that was not in the completion report (`--tokens` / `--tools` / `--sec`); do not estimate it.** Leaving it out shows "—" on the screen, and that is the correct state. Writing an estimate defeats the whole purpose of this dashboard.
+- **`--parent` is what draws the tree.** Leave it out and the unit is filed directly under Command, so the screen shows a single column however deep the team really goes. Pass the parent's `--id` for every unit that a subagent launched rather than you.
+- **Run `add` once per unit; never fold several into one entry.** An entry like "scout team (6)" loses the six members and everything they launched below them, and it cannot be recovered afterwards. When a subagent launches children of its own, put this in that subagent's own instructions: one JSON file per child, carrying **that subagent's own ID as `parentId`**, written into the grandchild self-report directory that `{py} {us} status` prints - `{op}` has the format.
 - **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you write it and shown on the screen exactly as recorded - nothing is translated afterwards. Follow the language of these instructions, not the language of the conversation.
 - To watch the screen, start one `{py} {sv}` and open <http://127.0.0.1:3939/>. Every `start` adds one tab, and **past work stays viewable as tabs** (the 20 most recent per project; older ones move to the trash automatically). Finished tabs can be deleted from the screen.
 - **Use the `update_state.py` at the path above.** If a copy sits somewhere else, running that one splits the `missions/` that gets written, and nothing appears on the screen.
