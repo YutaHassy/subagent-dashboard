@@ -126,6 +126,9 @@
     'stat.took':           'Took',
     'stat.tools':          'Tools',
     'log.title':           'Event log',
+    'log.toggle':          'Toggle event log',
+    'log.show':            'Show event log',
+    'log.hide':            'Hide event log',
 
     // --- 機体カード
     'card.self_reported':  'self-reported',
@@ -284,6 +287,9 @@
     'stat.took':           '所要',
     'stat.tools':          'ツール',
     'log.title':           'イベントログ',
+    'log.toggle':          'イベントログの表示切替',
+    'log.show':            'イベントログを表示',
+    'log.hide':            'イベントログを隠す',
 
     'card.self_reported':  '自己申告',
     'card.awaiting':       '報告待ち',
@@ -431,6 +437,9 @@
     'stat.took':           '用时',
     'stat.tools':          '工具',
     'log.title':           '事件日志',
+    'log.toggle':          '切换事件日志显示',
+    'log.show':            '显示事件日志',
+    'log.hide':            '隐藏事件日志',
 
     'card.self_reported':  '自行申报',
     'card.awaiting':       '等待回报',
@@ -578,6 +587,9 @@
     'stat.took':           '소요',
     'stat.tools':          '도구',
     'log.title':           '이벤트 로그',
+    'log.toggle':          '이벤트 로그 표시 전환',
+    'log.show':            '이벤트 로그 표시',
+    'log.hide':            '이벤트 로그 숨기기',
 
     'card.self_reported':  '자가 보고',
     'card.awaiting':       '보고 대기',

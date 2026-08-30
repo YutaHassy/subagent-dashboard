@@ -119,6 +119,18 @@ body {
    ボタンが出たり消えたりする作りにすると、トップバーの他の部品が左右にずれて落ち着かない。 */
 .zoom-btn.zoom-auto { font-size: 12px; }
 .zoom-btn.zoom-auto.on { color: var(--cyan); background: rgba(62,224,255,.12); }
+/* イベントログの開閉。見た目は .zoom-btn と同じ角丸ボックスに、.zoom-btn.zoom-auto と
+   同じ「on＝シアン点灯」を重ねる。.team-side の外（トップバー）に居るボタンなので、
+   ログが畳まれていても押す手段が隠れることはない。 */
+.log-toggle {
+  flex: none; width: 24px; height: 24px; display: grid; place-items: center;
+  font-size: 14px; cursor: pointer; border-radius: 5px; font-family: inherit;
+  background: transparent; border: 0; color: var(--dim);
+  transition: color .2s, background .2s;
+  padding: 0; touch-action: manipulation;
+}
+.log-toggle:hover { color: var(--cyan); background: rgba(62,224,255,.08); }
+.log-toggle.on { color: var(--cyan); background: rgba(62,224,255,.12); }
 /* 拡大率は 1%〜500%（"1%"〜"自動 500%"）で桁数が変わる。等幅＋固定幅で箱を動かさない。
    Consolas が無い環境でジェネリック monospace に落ちたときのために tabular-nums も置く。 */
 .zoom-level {
@@ -642,10 +654,21 @@ body {
 @keyframes flow { to { stroke-dashoffset: -16; } }
 
 /* ============================================================ サイドパネル（チームごと） */
+/* 開閉できる。状態は全チーム共通のグローバル1個（#app.log-collapsed）。個々の .team-side
+   に hidden は付けない——display:none は配下の CSS アニメーション（.log-row の slidein 等）
+   を巻き戻す（.agent のコメント参照）。閉じるときは幅だけを 0 へ縮め、overflow:hidden で切る。
+   中身は .team-side-inner に固定幅(292px)を持たせてあるので、縮む間に文字が折り返し直され
+   ない（折り返し直されると詰まった文字が一瞬読める見苦しい遷移になる）。 */
 .team-side {
-  width: 292px; flex: none; display: flex; flex-direction: column; min-height: 0;
+  width: 292px; flex: none; min-height: 0; overflow: hidden;
   background: linear-gradient(180deg, rgba(17,26,38,.95), rgba(10,14,20,.95));
   border-left: 1px solid var(--line);
+  transition: width .26s cubic-bezier(.22,.68,.28,1), opacity .2s ease, border-left-width .26s ease;
+}
+#app.log-collapsed .team-side { width: 0; opacity: 0; border-left-width: 0; pointer-events: none; }
+.team-side-inner {
+  width: 292px; height: 100%;
+  display: flex; flex-direction: column; min-height: 0;
 }
 .side-head {
   padding: 12px 16px 10px; font-size: 11px; letter-spacing: .16em; color: var(--dim);
@@ -893,6 +916,7 @@ body {
   }
   /* 系統樹の再配置も滑らせない。位置は top なので、transition を切れば即時反映になる。 */
   .agent { transition: none !important; }
+  .team-side { transition: none !important; }
 }
 </style>
 </head>
@@ -971,6 +995,10 @@ body {
         <button type="button" class="zoom-btn" id="zoom-in" data-i18n-title="zoom.in">+</button>
         <button type="button" class="zoom-btn zoom-auto" id="zoom-auto" data-i18n-title="zoom.auto">⛶</button>
       </div>
+      <!-- イベントログ（右パネル）の開閉。状態は全チーム共通でグローバルに1つ
+           （localStorage: dashboard:logOpen）。.team-side の中には置かない——
+           中に置くと、閉じた瞬間に再び開く手段まで一緒に隠れてしまう。 -->
+      <button type="button" class="log-toggle" id="log-toggle" data-i18n-title="log.toggle">◫</button>
       <!-- 中身の <option> は i18n.js の mountSelect が入れる。ここを空にしておくのは、
            対応言語を増やしたときに書き換える場所を1つ（i18n.js の SUPPORTED）に
            留めるため。JS が動かなければ空のまま出るが、画面は英語で読める。 -->
@@ -1083,10 +1111,12 @@ body {
         </div>
       </div>
       <aside class="team-side">
-        <div class="summary" hidden></div>
-        <div class="side-head"><span data-i18n="log.title">Event log</span><span class="count log-count">0</span></div>
-        <div class="log"></div>
-        <div class="warnings" hidden></div>
+        <div class="team-side-inner">
+          <div class="summary" hidden></div>
+          <div class="side-head"><span data-i18n="log.title">Event log</span><span class="count log-count">0</span></div>
+          <div class="log"></div>
+          <div class="warnings" hidden></div>
+        </div>
       </aside>
     </div>
   </section>
@@ -1248,6 +1278,7 @@ function boot() {
   try { loadState(); } catch (e) { markBroken(tr('broken.load_state', { msg: (e && e.message) || e })); }
   try { setupLang(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
   try { applyZoom(); } catch (e) { markBroken(tr('broken.apply_zoom', { msg: (e && e.message) || e })); }
+  try { applyLogPanel(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
   tick();
   setInterval(tick, POLL_MS);
   // 変更履歴画面(Phase 3)。ここが落ちてもミッション管制室側は止めない。
@@ -1262,6 +1293,7 @@ window.addEventListener('DOMContentLoaded', () => {
   try { boot(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
 });
 
+const elApp        = need('#app');
 const elTeams      = need('#teams');
 const elStandby    = need('#standby');
 const elCount      = need('#team-count');
@@ -1274,6 +1306,7 @@ const elZoomInput  = need('#zoom-input');
 const elZoomIn     = need('#zoom-in');
 const elZoomOut    = need('#zoom-out');
 const elZoomAuto   = need('#zoom-auto');
+const elLogToggle  = need('#log-toggle');
 const elLangSelect = need('#lang-select');
 const teamTpl      = need('#team-tpl');
 
@@ -1282,6 +1315,7 @@ let failCount = 0;
 let currentTab = null;      // 表示中のタブのキー（tabKey() の値）
 let zoomLevel = 100;        // 拡大率 %
 let autoFitOn = true;       // 自動フォーカスが入っているか（localStorage: dashboard:zoomAuto）
+let logPanelOpen = true;    // イベントログ（右パネル）を開いているか（localStorage: dashboard:logOpen）
 // 自動フォーカスの調律用。詳しくは autoFitZoom() の頭のコメント。
 let fitRaf       = 0;       // 予約中の rAF
 let fitRecheck   = 0;       // 「あとでもう一度測る」予約（待ちに入ったまま忘れないための命綱）
@@ -1318,6 +1352,9 @@ function loadState() {
   // いるならそれは必ず +/− を押した結果＝手動である。真っさらな初回だけ自動から始める。
   const autoRaw = localStorage.getItem('dashboard:zoomAuto');
   autoFitOn = (autoRaw === '0' || autoRaw === '1') ? (autoRaw === '1') : !zoom;
+  // 真っさらな初回は開いた状態から始める（既定値=表示）。
+  const logRaw = localStorage.getItem('dashboard:logOpen');
+  logPanelOpen = (logRaw === '0' || logRaw === '1') ? (logRaw === '1') : true;
 }
 
 /** 保存済みの選択を今の形に読み替える。以前は「プロジェクトの slug」をそのまま
@@ -1396,6 +1433,24 @@ function setAutoFit(on, quiet) {
     const t = teams.get(currentTab);
     if (t) scheduleAutoFit(t);   // 入れ直した瞬間に効かせる＝「枠に合わせる」ボタンにもなる
   }
+}
+
+/** イベントログ（右パネル）の開閉を画面に反映する。状態は全チーム共通の1個なので、
+ *  チームごとに .els を持ち回らず #app にクラスを1つ立てるだけで済む——
+ *  #app.log-collapsed .team-side { ... } が既存・新規を問わず全チームの器に効く
+ *  （createTeam() 側で個別に呼び直す必要が無い）。 */
+function applyLogPanel() {
+  if (elApp) elApp.classList.toggle('log-collapsed', !logPanelOpen);
+  if (elLogToggle) {
+    elLogToggle.classList.toggle('on', logPanelOpen);
+    elLogToggle.title = tr(logPanelOpen ? 'log.hide' : 'log.show');
+  }
+}
+
+function setLogPanel(open) {
+  logPanelOpen = !!open;
+  localStorage.setItem('dashboard:logOpen', logPanelOpen ? '1' : '0');
+  applyLogPanel();
 }
 
 /** 1フレームに1回だけ予約する。ResizeObserver のコールバックの中で寸法を書き換えないための
@@ -2091,6 +2146,7 @@ bindZoomHold(elZoomOut, -1);
 bindZoomHold(elZoomIn, 1);
 
 bind(elZoomAuto, 'click', () => setAutoFit(!autoFitOn));
+bind(elLogToggle, 'click', () => setLogPanel(!logPanelOpen));
 
 // 表示部をクリックすると数値入力に変わる。1%刻みで目的の値へ一発で行ける唯一の手段。
 function beginZoomEdit() {
@@ -3127,6 +3183,7 @@ function setupLang() {
 /** 言語が変わったあと、JS が入れた文字を全部入れ直す。 */
 function relabelAll() {
   applyZoom();                       // 「自動 100%」の接頭辞と +/− の説明
+  applyLogPanel();   // 開閉ボタンの title（表示/非表示）を今の言語で入れ直す
 
   // タブは中身が同じなら組み直さない作りなので、署名を捨てて作り直させる
   tabsSig = null;
