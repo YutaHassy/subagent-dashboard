@@ -11,6 +11,7 @@
   "cmd.stopServer.title": "サーバーを停止",
   "cmd.deploy.title": "本体を配置／更新",
   "cmd.runSetup.title": "初期設定を実行",
+  "cmd.runChangelogSetup.title": "変更履歴トラッキングの初期設定を実行",
   "cmd.resetOnboarding.title": "初期設定のフラグをリセット",
   "cmd.showLog.title": "ログを表示",
   "config.title": "Subagent Dashboard",
@@ -28,5 +29,6 @@
   "config.showStatusBar.description": "ステータスバーに Subagent Dashboard のボタンを出す。",
   "config.stopServerOnExit.markdownDescription": "VSCode を閉じるとき、**この拡張が起動した**サーバーを止める。外で起動されていたサーバーには手を付けません。",
   "config.runSetupOnFirstRun.markdownDescription": "初めて使うとき、初期設定（`install.py`）を実行してよいか尋ねる。\n\n実行すると `~/.claude/CLAUDE.md` に Subagent Dashboard の使い方が書き込まれ、`Ctrl+Shift+D` で開けるようになります。**確認なしに実行することはありません。** 一度成功すると二度と尋ねません（コマンド「初期設定を実行」からいつでも実行できます）。",
+  "config.runChangelogSetupOnFirstRun.markdownDescription": "ワークスペース（プロジェクトのフォルダ）を初めて開いたとき、そのワークスペースに変更履歴トラッキングを設定してよいか尋ねる（`changelog_setup.py`）。\n\n`agentDashboard.runSetupOnFirstRun` とは別軸です。1台のマシンで複数のリポジトリを開く人がほとんどなので、マシンにつき1回ではなくワークスペースにつき1回尋ねます。**確認なしに実行することはありません**し、マルチルートワークスペースでは最初のフォルダにしか自動では持ちかけません。一度成功する（または断る）と、そのワークスペースでは二度と尋ねません（コマンド「変更履歴トラッキングの初期設定を実行」からいつでも実行できます）。ダイアログには「どのワークスペースでもたずねない」もあり、これを選ぶと以後どこでも自動では出なくなります。ローカルのファイルシステムに無いフォルダ（仮想ワークスペース）と、信頼していないワークスペースには、そもそも持ちかけません（信頼していないワークスペースでも、コマンド「変更履歴トラッキングの初期設定を実行」からは実行できます）。",
   "config.autoUpdateOnNewVersion.markdownDescription": "拡張を新しくしたとき、同梱している本体で `~/.claude/agent-dashboard` を更新するか尋ねる。`missions/` などの記録には触れません。"
 }

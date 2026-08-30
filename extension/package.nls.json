@@ -11,6 +11,7 @@
   "cmd.stopServer.title": "Stop the server",
   "cmd.deploy.title": "Deploy or update the tool",
   "cmd.runSetup.title": "Run initial setup",
+  "cmd.runChangelogSetup.title": "Set up changelog tracking",
   "cmd.resetOnboarding.title": "Reset the setup flag",
   "cmd.showLog.title": "Show the log",
   "config.title": "Subagent Dashboard",
@@ -28,5 +29,6 @@
   "config.showStatusBar.description": "Show a Subagent Dashboard button in the status bar.",
   "config.stopServerOnExit.markdownDescription": "When VSCode closes, stop the server **that this extension started**. A server started elsewhere is left untouched.",
   "config.runSetupOnFirstRun.markdownDescription": "The first time you use it, ask whether initial setup (`install.py`) may be run.\n\nRunning it writes how to use Subagent Dashboard into `~/.claude/CLAUDE.md`, and makes it possible to open it with `Ctrl+Shift+D`. **It is never run without asking first.** Once it has succeeded, it is never asked again (you can still run it any time from the \"Run initial setup\" command).",
+  "config.runChangelogSetupOnFirstRun.markdownDescription": "The first time you open a workspace (project folder), ask whether changelog tracking may be set up for it (`changelog_setup.py`).\n\nThis is separate from `agentDashboard.runSetupOnFirstRun`: it is asked once per workspace, not once per machine, because most people open more than one repository on the same machine. **It is never run without asking first**, and only the first folder of a multi-root workspace is offered automatically. Once it has succeeded (or been declined) for a workspace, it is never asked again there (you can still run it any time from the \"Set up changelog tracking\" command). The dialog also offers \"Do not ask again in any workspace\", which silences it everywhere at once. It is never offered for a folder that is not on the local file system (a virtual workspace) or for a workspace you have not trusted; the \"Set up changelog tracking\" command still works in a workspace you have not trusted.",
   "config.autoUpdateOnNewVersion.markdownDescription": "When the extension is updated, ask whether to update `~/.claude/agent-dashboard` with the bundled tool. Records such as `missions/` are left untouched."
 }

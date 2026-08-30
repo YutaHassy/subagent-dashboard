@@ -57,8 +57,14 @@ body {
 
 /* ============================================================ 上部バー（画面に1つ） */
 /* チームを縦に積むので、接続状態と説明書はどのチームにも属さない共通の帯に置く。 */
+/* **折り返す。** この画面は VSCode のサイドバー（実測 340px 前後）の中にも出る。
+   折り返さない帯だと、右端に置いたものから順に画面の外へ出ていく——`body{overflow:hidden}`
+   なので横スクロールも出ず、押す手段が完全に無くなる（実測: 変更履歴ボタンが 340px 幅で
+   完全に画面外、? も 860px を切ると欠け始めていた）。高さが増えるのは見えるので直せるが、
+   出ていったボタンは見えないので直せない。 */
 #topbar {
   display: flex; align-items: center; gap: 14px;
+  flex-wrap: wrap; row-gap: 8px;
   padding: 10px 20px; flex: none;
   background: linear-gradient(180deg, rgba(23,34,48,.95), rgba(13,19,28,.92));
   border-bottom: 1px solid var(--line);
@@ -71,7 +77,31 @@ body {
   padding: 4px 11px; border-radius: 999px;
   background: rgba(255,255,255,.035); border: 1px solid var(--line);
 }
-.topbar-right { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
+.topbar-right {
+  display: flex; align-items: center; gap: 8px; margin-left: auto;
+  /* 中身も折り返す。#topbar 側だけだと、この塊が1行に収まらないときに右へはみ出す */
+  flex-wrap: wrap; row-gap: 6px; justify-content: flex-end;
+  flex: 0 1 auto; min-width: 0;
+}
+
+/* 狭いところ（VSCode のサイドバー、細くした別ウィンドウ）では、折り返す前に
+   まず詰める。折り返しは「押せなくなるより高くなるほうがまし」という最後の砦で、
+   ここで詰めておけば実際には1〜2行に収まる。 */
+@media (max-width: 760px) {
+  #topbar { gap: 8px; padding: 8px 12px; }
+  .app-name { font-size: 12.5px; letter-spacing: .1em; }
+  .topbar-right { gap: 6px; }
+  .screen-btn { padding: 5px 9px; font-size: 11px; }
+  .zoom-control { padding: 3px 5px; gap: 2px; }
+  .zoom-level, .zoom-input { width: 50px; }
+}
+/* さらに狭いところ。ここまで来たら製品名は畳む（切れて読めない名前より、
+   押せるボタンを優先する）。画面が何かは切り替えボタンが示している。 */
+@media (max-width: 460px) {
+  .app-name { display: none; }
+  #team-count { padding: 3px 8px; }
+  .topbar-right { margin-left: 0; flex: 1 1 100%; justify-content: flex-start; }
+}
 .zoom-control {
   display: flex; align-items: center; gap: 4px; flex: none;
   padding: 4px 8px; border-radius: 7px;
@@ -657,6 +687,118 @@ body {
 }
 .warnings b { display: block; margin-bottom: 3px; color: var(--amber); font-size: 10.5px; letter-spacing: .08em; }
 
+/* ============================================================ トップバー: 画面切り替え */
+/* Phase 3で追加。「ミッション管制室」（既存の全機能）と「変更履歴」の2画面をトップバーの
+   ボタンで切り替える。既存のタブバー（#tab-bar、ミッション1回=1タブ）とは別物なので
+   name も screen-* に分けて、既存の .tab-* クラスとは衝突させない。 */
+.screen-switch {
+  display: flex; align-items: center; gap: 2px; flex: none;
+  padding: 3px; border-radius: 9px;
+  background: rgba(255,255,255,.035); border: 1px solid var(--line);
+}
+.screen-btn {
+  flex: none; cursor: pointer; font-family: inherit;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .03em;
+  padding: 5px 12px; border-radius: 7px;
+  background: transparent; border: 0; color: var(--dim);
+  transition: color .2s, background .2s;
+}
+.screen-btn:hover { color: var(--text); }
+.screen-btn.active { color: #04212b; background: var(--cyan); }
+
+/* ============================================================ 変更履歴画面 */
+/* #mission-screen は既存の #team-tabs/#teams-wrapper/#standby をそのまま包む器。
+   中の3つは元々 #app（flexカラム）の直接の子として flex:1 等を前提に組まれているので、
+   #mission-screen 自身も同じ flex カラムにして、入れ子にしても寸法の前提を崩さない。 */
+#mission-screen { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#mission-screen[hidden] { display: none; }
+
+#changelog-screen { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#changelog-screen[hidden] { display: none; }
+
+.cl-toolbar {
+  display: flex; align-items: center; gap: 10px; flex: none; flex-wrap: wrap;
+  padding: 10px 20px;
+  background: linear-gradient(180deg, rgba(17,26,38,.9), rgba(13,19,28,.87));
+  border-bottom: 1px solid var(--line);
+}
+.cl-label { flex: none; font-size: 11px; color: var(--dim); letter-spacing: .06em; }
+.cl-select {
+  flex: none; font-family: inherit; font-size: 12.5px; color: var(--text);
+  background: rgba(255,255,255,.05); border: 1px solid var(--line);
+  border-radius: 7px; padding: 5px 8px; min-width: 220px; max-width: 46vw;
+  cursor: pointer;
+}
+.cl-select option { background: var(--panel); color: var(--text); }
+.cl-meta { flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--dim); }
+.cl-conn { flex: none; font-size: 11px; color: #ff9d9d; }
+.cl-conn:empty { display: none; }
+
+.cl-feed-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px 40px; }
+.cl-empty { text-align: center; color: var(--dim); padding: 60px 20px; font-size: 13px; }
+.cl-empty[hidden] { display: none; }
+
+.cl-feed { display: flex; flex-direction: column; gap: 12px; max-width: 880px; margin: 0 auto; }
+
+.cl-card {
+  border-radius: 12px; border: 1px solid var(--line);
+  background: linear-gradient(165deg, var(--panel2), var(--panel));
+  padding: 12px 14px;
+}
+.cl-card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.cl-time {
+  flex: none; font-family: Consolas, monospace; font-size: 11px; color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.cl-auto-badge {
+  flex: none; font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  color: #3a2405; background: var(--amber); border-radius: 999px; padding: 2px 8px;
+}
+.cl-auto-badge[hidden] { display: none; }
+.cl-headline {
+  flex: 1 1 auto; min-width: 0; margin: 0; font-size: 13.5px; font-weight: 600;
+  color: var(--text); line-height: 1.5; word-break: break-word;
+}
+
+.cl-body-wrap { margin-top: 8px; }
+.cl-body {
+  font-size: 12px; line-height: 1.7; color: #cfdcea; white-space: pre-wrap;
+  word-break: break-word;
+}
+.cl-body[hidden] { display: none; }
+.cl-toggle {
+  cursor: pointer; font-family: inherit; font-size: 11px; color: var(--cyan);
+  background: transparent; border: 0; padding: 4px 0; margin-top: 2px;
+}
+.cl-toggle[hidden] { display: none; }
+
+.cl-files { margin-top: 8px; font-size: 11.5px; }
+.cl-files[hidden] { display: none; }
+.cl-files-label { color: var(--dim); letter-spacing: .05em; margin-bottom: 3px; }
+/* **高さに天井を置く。** 1セッションで120ファイル触ることは普通にあり、そのまま
+   並べるとカード1枚が数千pxになって、その下のカードへ辿り着けなくなる（実測）。
+   件数は見出しに出しているので、隠していないことは読めば分かる。 */
+.cl-files-list {
+  margin: 0; padding-left: 18px; color: #b7c8db;
+  max-height: 220px; overflow-y: auto; overscroll-behavior: contain;
+}
+.cl-files-list li { word-break: break-all; line-height: 1.6; }
+
+/* 詳細（本文・ファイル・内訳）をまだ取りに行っていないカードの断り書き。
+   **黙って「本文の無いセッション」の顔をさせない。** 見えているものが全部だと
+   読めてしまう表示は、このプロジェクトで最も避けたい壊れ方。 */
+.cl-pending {
+  margin-top: 6px; font-size: 11px; color: var(--dim); font-style: normal;
+}
+.cl-pending[hidden] { display: none; }
+
+.cl-tools {
+  margin-top: 8px; font-size: 11px; color: var(--dim); font-family: Consolas, monospace;
+}
+.cl-tools[hidden] { display: none; }
+
+.cl-sessionid { margin-top: 8px; font-size: 10px; color: #55677d; font-family: Consolas, monospace; }
+
 /* ============================================================ 取扱説明書オーバーレイ */
 /* 別ウィンドウではなく画面内の iframe で開く。理由は JS 側の「取扱説明書」節に書いた。 */
 #manual-overlay {
@@ -807,6 +949,15 @@ body {
     <span class="app-name" data-i18n="app.name">Subagent Dashboard</span>
     <span id="team-count">—</span>
     <div class="topbar-right">
+      <!-- Phase 3で追加。ミッション管制室（既存の全機能）と変更履歴の2画面をここで切り替える。
+           文言は他と同じく i18n.js の文言表から引く（data-i18n）。ここだけ固定の日本語に
+           すると、en/zh/ko の利用者には**この画面の入口だけ**日本語で出る。 -->
+      <div class="screen-switch" id="screen-switch">
+        <button type="button" class="screen-btn active" id="screen-btn-mission"
+                data-i18n="screen.mission">Mission control</button>
+        <button type="button" class="screen-btn" id="screen-btn-changelog"
+                data-i18n="screen.changelog">Changelog</button>
+      </div>
       <div class="conn" id="conn"><i></i><span id="conn-text" data-i18n="conn.connecting">Connecting…</span></div>
       <!-- 拡大率は 1%〜500% を1%刻みで扱う。ボタンだけでは 100%→500% が400回になるので、
            役割を3つに分ける：ボタンは丸い数字の飛び石（長押しで連続送り）、表示部のクリックで
@@ -830,29 +981,52 @@ body {
     </div>
   </header>
 
-  <!-- ミッション選択タブ。1枚＝「1回の start」で、過去の記録も同じ列に並ぶ。 -->
-  <div id="team-tabs" hidden>
-    <div class="tab-bar" id="tab-bar"></div>
-    <button type="button" class="history-clear" id="history-clear" hidden
-            data-i18n-title="tab.clear_done_title">
-      <span data-i18n="tab.clear_done">Delete finished records</span><span class="n"></span>
-    </button>
+  <!-- ミッション管制室(既存の全機能)。Phase 3で #mission-screen という器に包んだだけで、
+       中の3つ(#team-tabs/#teams-wrapper/#standby)とそのIDはPhase 3以前から変わっていない。
+       画面切り替えは hidden 属性のON/OFFのみで、既存のJSのDOM取得(id指定)には影響しない。 -->
+  <div id="mission-screen">
+
+    <!-- ミッション選択タブ。1枚＝「1回の start」で、過去の記録も同じ列に並ぶ。 -->
+    <div id="team-tabs" hidden>
+      <div class="tab-bar" id="tab-bar"></div>
+      <button type="button" class="history-clear" id="history-clear" hidden
+              data-i18n-title="tab.clear_done_title">
+        <span data-i18n="tab.clear_done">Delete finished records</span><span class="n"></span>
+      </button>
+    </div>
+
+    <!-- 選んだタブの中身を出す。器は JS が #team-tpl から作る（表示は常に1枚） -->
+    <div id="teams-wrapper">
+      <div id="teams"></div>
+    </div>
+
+    <!-- チームが1つも無いときだけ出す案内。
+         3行目だけ data-i18n-html なのは、訳文の中に <code> が入るため。
+         この HTML は文言表の中にしか無く、利用者の入力は通らない。 -->
+    <div id="standby" hidden>
+      <div class="empty-note"><span data-i18n="standby.head">Standing by</span><br><br>
+        <span data-i18n="standby.line1">Teams appear here once subagents start moving.</span><br><br>
+        <span data-i18n="standby.line2">To start one yourself, run this in your working directory:</span><br>
+        <code>update_state.py start --title "..."</code><br><br>
+        <span data-i18n-html="standby.line3">Just want to see how it looks? Use <code>update_state.py demo</code>.</span></div>
+    </div>
+
   </div>
 
-  <!-- 選んだタブの中身を出す。器は JS が #team-tpl から作る（表示は常に1枚） -->
-  <div id="teams-wrapper">
-    <div id="teams"></div>
-  </div>
-
-  <!-- チームが1つも無いときだけ出す案内。
-       3行目だけ data-i18n-html なのは、訳文の中に <code> が入るため。
-       この HTML は文言表の中にしか無く、利用者の入力は通らない。 -->
-  <div id="standby" hidden>
-    <div class="empty-note"><span data-i18n="standby.head">Standing by</span><br><br>
-      <span data-i18n="standby.line1">Teams appear here once subagents start moving.</span><br><br>
-      <span data-i18n="standby.line2">To start one yourself, run this in your working directory:</span><br>
-      <code>update_state.py start --title "..."</code><br><br>
-      <span data-i18n-html="standby.line3">Just want to see how it looks? Use <code>update_state.py demo</code>.</span></div>
+  <!-- 変更履歴画面(Phase 3で追加)。/api/changelog/* を3〜5秒間隔でポーリングする
+       (ミッション管制室側の1秒ポーリングとは別のタイマー。この画面が非表示の間は止める)。 -->
+  <div id="changelog-screen" hidden>
+    <div class="cl-toolbar">
+      <label class="cl-label" for="cl-project-select" data-i18n="cl.project">Project</label>
+      <select class="cl-select" id="cl-project-select" data-i18n-aria-label="cl.project"></select>
+      <span class="cl-meta" id="cl-project-meta"></span>
+      <span class="cl-conn" id="cl-conn"></span>
+    </div>
+    <div class="cl-feed-wrap" id="cl-feed-wrap">
+      <div class="cl-feed" id="cl-feed"></div>
+      <div class="cl-empty" id="cl-empty" hidden data-i18n="cl.empty">No changelog yet. Use Claude Code in a
+        registered project and each session is recorded automatically when it ends.</div>
+    </div>
   </div>
 
 </div>
@@ -916,6 +1090,33 @@ body {
       </aside>
     </div>
   </section>
+</template>
+
+<!-- 変更履歴カード1枚分の骨組み(Phase 3で追加)。#team-tpl と同じ考え方で、
+     クラスで引く(同じ形が画面に何枚も並ぶため)。
+     文言のうち「描くたびに変わらないもの」だけ data-i18n を付ける。複製した直後に
+     I18N.apply(root) を呼ぶ規約は #team-tpl（createTeam）と同じ。
+     件数の入る見出し(.cl-files-label)は JS が入れるので data-i18n は付けない
+     ——付けると apply(document) が引数なしのキーで塗り戻して件数が消える。 -->
+<template id="cl-card-tpl">
+  <article class="cl-card">
+    <header class="cl-card-head">
+      <span class="cl-time"></span>
+      <span class="cl-auto-badge" hidden data-i18n="cl.auto_badge">Not written</span>
+      <h3 class="cl-headline"></h3>
+    </header>
+    <div class="cl-body-wrap">
+      <div class="cl-body" hidden></div>
+      <button type="button" class="cl-toggle" hidden></button>
+      <div class="cl-pending" hidden data-i18n="cl.detail_pending">Details are not loaded yet.</div>
+    </div>
+    <div class="cl-files" hidden>
+      <div class="cl-files-label"></div>
+      <ul class="cl-files-list"></ul>
+    </div>
+    <div class="cl-tools" hidden></div>
+    <div class="cl-sessionid"></div>
+  </article>
 </template>
 
 <script>
@@ -1049,6 +1250,8 @@ function boot() {
   try { applyZoom(); } catch (e) { markBroken(tr('broken.apply_zoom', { msg: (e && e.message) || e })); }
   tick();
   setInterval(tick, POLL_MS);
+  // 変更履歴画面(Phase 3)。ここが落ちてもミッション管制室側は止めない。
+  try { initChangelog(); } catch (e) { markBroken('changelog init: ' + ((e && e.message) || e)); }
 }
 
 // 末尾の boot() に届かなかったときの保険。このスクリプトは body の末尾にあるので、
@@ -2699,7 +2902,11 @@ function layoutTree(t) {
   // 入れないと .tree-canvas.scrollHeight まで潰れて親子線が消え、スクロールも効かない。
   for (const [, c] of t.cols) if (c.body.style.height !== boxH) c.body.style.height = boxH;
 
-  const animate = agents.length <= MAX_ANIMATED;
+  // t.snapNext は「今回だけ滑らせない」の合図。隠れていた画面を出し直したときに立てる。
+  // 隠れている間は clientHeight が 0 で、木は詰まった位置に置かれている。出した瞬間に
+  // 正しい位置へ**滑らせる**と、木が動いたわけでもないのに毎回カードが 0.5 秒かけて
+  // 移動する。動いたように見せてよいのは、本当に木が変わったときだけ。
+  const animate = agents.length <= MAX_ANIMATED && !t.snapNext;
   const snapped = [];
   let moved = 0;
   for (let i = 0; i < agents.length; i++) {
@@ -2716,6 +2923,7 @@ function layoutTree(t) {
     void t.els.gens.offsetHeight;                      // 新しい top を確定させてから
     for (const el of snapped) el.classList.remove('snap');  // トランジションを戻す
   }
+  t.snapNext = false;
   return moved;
 }
 
@@ -2939,6 +3147,13 @@ function relabelAll() {
     }
   }
 
+  // 変更履歴画面も、JS が入れた文字（見出し・件数・折りたたみの札）を入れ直す。
+  // ここを忘れると、切り替えたのにカードの中だけ前の言語のまま残る——
+  // この画面は3〜4秒に1回しか描き直さないうえ、非表示のときは止まっているので、
+  // 「戻ってきたら前の言語のまま」が長く居座る。
+  try { clRenderProjectSelect(); clRenderFeed(); }
+  catch (e) { console.error('[dashboard] changelog relabel failed', e); }
+
   // まだ一度も通信していないなら触らない（「接続中…」を勝手に「接続中」にしない）
   if (lastConn.ok !== null) setConn(lastConn.ok, lastConn.msg);
   tick();                            // 上部の集計バッジはサーバーの応答から作る
@@ -3072,6 +3287,348 @@ async function tick() {
   // 止まった画面（記録・流れてこなくなったミッション）は動かさない。
   // 時計は読み込んだときに1回入れて、そこで止める。
   for (const [, t] of teams) if (t.live) updateClocks(t);
+}
+
+// ================================================================ 変更履歴画面（Phase 3）
+//
+// ミッション管制室（#mission-screen、上の tick()/POLL_MS）とは完全に別系統のポーリング。
+// ここで使う名前は誰かと衝突しないよう cl* / CL_* に揃えてある（変数名を t にすると、
+// 上の方の「文言は tr、チームは t」の衝突をここでも起こしかねないため、この節に限り
+// チームの略称は使わない）。
+//
+// エンドポイントは3つ:
+//   GET /api/changelog/projects                   … 登録済みプロジェクトの軽い一覧
+//   GET /api/changelog/sessions?path=<projectPath> … 該当プロジェクトの index.json
+//   GET /api/changelog/session?path=&sessionId=    … 1セッションの完全な内容（body・
+//                                                     filesTouched・toolCallCounts を含む）
+// 画面のカードには本文・ファイル一覧・ツール内訳まで出したいが、一覧(index.json)には
+// 要約(headline)と件数しか無いので、表示するセッションぶんだけ session を追加で取りに行く
+// （build_tabs が軽い一覧に留める設計にならい、一度に取りに行くのは CL_DETAIL_PAGE 件まで。
+//  ただし**打ち切りではなく分割**で、下まで見た人にはその先も取りに行く。打ち切りにすると
+//  それを超えたカードだけ本文の無い顔で並び、「本文の無いセッション」と見分けが付かない）。
+
+const CL_POLL_MS = 4000;         // 3〜5秒の範囲。管制室の POLL_MS(1000)より緩める
+const CL_DETAIL_PAGE = 40;       // 詳細（本文・ファイル・内訳）を一度に取りに行く件数
+
+const elScreenBtnMission    = need('#screen-btn-mission');
+const elScreenBtnChangelog  = need('#screen-btn-changelog');
+const elMissionScreen       = need('#mission-screen');
+const elChangelogScreen     = need('#changelog-screen');
+const elClSelect  = need('#cl-project-select');
+const elClMeta    = need('#cl-project-meta');
+const elClConn    = need('#cl-conn');
+const elClFeed    = need('#cl-feed');
+const elClFeedWrap= need('#cl-feed-wrap');
+const elClEmpty   = need('#cl-empty');
+const clCardTpl   = need('#cl-card-tpl');
+
+let clProjects = [];             // 直近の /api/changelog/projects の結果
+let clSelectedPath = null;       // 選択中プロジェクトの絶対パス（サーバーの登録値そのまま）
+let clAutoPicked = false;        // workspace= からの自動選択（または既定選択）を済ませたか
+let clSessions = [];             // 選択中プロジェクトの index.json（新しい順）
+let clDetailCache = new Map();   // sessionId -> 完全な session（/api/changelog/session の応答）
+let clExpanded = new Set();      // 本文を展開中の sessionId
+let clPollTimer = null;
+let clLoading = false;           // 前回のポーリングがまだ終わっていなければ重ねて投げない
+/** いま何件目まで詳細を取りに行くか。**固定の上限ではなく、下まで見た人には伸びる。**
+ *  固定にすると、それを超えたカードは本文もファイル一覧も黙って出ず、
+ *  「本文の無いセッション」と見分けが付かない（別物を黙って見せることになる）。 */
+let clDetailLimit = CL_DETAIL_PAGE;
+
+/** iframe の src に extension.js が付けている ?workspace=<encodeURIComponent(path)> を読む。
+ *  一致するプロジェクトが見つかれば、それを最初の選択として使う（VS Code 側の
+ *  ワークスペースとの自動連携）。クエリが無い・一致しないときは先頭のプロジェクトに落ちる。 */
+function clWorkspaceParam() {
+  try {
+    return new URLSearchParams(window.location.search).get('workspace') || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * パスを「同じ場所を指しているか」の比較用に均す。**比較にだけ使う。**
+ * サーバーへ送る値はレジストリの登録値そのままでなければならない（server.py の
+ * ガードが登録値との完全一致で許可を出しているため）。
+ *
+ * 区切りと末尾を揃え、Windows のパス（`C:\…` と UNC）だけ大小を無視する
+ * ——extension.js の workspaceFolderHash() と同じ規則。画面は自分が
+ * どの OS で動いているかを知らないので、パスの形から判断する。
+ */
+function clNormPath(p) {
+  let s = String(p == null ? '' : p).trim().replace(/\\/g, '/');
+  // 区切りの重なりを1つに畳む（extension.js 側は path.resolve が同じことをしている）。
+  // 先頭の // だけは残す——UNC パス（//server/share）では意味のある2つ。
+  const unc = s.indexOf('//') === 0;
+  s = s.replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+  if (unc) s = '/' + s;
+  if (/^[a-zA-Z]:/.test(s) || unc) s = s.toLowerCase();
+  return s;
+}
+
+function clShowScreen(name) {
+  const mission = name !== 'changelog';
+  if (elMissionScreen)   elMissionScreen.hidden = !mission;
+  if (elChangelogScreen) elChangelogScreen.hidden = mission;
+  if (elScreenBtnMission)   elScreenBtnMission.classList.toggle('active', mission);
+  if (elScreenBtnChangelog) elScreenBtnChangelog.classList.toggle('active', !mission);
+  // ミッション管制室側のポーリングは変更しない。変更履歴側だけ、見えているときだけ回す
+  // （タブを閉じた画面を1秒ごとに叩き続ける既存動作はそのまま、こちらは新規なので絞る）。
+  if (mission) clStopPolling(); else clStartPolling();
+
+  // 隠れている間は clientHeight が 0 なので、縦の中央寄せが決まらないまま残る。
+  // タブ切り替え（showTab）が既にやっているのと同じ後始末をここでもやる。これが無いと
+  // 管制室へ戻った直後に系統樹が上寄りで出て、0.5秒かけて正しい位置へ滑る（実測）。
+  if (mission) {
+    for (const [, t] of teams) {
+      t.lastAvailH = -1;
+      // 木は変わっていないので、正しい位置へは**滑らせずに**着地させる（layoutTree 参照）
+      t.snapNext = true;
+      if (t.state) scheduleLayout(t);
+    }
+  }
+}
+
+bind(elScreenBtnMission,   'click', () => clShowScreen('mission'));
+bind(elScreenBtnChangelog, 'click', () => clShowScreen('changelog'));
+
+bind(elClSelect, 'change', () => {
+  clSelectedPath = elClSelect.value || null;
+  clAutoPicked = true;  // 手で選んだら、以後 workspace= や既定選択で上書きしない
+  clSessions = [];
+  clDetailCache = new Map();
+  clDetailLimit = CL_DETAIL_PAGE;
+  clRenderFeed();
+  clTick();
+});
+
+// 下まで見た人には、その先の詳細も取りに行く。上限に達したカードを黙って
+// 中身の無いカードに見せる代わりに、追い付ける道を用意しておく。
+bind(elClFeedWrap, 'scroll', () => {
+  if (!elClFeedWrap) return;
+  const rest = elClFeedWrap.scrollHeight - elClFeedWrap.scrollTop - elClFeedWrap.clientHeight;
+  if (rest > 240) return;
+  if (clDetailLimit >= clSessions.length) return;
+  clDetailLimit += CL_DETAIL_PAGE;
+  clTick();
+});
+
+function clStartPolling() {
+  clTick();
+  if (clPollTimer) clearInterval(clPollTimer);
+  clPollTimer = setInterval(clTick, CL_POLL_MS);
+}
+
+function clStopPolling() {
+  if (clPollTimer) { clearInterval(clPollTimer); clPollTimer = null; }
+}
+
+function clSetConn(msg) {
+  if (elClConn) elClConn.textContent = msg || '';
+}
+
+async function clTick() {
+  if (clLoading) return;  // 前回分がまだ飛んでいる間は重ねない（3〜5秒間隔なら通常起きない）
+  clLoading = true;
+  try {
+    await clLoadProjects();
+    if (clSelectedPath) await clLoadSessions(clSelectedPath);
+    clSetConn('');
+  } catch (e) {
+    clSetConn(tr('cl.conn_failed', { msg: (e && e.message) || e }));
+  } finally {
+    clLoading = false;
+  }
+}
+
+async function clLoadProjects() {
+  const res = await fetch('/api/changelog/projects', { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  clProjects = Array.isArray(data.projects) ? data.projects : [];
+  clRenderProjectSelect();
+}
+
+function clRenderProjectSelect() {
+  if (!elClSelect) return;
+
+  // workspace= との自動選択、または（一致しないときの）先頭プロジェクトへの既定選択は
+  // 一度だけ行う。以後は利用者がドロップダウンで選んだものを尊重する。
+  if (!clAutoPicked && clProjects.length) {
+    // **完全一致では当たらない。** VS Code が渡してくるのは workspaceFolder の fsPath で、
+    // レジストリに入っているのは changelog_setup.py が見たパス。Windows では大小や
+    // 末尾の区切りが1文字違うだけで別物になり、黙って先頭のプロジェクトが選ばれる
+    // （利用者から見ると「連携していない」ではなく「関係ないプロジェクトが出ている」）。
+    const ws = clNormPath(clWorkspaceParam());
+    const hit = ws ? clProjects.find((p) => clNormPath(p.path) === ws) : null;
+    // 送る値は登録値そのまま（hit.path）。均したほうを送るとサーバーのガードに弾かれる。
+    clSelectedPath = hit ? hit.path : clProjects[0].path;
+    clAutoPicked = true;
+  }
+  // 選択中のものが一覧から消えていたら（記録削除・レジストリ更新等）先頭へ落とす
+  if (clSelectedPath && !clProjects.some((p) => p.path === clSelectedPath)) {
+    clSelectedPath = clProjects.length ? clProjects[0].path : null;
+    clSessions = [];
+    clDetailCache = new Map();
+    clDetailLimit = CL_DETAIL_PAGE;
+  }
+
+  // 同じ並びなら <option> を作り直さない（作り直すとフォーカス・スクロール位置が飛ぶ）。
+  // 署名に言語を混ぜてあるのは、切り替えたときに「◯件」の言い回しを作り直させるため。
+  const sig = JSON.stringify([clProjects.map((p) => [p.path, p.sessionCount]),
+                              i18nOk ? window.I18N.getLang() : '']);
+  if (elClSelect.dataset.sig !== sig) {
+    elClSelect.dataset.sig = sig;
+    elClSelect.innerHTML = '';
+    for (const p of clProjects) {
+      const opt = document.createElement('option');
+      opt.value = p.path;
+      opt.textContent = (p.slug || p.path)
+        + (p.sessionCount ? tr('cl.option_count', { n: fmtLocaleNum(p.sessionCount) }) : '');
+      elClSelect.appendChild(opt);
+    }
+  }
+  if (clSelectedPath) elClSelect.value = clSelectedPath;
+
+  const meta = clProjects.find((p) => p.path === clSelectedPath);
+  if (elClMeta) {
+    elClMeta.textContent = meta
+      ? meta.path + (meta.lastEventAt ? tr('cl.last_update', { time: clFmtTime(meta.lastEventAt) }) : '')
+      : (clProjects.length ? '' : tr('cl.no_projects'));
+  }
+}
+
+async function clLoadSessions(path) {
+  const res = await fetch('/api/changelog/sessions?path=' + encodeURIComponent(path), { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const list = Array.isArray(data.sessions) ? data.sessions : [];
+  clSessions = list;
+  await clLoadDetails(path, list.slice(0, clDetailLimit));
+  clRenderFeed();
+}
+
+/** 表示ぶんの完全な session を取りに行く。すでに持っていて endedAt が同じ（＝未変更）なら
+ *  取り直さない。1件の失敗（消えた・壊れた等）で他のカードまで諦めない。 */
+async function clLoadDetails(path, wanted) {
+  const jobs = wanted.map(async (s) => {
+    const sid = s && s.sessionId;
+    if (!sid) return;
+    const cached = clDetailCache.get(sid);
+    if (cached && cached.endedAt === s.endedAt) return;
+    try {
+      const res = await fetch(
+        '/api/changelog/session?path=' + encodeURIComponent(path) + '&sessionId=' + encodeURIComponent(sid),
+        { cache: 'no-store' }
+      );
+      if (!res.ok) return;
+      clDetailCache.set(sid, await res.json());
+    } catch (e) { /* 1件落ちても他は続ける */ }
+  });
+  await Promise.all(jobs);
+}
+
+function clFmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' '
+       + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
+}
+
+function clRenderFeed() {
+  if (!elClFeed || !clCardTpl) return;
+  if (elClEmpty) elClEmpty.hidden = clSessions.length > 0;
+  elClFeed.innerHTML = '';
+
+  for (const s of clSessions) {
+    const sid = s && s.sessionId;
+    const detail = sid ? clDetailCache.get(sid) : null;
+    // 「まだ取りに行っていない」と「取ったが空だった」は別のこと。前者を黙って
+    // 後者の顔で出すと、本文のあるセッションが本文の無いセッションに見える。
+    const fetched = !!(sid && clDetailCache.has(sid));
+    const node = clCardTpl.content.firstElementChild.cloneNode(true);
+    // <template> の中身は document のツリーに居ないので I18N.apply(document) が届かない。
+    // 複製した直後にここで1回訳す（createTeam() と同じ規約）。
+    if (i18nOk) window.I18N.apply(node);
+
+    node.querySelector('.cl-time').textContent = clFmtTime(s.endedAt || s.startedAt);
+
+    const badge = node.querySelector('.cl-auto-badge');
+    if (badge) badge.hidden = !s.auto;
+
+    node.querySelector('.cl-headline').textContent = s.headline || tr('cl.no_headline');
+
+    // 本文は既定で折りたたむ。展開状態は sessionId 単位で覚えておき、フィードを
+    // 作り直しても（毎ポーリング）開いたカードが勝手に閉じないようにする。
+    const bodyEl = node.querySelector('.cl-body');
+    const toggleBtn = node.querySelector('.cl-toggle');
+    const pendingEl = node.querySelector('.cl-pending');
+    const body = detail && typeof detail.body === 'string' && detail.body ? detail.body : null;
+    if (body) {
+      bodyEl.textContent = body;
+      const open = clExpanded.has(sid);
+      bodyEl.hidden = !open;
+      toggleBtn.hidden = false;
+      toggleBtn.textContent = tr(open ? 'cl.body_hide' : 'cl.body_show');
+      toggleBtn.addEventListener('click', () => {
+        if (clExpanded.has(sid)) clExpanded.delete(sid); else clExpanded.add(sid);
+        clRenderFeed();
+      });
+    } else {
+      bodyEl.hidden = true;
+      toggleBtn.hidden = true;
+    }
+    // 詳細が来ていないカードには、そう書く。スクロールで先へ進めば取りに行く
+    // （clDetailLimit が伸びる）ので、この札は待っている間だけ出る。
+    if (pendingEl) pendingEl.hidden = fetched;
+
+    const filesWrap = node.querySelector('.cl-files');
+    const filesLabel = node.querySelector('.cl-files-label');
+    const filesList = node.querySelector('.cl-files-list');
+    const files = detail && Array.isArray(detail.filesTouched) ? detail.filesTouched : null;
+    if (files && files.length) {
+      filesWrap.hidden = false;
+      // 件数を見出しに出す。一覧は CSS で高さを止めてスクロールさせるので、
+      // 何件あるのかが枠の中の見た目から分からなくなる。
+      if (filesLabel) filesLabel.textContent = tr('cl.files_n', { n: fmtLocaleNum(files.length) });
+      filesList.innerHTML = '';
+      for (const f of files) {
+        const li = document.createElement('li');
+        li.textContent = f;
+        li.title = f;
+        filesList.appendChild(li);
+      }
+    } else {
+      filesWrap.hidden = true;
+    }
+
+    // 詳細をまだ取れていないときも、一覧(index.json)にある toolCallCount だけで
+    // 「◯件」を出す（内訳が要るのは detail が来てから）。
+    const toolsEl = node.querySelector('.cl-tools');
+    const counts = detail && detail.toolCallCounts && typeof detail.toolCallCounts === 'object'
+      ? detail.toolCallCounts : null;
+    if (counts && Object.keys(counts).length) {
+      toolsEl.hidden = false;
+      toolsEl.textContent = Object.entries(counts).map(([k, v]) => k + ' ×' + v).join('   ');
+    } else if (s.toolCallCount) {
+      toolsEl.hidden = false;
+      toolsEl.textContent = tr('cl.tools_count', { n: fmtLocaleNum(s.toolCallCount) });
+    } else {
+      toolsEl.hidden = true;
+    }
+
+    node.querySelector('.cl-sessionid').textContent = sid ? tr('cl.session', { id: sid }) : '';
+    elClFeed.appendChild(node);
+  }
+}
+
+/** boot() から1回だけ呼ぶ。要素が欠けていても（need() が既に控えている）ここでは
+ *  落とさず、画面が来ていれば動くところまでは動かす。実際のポーリング開始は
+ *  clShowScreen() 経由（初期表示はミッション管制室なので、ここでは始めない）。 */
+function initChangelog() {
+  clRenderFeed();
 }
 
 // 寸法の監視は上の sizeWatch（チームごとに observe する1つの ResizeObserver）が行う。

@@ -332,6 +332,10 @@ CATALOG["ja"] = {
     "  ✓ Ready": "  ✓ 起動完了",
     "  ⚠ Could not open a browser. Please open {url} yourself.":
         "  ⚠ ブラウザが開けませんでした。手動で {url} を開いてください。",
+    # ---- server: 変更履歴 API
+    "specify a registered project path": "登録済みのプロジェクトのパスを指定してください",
+    "specify a valid sessionId": "正しい sessionId を指定してください",
+    "no such session": "そのセッションはありません",
 }
 
 # ============================================================ 中文（简体）
@@ -627,6 +631,10 @@ CATALOG["zh"] = {
     "  ✓ Ready": "  ✓ 启动完成",
     "  ⚠ Could not open a browser. Please open {url} yourself.":
         "  ⚠ 无法打开浏览器。请手动打开 {url}。",
+    # ---- server: 变更历史 API
+    "specify a registered project path": "请指定已注册的项目路径",
+    "specify a valid sessionId": "请指定正确的 sessionId",
+    "no such session": "没有该会话",
 }
 
 # ============================================================ 한국어
@@ -929,4 +937,8 @@ CATALOG["ko"] = {
     "  ✓ Ready": "  ✓ 시작 완료",
     "  ⚠ Could not open a browser. Please open {url} yourself.":
         "  ⚠ 브라우저를 열지 못했습니다. 직접 {url} 을(를) 열어 주세요.",
+    # ---- server: 변경 이력 API
+    "specify a registered project path": "등록된 프로젝트 경로를 지정하세요",
+    "specify a valid sessionId": "올바른 sessionId 를 지정하세요",
+    "no such session": "해당 세션이 없습니다",
 }

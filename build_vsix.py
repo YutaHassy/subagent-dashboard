@@ -65,6 +65,12 @@ PAYLOAD_FILES = [
     "i18n_data_install.py", # 同上（install.py の分）
     "update_state.py",      # 状態更新CLI
     "install.py",           # 初期設定
+    # 変更履歴トラッキング（Claude Code 専用）。changelog_cli.py は hooks から、
+    # changelog_setup.py は拡張機能のワークスペース初期設定から呼ばれる。
+    # 3つとも配布先で要る——1つでも欠けると hooks が ImportError で落ちる。
+    "changelog_lib.py",     # 記録・要約・CHANGELOG.md 生成の土台
+    "changelog_cli.py",     # hooks から呼ばれる CLI 本体
+    "changelog_setup.py",   # プロジェクトローカルの初期設定
     "open_dashboard.py",    # キーバインドの旧形式が案内している
     "diagnose.py",          # 完了メッセージが案内している
     "dash.cmd",             # ランチャ（Windows）
