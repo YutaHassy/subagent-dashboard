@@ -2936,6 +2936,15 @@ const BUS_PAD_R     = 12;   // コンテナが最終カードの右へはみ出�
 const BUS_PAD_B     = 10;   // コンテナが最終行の下へはみ出す量
 const BUS_UP_MIN    = 4;    // 行ワイヤを行の上端からどれだけ上に置くかの下限（後述）
 const BUS_TAIL      = 10;   // 行ワイヤを最後のスタブより先へ伸ばす量
+// 直角を曲線に変えるための寸法。**上げれば良くなるものではない**——曲げられる余地は
+// 実測で「背骨から最初のロボの中心まで横 54px」「行ワイヤの上下は縦 10px（行間 20px の半分）」
+// しかなく、そこを行ワイヤの分岐とスタブの分岐で分け合っている。はみ出すと線がカードに乗る。
+// もっと深い曲線が要るなら、伸ばすのはこの定数ではなく gridSlots の行間のほう（＝クラスタが
+// 縦に伸びるので拡大率と引き換えになる。実測で行間 20→44px にすると 47.4%→42.8%）。
+const BUS_FORK_W    = 24;   // 行ワイヤが背骨から分かれるときの横の伸び
+const BUS_FORK_UP   = 10;   // 同、縦の落差（行間の溝の上半分に収まる値）
+const BUS_HOOK_W    = 24;   // スタブが行ワイヤから分かれるときの横の伸び
+const BUS_HOOK_PAD  = 6;    // 分岐点が行ワイヤの分岐に寄りすぎないための余白
 
 /** レーン1本の幅。CSS の --agent-w と同じ式をここで組み直している。
  *  --agent-w は calc() なので getPropertyValue は計算前の文字列を返し、数値として読めない。
@@ -3754,24 +3763,49 @@ function drawLinks(t) {
       }
     }
     const spineX = boxL + BUS_PAD_L / 2;
-    let spineTop = Infinity, spineBot = -Infinity;
-    for (const [, wr] of wires) {
-      spineTop = Math.min(spineTop, wr.y);
-      spineBot = Math.max(spineBot, wr.y);
-    }
 
-    // 幹線: 親カードの右中央 → 分岐点。既存のベジェと同じ描き方にする。
-    // 分岐点は「親に一番近い行ワイヤ」に合わせる。背骨の縦中央にしてはいけない：
-    // 中央は行と行のあいだの何も無い高さになりうるので、幹線が誰にも繋がっていない点へ
-    // 刺さって見える（実測: 行が 68/281/494/741 にあるのに合流点が 404.76 だった）。
+    // 行を上から順に並べ、各行に「ワイヤの上に空いている縦幅」と「枝の分岐点」を持たせる。
+    // 行ワイヤは背骨から**曲線で**分かれるが、その曲線が使ってよいのは行間の溝の上半分
+    // （＝前の行のカードの底までの 10px）だけ。超えると前の行のカードに乗る。
+    // トランジション中は行が重なって溝が負になりうるので、実測して 0 まで縮められるようにする
+    // （0 なら従来の直角に戻るだけで、破綻はしない）。
+    const rowList = [...wires.values()].sort((a, b) => a.y - b.y);
+    let prevBot = null;
+    for (const wr of rowList) {
+      wr.up = (prevBot === null) ? BUS_FORK_UP
+            : Math.max(0, Math.min(BUS_FORK_UP, wr.y - prevBot - 2));
+      let bot = -Infinity;
+      for (const x of wr.items) if (x.q.b > bot) bot = x.q.b;
+      prevBot = bot;
+      // 枝の分岐点は行内で揃える。揃えないと最初のカードだけ枝が短くなって不揃いに見える。
+      let k = BUS_HOOK_W;
+      for (const x of wr.items) k = Math.min(k, x.sx - (spineX + BUS_FORK_W) - BUS_HOOK_PAD);
+      wr.k = Math.max(0, k);
+    }
+    // 背骨は「一番上の行の分岐点」から「一番下の行の分岐点」まで。行ワイヤの高さまで引く
+    // 必要はない——そこへは分岐の曲線が連れていく。
+    const spineTop = rowList[0].y - rowList[0].up;
+    const spineBot = rowList[rowList.length - 1].y - rowList[rowList.length - 1].up;
+
+    // 幹線: 親カードの右中央 → 背骨の分岐点。既存のベジェと同じ描き方にする。
+    //
+    // **背骨を無くして行ごとに親から直接ベジェを引く案は採れない。** 実測で、2レーンのバンドの
+    // レーン0にいる親から遠い行へ引いた曲線が、同じバンドのレーン1にある別クラスタのカードを
+    // 貫いた（ALPHA-1 → 最下行が「解析機ブラボー5」を貫通）。しかも findFanCollisions は
+    // クラスタを**中心1点**として扱うので、扇を全行へ広げるとその保証の外へ出る。
+    // 縦に動いてよいのは BUS_PAD_L の 14px の溝の中だけで、背骨は飾りではなく安全装置。
+    //
+    // 合流先は「親に一番近い行の分岐点」。背骨の縦中央にしてはいけない：中央は行と行のあいだの
+    // 何も無い高さになりうるので、幹線が誰にも繋がっていない点へ刺さって見える。
     const p = t.cards.get(cl.parentId);
     if (p) {
       const pr = local(p.card.getBoundingClientRect());
       const x1 = pr.r, y1 = (pr.t + pr.b) / 2;
       let y2 = spineTop, near = Infinity;
-      for (const [, wr] of wires) {
-        const d = Math.abs(wr.y - y1);
-        if (d < near) { near = d; y2 = wr.y; }
+      for (const wr of rowList) {
+        const yy = wr.y - wr.up;
+        const d = Math.abs(yy - y1);
+        if (d < near) { near = d; y2 = yy; }
       }
       const x2 = spineX;
       const dx = Math.max(18, (x2 - x1) * 0.5);
@@ -3782,18 +3816,40 @@ function drawLinks(t) {
       out += '<path class="bus" d="M ' + spineX + ' ' + spineTop +
              ' L ' + spineX + ' ' + spineBot + '"/>';
     }
-    for (const [, wr] of wires) {
+    for (const wr of rowList) {
       // 右端は最後のスタブの少し先で止める。最終カードの右端まで引くと、
       // 1列のクラスタでは線の全長がそのまま尾になって「どこにも繋がらない線」に見える。
       const endX = wr.x1 + BUS_TAIL;
-      out += '<path class="bus" d="M ' + spineX + ' ' + wr.y + ' L ' + endX + ' ' + wr.y + '"/>';
+      // 背骨 → 行ワイヤ。始点は縦の接線（背骨となめらかに繋がる）、終点は水平の接線
+      // （そのまま水平線を続けても角が出ない）。曲線の外接矩形は x∈[spineX, spineX+fw]、
+      // y∈[wr.y-up, wr.y] に収まるので、行間の溝の上半分から出ない。
+      const fw = Math.min(BUS_FORK_W, Math.max(0, endX - spineX));
+      if (wr.up > 0.5 && fw > 0.5) {
+        out += '<path class="bus" d="M ' + spineX + ' ' + (wr.y - wr.up) +
+               ' C ' + spineX + ' ' + (wr.y - wr.up * 0.45) +
+               ', ' + (spineX + fw * 0.45) + ' ' + wr.y +
+               ', ' + (spineX + fw) + ' ' + wr.y +
+               ' L ' + endX + ' ' + wr.y + '"/>';
+      } else {
+        out += '<path class="bus" d="M ' + spineX + ' ' + wr.y + ' L ' + endX + ' ' + wr.y + '"/>';
+      }
       for (const x of wr.items) {
         // スタブは .robot-slot の上辺へ落とす。.agent の上辺だと、完了して結果行が
         // 生えたカード（.agent は align-items:center）でロボが下がり、線が空中で終わる。
+        // 行ワイヤからは水平の接線で分かれ、ロボの上辺へは縦の接線で降りる。縦の落差は
+        // 実測値の半分を制御点に使うので、トランジション中に落差が 0 や負になっても
+        // 符号がそのまま伝わるだけで、線がねじれない。
         const st = status.get(x.s.id) || 'standby';
         if (st === 'running') running++;
-        out += '<path class="stub ' + st + '" d="M ' + x.sx + ' ' + wr.y +
-               ' L ' + x.sx + ' ' + x.sy + '"/>';
+        if (wr.k > 0.5) {
+          const bx = x.sx - wr.k, vy = (x.sy - wr.y) / 2;
+          out += '<path class="stub ' + st + '" d="M ' + bx + ' ' + wr.y +
+                 ' C ' + (bx + wr.k * 0.5) + ' ' + wr.y +
+                 ', ' + x.sx + ' ' + (x.sy - vy) + ', ' + x.sx + ' ' + x.sy + '"/>';
+        } else {
+          out += '<path class="stub ' + st + '" d="M ' + x.sx + ' ' + wr.y +
+                 ' L ' + x.sx + ' ' + x.sy + '"/>';
+        }
       }
     }
   }
