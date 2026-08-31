@@ -1976,13 +1976,13 @@ def normalize_log_entry(e, fallback_who: str = ""):
 
 
 def assign_generations(agents: list[dict]) -> None:
-    """世代（何列目か）を parentId から実測で算出する。
+    """世代を parentId から実測で算出する。
 
     自己申告ファイルが generation を間違えて書いても画面は壊れない。
     """
     by_id = {a["id"]: a for a in agents}
     for a in agents:
-        # 親IDが指定されているのに実体が居ない「孤児」は、指令塔直下（1列目）として扱う
+        # 親IDが指定されているのに実体が居ない「孤児」は、指令塔直下として扱う
         if a["parentId"] and a["parentId"] not in by_id:
             a["generation"] = 1
             continue

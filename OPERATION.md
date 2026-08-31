@@ -302,7 +302,7 @@ file was written the last time the language was set. A warning never blocks the 
 `--mission` or `--headline`, run the same command again with the same `--id` and the corrected text (the measured
 values are kept). A mission title cannot be corrected afterwards.
 
-The generation (which column it sits in) is computed automatically from `--parent`, so do not specify it.
+The generation is computed automatically from `--parent`, so do not specify it.
 **"awaiting report" is also derived automatically from `--parent`**, so there is no need to declare that the
 command post has started waiting (specifying `--parent` correctly is exactly what makes "awaiting report" accurate).
 

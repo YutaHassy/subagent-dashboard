@@ -1960,6 +1960,13 @@ async function loadRun(t, tb) {
 function showRunNote(t, text, retry) {
   t.els.links.innerHTML = '';
   t.els.gens.innerHTML = '';
+  // 木の DOM を丸ごと捨てるので、その木を指していた記録も一緒に捨てる。残すと、
+  // 外された要素を指したまま clusters が生き延び、次の layoutTree までのあいだに
+  // drawLinks が全部 0 になった矩形を測って、左上に潰れた線と枠を描く。
+  t.clusters = [];
+  t.clusteredIds.clear();
+  t.contentW = 0;
+  t.laneSig = null;
   const note = document.createElement('div');
   note.className = 'empty-note run-note';
   note.textContent = text;
@@ -2923,6 +2930,7 @@ const BUS_PAD_L     = 14;   // コンテナの左端から背骨までの距離�
 const BUS_PAD_R     = 12;   // コンテナが最終カードの右へはみ出す量
 const BUS_PAD_B     = 10;   // コンテナが最終行の下へはみ出す量
 const BUS_UP_MIN    = 4;    // 行ワイヤを行の上端からどれだけ上に置くかの下限（後述）
+const BUS_TAIL      = 10;   // 行ワイヤを最後のスタブより先へ伸ばす量
 
 /** レーン1本の幅。CSS の --agent-w と同じ式をここで組み直している。
  *  --agent-w は calc() なので getPropertyValue は計算前の文字列を返し、数値として読めない。
@@ -3476,15 +3484,25 @@ function layoutTree(t) {
 /** レイアウト前に「画面の上端に一番近い機体」を覚える。実測値ではなく layoutTree が
  *  入れた top を使う。トランジション中でも値がぶれないため。 */
 function pickAnchor(t) {
-  if (t.els.scroll.scrollTop <= 0) return null;   // 一番上を見ているなら補正は要らない
-  const view = t.els.scroll.scrollTop - scrollPad(t, 'paddingTop') - bodyOffsetTop(t);
+  const top = t.els.scroll.scrollTop, left = t.els.scroll.scrollLeft;
+  if (top <= 0 && left <= 0) return null;   // 左上を見ているなら補正は要らない
+  const view = top - scrollPad(t, 'paddingTop') - bodyOffsetTop(t);
   let best = null, bestD = Infinity;
   for (const [, e] of t.cards) {
     if (e.top === null) continue;
     const d = e.top - view;
     if (d >= -40 && d < bestD) { bestD = d; best = e; }
   }
-  return best ? { entry: best, before: best.top } : null;
+  return best ? { entry: best, before: best.top, beforeX: anchorX(best) } : null;
+}
+
+/** その機体の .tree-canvas から見た横位置。バンド幅が変わると列の offsetLeft が動くので、
+ *  レーン内の left だけでは足りず、列の位置と足して見る必要がある。 */
+function anchorX(e) {
+  const body = e.root.parentNode;
+  const col  = body && body.parentNode;
+  const base = (col && Number.isFinite(col.offsetLeft)) ? col.offsetLeft : 0;
+  return base + (e.left || 0);
 }
 
 /** 指令塔がそのチームの枠の縦中央に来るまでスクロールする（チームが現れた直後の1回だけ）。
@@ -3505,8 +3523,14 @@ function applyLayout(t) {
     t.recenterOnce = false;
     recenterOnCommand(t);
   } else if (anchor && anchor.entry.top !== null) {
-    // 木が伸び縮みしても、見ていた機体が画面上の同じ位置に留まるようにする
+    // 木が伸び縮みしても、見ていた機体が画面上の同じ位置に留まるようにする。
+    // 横も要る：レーンの本数が変わるとバンド幅が数百〜数千px動くので、右の世代を
+    // 見ている利用者の視点が横に飛ぶ（縦だけ直しても画面は別の場所を映している）。
     t.els.scroll.scrollTop += anchor.entry.top - anchor.before;
+    if (t.els.scroll.scrollLeft > 0) {
+      const dx = anchorX(anchor.entry) - anchor.beforeX;
+      if (dx) t.els.scroll.scrollLeft += dx;
+    }
   }
   if (moved > 0) followMoves(t);
   // 自動フォーカスの本流。「木の形が変わった瞬間」を正確に押さえられるのはここだけで、
@@ -3613,15 +3637,24 @@ function drawLinks(t) {
     // 行ワイヤは行間の隙間の中央に置く。行の上端から GAP_SIB/2 上が基準だが、
     // トランジション中は行が重なって隙間が負になりうる。下限を入れないと、
     // ワイヤが自分の行のカードを貫き、スタブの向きまで反転する。
+    // スタブの位置は先に確定させる。行ワイヤの右端をこの値から出すため。
+    // .agent の左端で代用してはいけない：スタブが立つのは .robot-slot の中心
+    // （左端 + 47px）なので、47 - どんな定数 のぶんだけワイヤが短くなり、
+    // 最右列のスタブが宙に浮く（実測でちょうど 27.3px 足りなかった）。
     const wires = new Map();
     for (const x of rects) {
-      const cur = wires.get(x.s.row);
+      const slot = x.e.root.querySelector('.robot-slot');
+      if (!slot) continue;
+      const rs = local(slot.getBoundingClientRect());
+      x.sx = (rs.l + rs.r) / 2;      // スタブの縦線のX（ロボの中心）
+      x.sy = rs.t;                   // スタブの終点Y（ロボの上辺）
       const up  = Math.max(BUS_UP_MIN, GAP_SIB / 2);
       const y   = x.q.t - up;
-      if (!cur) wires.set(x.s.row, { y, x0: x.q.l, x1: x.q.l, items: [x] });
+      const cur = wires.get(x.s.row);
+      if (!cur) wires.set(x.s.row, { y, x1: x.sx, items: [x] });
       else {
         cur.y = Math.min(cur.y, y);
-        cur.x1 = Math.max(cur.x1, x.q.l);
+        cur.x1 = Math.max(cur.x1, x.sx);
         cur.items.push(x);
       }
     }
@@ -3649,17 +3682,15 @@ function drawLinks(t) {
     for (const [, wr] of wires) {
       // 右端は最後のスタブの少し先で止める。最終カードの右端まで引くと、
       // 1列のクラスタでは線の全長がそのまま尾になって「どこにも繋がらない線」に見える。
-      const endX = wr.x1 + AGENT_W * 0.06;
+      const endX = wr.x1 + BUS_TAIL;
       out += '<path class="bus" d="M ' + spineX + ' ' + wr.y + ' L ' + endX + ' ' + wr.y + '"/>';
       for (const x of wr.items) {
         // スタブは .robot-slot の上辺へ落とす。.agent の上辺だと、完了して結果行が
         // 生えたカード（.agent は align-items:center）でロボが下がり、線が空中で終わる。
-        const rs = local(x.e.root.querySelector('.robot-slot').getBoundingClientRect());
-        const sx = (rs.l + rs.r) / 2;
         const st = status.get(x.s.id) || 'standby';
         if (st === 'running') running++;
-        out += '<path class="stub ' + st + '" d="M ' + sx + ' ' + wr.y +
-               ' L ' + sx + ' ' + rs.t + '"/>';
+        out += '<path class="stub ' + st + '" d="M ' + x.sx + ' ' + wr.y +
+               ' L ' + x.sx + ' ' + x.sy + '"/>';
       }
     }
   }
