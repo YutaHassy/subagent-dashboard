@@ -34,6 +34,10 @@
   /* 機体1体の横幅（ロボ + gap 4px + カード）。.agent を絶対配置にすると
      絶対配置の子は親の寸法に寄与しないので、列の幅を計算で確定させる必要がある。 */
   --agent-w:   calc(var(--robot-w) + 4px + var(--card-w));
+  /* レーンの間隔。世代（バンド）の間隔と、バンド内のレーンの間隔は同じ値を使う。
+     真実の源はここ1箇所で、JS 側は起動時に getComputedStyle で1回読む。
+     JS に数値を直書きすると、ここを変えた瞬間に R 探索の見積りだけが古い値のまま残る。 */
+  --band-gap:  38px;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -368,11 +372,18 @@ body {
                padding: 20px 18px 36px; min-width: 0; }
 .tree-canvas { position: relative; width: max-content; min-width: 100%; min-height: max-content; }
 .links { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
-.generations { position: relative; display: flex; align-items: flex-start; gap: 38px; }
+.generations { position: relative; display: flex; align-items: flex-start; gap: var(--band-gap); }
 
 /* 幅を固定するのは、絶対配置の .agent が列の幅を作らないため。
-   指定しないと列が潰れて世代見出しが左端で重なる。 */
-.gen-col { display: flex; flex-direction: column; gap: 20px; flex: none; width: var(--agent-w); }
+   指定しないと列が潰れて世代見出しが左端で重なる。
+   --band-lanes は葉クラスタが使うレーンの本数。layoutTree が書き、既定は 1（＝従来の1列）。
+   JS 側は必ず Math.max(1, Math.round(Number(L)) || 1) を通してから setProperty すること。
+   非数値を書くと calc が無効になり width:auto に落ちて列が潰れる（未設定の 1 では救われない）。 */
+.gen-col {
+  display: flex; flex-direction: column; gap: 20px; flex: none;
+  width: calc(var(--band-lanes, 1) * var(--agent-w)
+              + (var(--band-lanes, 1) - 1) * var(--band-gap));
+}
 /* 全列の .gen-body の上端が揃っていることが、列をまたいだ共通Y座標系の前提。
    高さを line-height で確定させておく。 */
 .gen-head {
@@ -404,10 +415,16 @@ body {
    display:none と content-visibility を使ってはいけない。どちらも配下の CSS
    アニメーションを取り消すので、ロボの呼吸・瞬き・手の動きと表情のクロスフェードが
    0 から作り直される。隠す必要が出たら opacity で行う。 */
+/* left も layoutTree が px で与える（葉クラスタのレーン）。transform は使えないので
+   （下の @keyframes pop が fill-mode:both で transform を占有している）、横も left で動かす。
+   .gen-col の幅にはトランジションを掛けない：fitContent が offsetWidth を測っているため、
+   460ms のあいだ autoFitZoom が中間幅を追いかけて拡大率が脈打つ。
+   レーンの本数が変わるフレームは、代わりに全機へ .snap を付けて一括で着地させる。 */
 .agent {
   position: absolute; left: 0; top: 0; width: var(--agent-w);
   display: flex; align-items: center; gap: 4px;
-  transition: top .46s cubic-bezier(.22,.68,.28,1);
+  transition: top .46s cubic-bezier(.22,.68,.28,1),
+              left .46s cubic-bezier(.22,.68,.28,1);
 }
 /* 初回配置だけは滑らせない（top:0 から所定の位置へ降ってくるのを防ぐ） */
 .agent.snap { transition: none; }
@@ -652,6 +669,25 @@ body {
 .links.calm .link.running { animation: none; }
 .link.done    { stroke: rgba(139,160,184,.4); }
 @keyframes flow { to { stroke-dashoffset: -16; } }
+
+/* --- 葉クラスタのバス配線（コンテナ＋背骨＋行ワイヤ＋スタブ）
+   状態色を持つのは .stub だけ。1本の行ワイヤには稼働中と完了が混在するので、
+   ワイヤ自体を状態で塗ると意味が壊れる（どの機体の状態なのか決まらない）。
+   背骨とワイヤは所属だけを表す中立色にする。
+   コンテナは SVG の rect にする。.gen-body の子に div を置くと、(1) 495行あたりの
+   .agent.standby:nth-child(3n+2) 系が子の並び順で瞬きの位相を決めているので全機の
+   位相がずれ、(2) render の空列削除が children.length===0 を見ているので空の世代列が
+   残り、(3) 枠とカードが別々の時間軸で動いて 460ms の移動中に分離する。 */
+.hangar      { fill: rgba(62,224,255,.028); stroke: rgba(139,160,184,.16);
+               stroke-width: 1; rx: 12; }
+.bus         { fill: none; stroke: rgba(139,160,184,.34); stroke-width: 1.6;
+               stroke-linecap: round; }
+.stub        { fill: none; stroke-width: 2.5; stroke-linecap: round; }
+.stub.standby { stroke: rgba(139,160,184,.28); stroke-dasharray: 3 6; }
+.stub.running { stroke: rgba(62,224,255,.75); stroke-dasharray: 5 4;
+                animation: flow 1s linear infinite; }
+.links.calm .stub.running { animation: none; }
+.stub.done    { stroke: rgba(139,160,184,.4); }
 
 /* ============================================================ サイドパネル（チームごと） */
 /* 開閉できる。状態は全チーム共通のグローバル1個（#app.log-collapsed）。個々の .team-side
@@ -1498,6 +1534,10 @@ function fitBox(t) {
 function fitContent(t) {
   let right = 0;
   for (const [, c] of t.cols) right = Math.max(right, c.col.offsetLeft + c.col.offsetWidth);
+  // バンドが多レーンになると、宣言した列幅と、レーンに置いたカードや葉クラスタの枠の
+  // 実際の右端がずれうる。小さいほうを信じると「まだ余っている」と読まれ、右端の機体が
+  // 黙って枠の外へ出る（自動フォーカスは切れているものを直すのが仕事なので、これは最悪）。
+  right = Math.max(right, t.contentW || 0);
   const h = bodyOffsetTop(t) + (t.contentH || 0);
   return (right > 0 && h > 0) ? { w: right, h } : null;
 }
@@ -1542,7 +1582,12 @@ function autoFitZoom(t) {
   // 不感帯は現在値に対する割合で見る。1%刻みなので、絶対値で置くと 500% では緩すぎ、
   // 5% では厳しすぎる。丸めの ±0.5 を必ず吸えるように最低 1%pt は確保する。
   const dead = Math.max(1, Math.round(zoomLevel * FIT_DEADBAND));
-  if (Math.abs(next - zoomLevel) < dead) { fitGrowSince = 0; return; }
+  if (Math.abs(next - zoomLevel) < dead) {
+    // 落ち着いた＝往復は終わった。最後の止めの履歴もここで捨てる。残すと、あとで
+    // 木が本当に変わって正当に合わせ直したいときに、古い回数がそれを抑え込む。
+    fitGrowSince = 0; fitBurst = 0; fitBurstSig = null;
+    return;
+  }
 
   const now = performance.now();
   if (next > zoomLevel) {
@@ -1567,7 +1612,16 @@ function autoFitZoom(t) {
 
   // 最後の止め。上の層が全部破れても、ここで必ず有限回で終わる。
   // 木の形か枠が変われば署名も変わるので、正当な再フィットは妨げない。
-  const sig = con.w + 'x' + con.h + '/' + box.w + 'x' + box.h;
+  //
+  // **枠側は物理寸法で取る。** fitBox が返すのはローカル寸法（clientWidth ＝ 物理 ÷ 拡大率）
+  // なので、拡大率が往復するとこの署名も一緒に往復し、`sig === fitBurstSig` が永久に
+  // 成立しない——つまり「最後の止め」が、それが止めるべき唯一の相手である周期2の往復に
+  // 対してだけ効かなかった。getBoundingClientRect は zoom に依らない物理 px を返すので、
+  // 往復しても署名が動かない。padding を引かないのも同じ理由（padding はローカル px で、
+  // 引くと物理量ではなくなる）。中身側の con は元からローカルで拡大率に依らない。
+  const phys = t.els.scroll.getBoundingClientRect();
+  const sig = con.w + 'x' + con.h + '/' +
+              Math.round(phys.width) + 'x' + Math.round(phys.height);
   if (sig === fitBurstSig) {
     if (++fitBurst > FIT_MAX_BURST) {
       console.warn(tr('console.fit_stopped'), sig);
@@ -1717,6 +1771,10 @@ function switchTab(key) {
   // 隠れている間は clientHeight が 0 なので縦の中央寄せが決まらない。出した直後に
   // 測り直す（lastAvailH を無効化しておけば ResizeObserver 側とも二重にならない）。
   t.lastAvailH = -1;
+  // 隠れている間に置かれた位置から目標へ**滑らせない**。縦は元からこの合図で守られて
+  // いたが、横（レーン）も同じ扱いが要る。付けないと、タブを開いた瞬間にクラスタの
+  // カードだけが横滑りする。
+  t.snapNext = true;
   if (t.state) scheduleLayout(t);
 }
 
@@ -2264,6 +2322,14 @@ function createTeam(slug, runId, live) {
     // 木の実際の高さ。DOM から測ると .gen-body が max(木の高さ, 枠の高さ) で底上げされて
     // いて「枠より小さい」ことが分からなくなるので、layoutTree が計った値を別に持つ。
     contentH:     0,
+    // 木の実際の幅。バンドが多レーンになると .gen-col の宣言幅とレーンに置いたカードの
+    // 実際の右端がずれうるので、fitContent は両方の大きいほうを見る。過小評価すると
+    // 「もっと拡大してよい」と読まれて右端の機体が黙って枠の外へ出る。
+    contentW:     0,
+    wrapR:        0,      // 葉グリッドの1列あたりの行数。0＝未決定（次の start で戻る）
+    laneSig:      null,   // バンドごとのレーン本数の署名。変わったフレームは一括着地させる
+    clusters:     [],     // layoutTree が確定させた葉クラスタ。drawLinks がこれだけを見る
+    clusteredIds: new Set(), // クラスタに属する機体の id。既存のベジェから除外する
     layoutRaf:    0,
     followRaf:    0,
     followUntil:  0,
@@ -2518,6 +2584,7 @@ function createAgent(t, a) {
     status: null,
     waiting: null,
     top:    null,   // layoutTree が入れた縦位置（px、.gen-body 基準）。null は未配置
+    left:   null,   // layoutTree が入れた横位置（px、バンドの左端基準）。null は未配置
     h:      0,      // layoutTree が実測した高さ
   };
   root.addEventListener('animationend', function once(e) {
@@ -2602,6 +2669,14 @@ function resetView(t) {
   t.recenterOnce = true;
   t.lastAvailH = -1;
   t.contentH = 0;
+  t.contentW = 0;
+  // 折り返しの状態も落とす。clusters は消えた機体の id を指したまま残ると、次の
+  // layoutTree まで drawLinks が死んだ id を引いて線を描こうとする。
+  // wrapR を 0 に戻すのがラチェットの唯一の完全リセット点（＝ミッションの start）。
+  t.wrapR = 0;
+  t.laneSig = null;
+  t.clusters = [];
+  t.clusteredIds.clear();
   t.els.summary.hidden = true;
   delete t.els.summary.dataset.key;
   t.prevSig = null;
@@ -2728,7 +2803,10 @@ function render(t, s) {
     const target = ensureColumn(t, a.generation).body;
     if (entry.root.parentNode !== target) {
       target.appendChild(entry.root);
-      entry.top = null;  // 列が変わった機体は滑らせずに置き直す
+      // 列が変わった機体は滑らせずに置き直す。left も一緒に落とす：残すと
+      // 別のバンドのレーン座標を持ったまま新しい列に着地して、横に滑って見える。
+      entry.top = null;
+      entry.left = null;
     }
   }
   for (const [id, entry] of [...t.cards]) {
@@ -2827,6 +2905,344 @@ const GAP_SIB      = 20;   // 同じ親から生まれた機体どうしの縦�
 const GAP_FAMILY   = 34;   // 親が違う機体どうしの間隔（家族の境目を広く取る）
 const MAX_ANIMATED = 60;   // これより多い機体数では移動を滑らせない
 const MOVE_MS      = 460;  // .agent の top トランジションと同じ長さ
+
+// ---------------------------------------------------------------- 葉の折り返し
+// 世代は増えにくく（1世代ぶんの横幅だけ）、兄弟は増えやすい（1体ぶんの縦幅ずつ）。
+// 中身のアスペクト比が枠と真逆になるので、autoFitZoom の min() の縦側だけが効いて
+// 全体が縮む。指令塔＋第1世代10体は実測で拡大率 47%——ロボの表情が読めない。
+// そこで「子を持たない機体（葉）」を複数レーンのグリッドに折り返し、中身の形を
+// 枠の形へ寄せる。同じ条件で 95〜98% まで戻る。
+//
+// 定数はここ1ブロックだけに置く。この画面は body 末尾の単一インラインスクリプトなので、
+// 同じ名前を2箇所で const 宣言すると SyntaxError で初期化が丸ごと死に、画面が
+// 「接続中…」のまま固まる（設計時に2班が独立に WRAP_MIN を置いて衝突した）。
+const WRAP_MIN      = 4;    // 葉がこの数以上のときだけクラスタにする
+const MIN_WRAP_COLS = 2;    // 列が1本にしかならないならクラスタにしない（畳む意味がない）
+const R_GAIN        = 1.05; // 折り返し方を変えるのは fit がこの倍率より良くなるときだけ
+const BUS_PAD_L     = 14;   // コンテナの左端から背骨までの距離（幹線の終点＝分岐点）
+const BUS_PAD_R     = 12;   // コンテナが最終カードの右へはみ出す量
+const BUS_PAD_B     = 10;   // コンテナが最終行の下へはみ出す量
+const BUS_UP_MIN    = 4;    // 行ワイヤを行の上端からどれだけ上に置くかの下限（後述）
+
+/** レーン1本の幅。CSS の --agent-w と同じ式をここで組み直している。
+ *  --agent-w は calc() なので getPropertyValue は計算前の文字列を返し、数値として読めない。
+ *  足している 4 は .agent の gap:4px（ロボとカードの間）。CSS 側の calc と対で直すこと。 */
+const AGENT_W = (() => {
+  const cs = getComputedStyle(document.documentElement);
+  const rb = parseFloat(cs.getPropertyValue('--robot-w'));
+  const cd = parseFloat(cs.getPropertyValue('--card-w'));
+  return (Number.isFinite(rb) && Number.isFinite(cd)) ? rb + 4 + cd : 330;
+})();
+
+/** computeTidyY が世代を読むときと同じ規則。合成ノードにも同じものを使う。 */
+function genOf(a) {
+  return Number.isFinite(a.generation) ? Math.max(0, a.generation) : 0;
+}
+
+/**
+ * 葉を列優先のグリッドに並べたときの寸法とスロットを返す。
+ *
+ * 列優先（col = floor(i/rows), row = i % rows）にするのは、機体が末尾に足されても
+ * 既存カードの (row, col) が変わらないため。列数 cols を固定して rows を
+ * ceil(n/cols) で出す作り方だと、1体増えるたびに全員の行が組み替わる——毎秒1体ずつ
+ * 増えるこの画面では、それは常時カードが踊り続けることを意味する。
+ *
+ * 行の高さは**その行の最大カード高**にする。列ごとに揃えると、完了で結果行が生えて
+ * 1枚だけ高くなったときに格子が崩れる。
+ * なお「機体が増えても既存カードは1pxも動かない」は厳密には成り立たない：新しい機体が
+ * 行 r に入って rowH[r] を更新すると、行 r+1 以降が下へずれる。動かないのは
+ * 「同じ行の既存カード」と「列の組み替えが起きないこと」の2つ。
+ */
+function gridSlots(members, hById, R) {
+  const n = members.length;
+  const rows = Math.max(1, Math.min(R, n));
+  const cols = Math.ceil(n / rows);
+  const rowH = new Array(rows).fill(0);
+  for (let i = 0; i < n; i++) {
+    const h = hById.get(members[i].id) || 0;
+    const r = i % rows;
+    if (h > rowH[r]) rowH[r] = h;
+  }
+  const rowTop = new Array(rows);
+  let y = 0;
+  for (let r = 0; r < rows; r++) { rowTop[r] = y; y += rowH[r] + GAP_SIB; }
+  const slots = [];
+  for (let i = 0; i < n; i++) {
+    slots.push({
+      id:   members[i].id,
+      lane: Math.floor(i / rows),
+      row:  i % rows,
+      dy:   rowTop[i % rows],          // クラスタ上端からの相対Y
+      h:    hById.get(members[i].id) || 0,
+    });
+  }
+  return {
+    rows, cols, rowH, rowTop, slots,
+    w: cols * AGENT_W + (cols - 1) * BAND_GAP,
+    h: Math.max(0, y - GAP_SIB),       // 最後に足した GAP_SIB は行間ではないので戻す
+  };
+}
+
+/**
+ * computeTidyY へ渡すノード配列を組む。実機体はそのまま、葉クラスタは合成ノード1個に畳む。
+ *
+ * computeTidyY は要素から `.id` / `.parentId`（effectiveParentId 経由）/ `.generation` の
+ * 3つしか読まない。だから同じ形のオブジェクトを混ぜれば、あの関数には**1行も触れずに**
+ * 合成ノードを通せる。「非再帰である性質を壊さない」を最も確実に守れるのが、触らないこと。
+ *
+ * 走査は明示スタックの反復DFS。新しい再帰を持ち込まない（循環データで落ちないため）。
+ *
+ * クラスタにしてよいのは、次の4条件をすべて満たす葉だけ。
+ *   1. 親が実在する（孤児でない・自己参照でない）——幹線の起点になるカードが要る
+ *   2. 世代が親より**真に大きい**——親が add される前に子が add されると、サーバー側の
+ *      generation_of が親不在で 1 を返すため、親子とも generation 1 の実データが作れる。
+ *      これを畳むとクラスタが親と同じバンドに入り、バンドの意味が壊れる
+ *   3. DFS で到達済み——循環で取りこぼした機体は深さ優先順の連続性を持たない。
+ *      畳むと pushDown が依拠する「部分木は添字上で連続」が破れ、無関係なカードが動く
+ *   4. 列が2本以上になる——1列に畳んでも見た目は変わらないので、機構だけ増える
+ */
+function buildLayoutNodes(agents, hById, R, banned) {
+  const ids = new Set(agents.map((a) => a.id));
+  const kids = new Map();
+  const roots = [];
+  for (const a of agents) {
+    const p = effectiveParentId(a, ids);
+    if (p === null) { roots.push(a); continue; }
+    if (!kids.has(p)) kids.set(p, []);
+    kids.get(p).push(a);
+  }
+  const hasKids = (id) => (kids.get(id) || []).length > 0;
+
+  const nodes = [], nodeH = [], clusters = [], clusteredIds = new Set();
+  const seen = new Set();
+  const stack = [];
+  for (let i = roots.length - 1; i >= 0; i--) stack.push(roots[i]);
+
+  while (stack.length) {
+    const node = stack.pop();
+
+    if (node.__cluster) {                 // 合成ノード。子を持たないのでここで終わり
+      nodes.push(node);
+      nodeH.push(node.__cluster.grid.h);
+      continue;
+    }
+    if (seen.has(node.id)) continue;      // 循環しても必ず止まる
+    seen.add(node.id);
+    nodes.push(node);
+    nodeH.push(hById.get(node.id) || 0);
+
+    const list = kids.get(node.id) || [];
+    if (!list.length) continue;
+
+    // 内部節点を先、葉を後。この並びが「子を持つ枝が上、葉のグリッドが下」を作る。
+    // 並べ替えるのはここだけ。orderAgents(2456) には手を入れない——同じ規則を2箇所に
+    // 書くと、必ず片方だけが直される。
+    const internals = [], leaves = [];
+    for (const c of list) (hasKids(c.id) ? internals : leaves).push(c);
+
+    const gp = genOf(node);
+    const eligible = leaves.filter((c) => genOf(c) > gp);   // 条件2
+    const key = 'cluster:' + node.id;
+    let grid = null;
+    // banned は「そのバンドで折り返すと線がカードを貫くと実測された世代」。
+    // ids.has(key) は、たまたま "cluster:XXX" という id の機体が実在した場合の逃げ道
+    // （衝突すると computeTidyY の index Map が壊れて木が崩れる）。
+    if (eligible.length >= WRAP_MIN && !ids.has(key) &&
+        !(banned && banned.has(genOf(eligible[0])))) {
+      const g = gridSlots(eligible, hById, R);
+      if (g.cols >= MIN_WRAP_COLS) grid = g;                // 条件4
+    }
+
+    const tail = [];
+    for (const c of internals) tail.push(c);
+    if (grid) {
+      for (const c of leaves) if (genOf(c) <= gp) tail.push(c);   // 畳めなかった葉は素で置く
+      const cl = {
+        key,
+        parentId: node.id,
+        generation: genOf(eligible[0]),
+        grid,
+        top: 0, left: 0,                 // layoutTree が確定させる（.gen-body 基準・pad 込み）
+      };
+      clusters.push(cl);
+      // クラスタに入れた葉は「訪問済み」にする。入れ忘れると、末尾の救済ループが
+      // 「到達していない機体」と見なして全員をもう一度ノード配列へ積み、木の高さが
+      // そのまま2倍になる（葉はグリッドの中と列の中の両方に置かれる）。
+      for (const c of eligible) { seen.add(c.id); clusteredIds.add(c.id); }
+      tail.push({
+        // computeTidyY から見える顔。id はクラスタ専用の名前空間にする。
+        id: cl.key, parentId: node.id, generation: cl.generation, __cluster: cl,
+      });
+    } else {
+      for (const c of leaves) tail.push(c);
+    }
+    for (let i = tail.length - 1; i >= 0; i--) stack.push(tail[i]);
+  }
+
+  // 循環などで到達できなかった機体の救済（orderAgents 2476 と同じ扱い）。
+  // 連続性を持たないので、クラスタ化の対象にはしない。
+  for (const a of agents) {
+    if (seen.has(a.id)) continue;
+    seen.add(a.id);
+    nodes.push(a);
+    nodeH.push(hById.get(a.id) || 0);
+  }
+  return { nodes, nodeH, clusters, clusteredIds };
+}
+
+/** --band-gap の実数値。CSS を真実の源にして、起動時に1回だけ読む。
+ *  毎フレーム getComputedStyle を呼ぶとレイアウトが同期的に確定させられる。 */
+const BAND_GAP = (() => {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--band-gap'));
+  return Number.isFinite(v) && v > 0 ? v : 38;
+})();
+
+/** バンドごとのレーン本数。クラスタが無いバンドは 1（＝従来の1列）。 */
+function lanesByGen(built) {
+  const lanes = new Map();
+  for (const n of built.nodes) if (!lanes.has(genOf(n))) lanes.set(genOf(n), 1);
+  for (const c of built.clusters) {
+    lanes.set(c.generation, Math.max(lanes.get(c.generation) || 1, c.grid.cols));
+  }
+  return lanes;
+}
+
+/**
+ * 「線がカードを貫くバンド」を実測して返す。折り返しの安全性はここだけが保証している。
+ *
+ * 当初の仕様は「同じ親の内部節点の系統と葉クラスタはY帯を分ける」で交差が原理的に
+ * 起きないと論じていたが、これは**成立しない**。computeTidyY が分離するのは同世代の
+ * ノード自身の矩形だけで、内部節点の扇——親から複数の子へ広がる線の束——は自分の矩形より
+ * ずっと縦に広い。しかも扇の端は既に確定した子のYに固定されているので、親を動かしても
+ * 逃げられない（扇の外接区間で場所取りする案は、縦が Ω(内部節点数 × 子バンド高) に
+ * 膨らんで「縦を縮める」という目的と正面衝突するため棄却した）。
+ *
+ * よって配置で保証するのをやめ、**置いてから測る**。
+ *   - 線が横切りうるのは多レーンのバンドのレーン1以降だけ（1レーンなら 38px の溝しか
+ *     通らず、そこには何も無い＝現行が安全な理由）
+ *   - そこに居るのはクラスタのカードだけ
+ *   - どの線も、その親の扇のY区間の内側にしか無い
+ * だから「扇の区間」と「クラスタ矩形の区間」が重ならなければ、線はカードを貫かない。
+ *
+ * 重なったバンドは折り返しをやめて 1 レーンへ戻す。L=1 は常に安全で、レーン数は
+ * 単調減少しかしないので、この繰り返しはバンド数回で必ず止まる。
+ */
+function findFanCollisions(built) {
+  const { nodes, nodeH, clusters, laid } = built;
+  if (!clusters.length) return null;
+  const idx = new Map();
+  for (let i = 0; i < nodes.length; i++) idx.set(nodes[i].id, i);
+  const ids = new Set(idx.keys());
+  const lanes = lanesByGen(built);
+
+  const rects = new Map();          // 世代 -> [[上端, 下端], ...]（クラスタ矩形）
+  for (const c of clusters) {
+    const i = idx.get(c.key);
+    if (i === undefined) continue;
+    const top = laid.y[i] - nodeH[i] / 2;
+    if (!rects.has(c.generation)) rects.set(c.generation, []);
+    rects.get(c.generation).push([top, top + nodeH[i]]);
+  }
+
+  // 扇は「親の中心Y」と「全ての子の中心Y」の外接区間。クラスタも子の1つとして数える
+  // （親からクラスタへ向かう幹線も、親のバンドのレーンを横切るため）。
+  const fan = new Map();            // 親の添字 -> [lo, hi]
+  for (let i = 0; i < nodes.length; i++) {
+    const p = effectiveParentId(nodes[i], ids);
+    if (p === null) continue;
+    const pi = idx.get(p);
+    if (pi === undefined || pi === i) continue;
+    if (genOf(nodes[i]) <= genOf(nodes[pi])) continue;   // 同世代・逆行は位置決めの材料にしない
+    let r = fan.get(pi);
+    if (!r) { r = [laid.y[pi], laid.y[pi]]; fan.set(pi, r); }
+    if (laid.y[i] < r[0]) r[0] = laid.y[i];
+    if (laid.y[i] > r[1]) r[1] = laid.y[i];
+  }
+
+  const bad = new Set();
+  for (const [pi, r] of fan) {
+    const g = genOf(nodes[pi]);
+    if ((lanes.get(g) || 1) < 2) continue;               // 1レーンのバンドは横切られない
+    for (const [lo, hi] of (rects.get(g) || [])) {
+      if (r[1] > lo && r[0] < hi) { bad.add(g); break; }
+    }
+  }
+  return bad.size ? bad : null;
+}
+
+/**
+ * 折り返し方（R）を決めて、確定した配置を返す。
+ *
+ * R は「1列あたりの行数」。fit(R) = min(枠W / 中身W(R), 枠H / 中身H(R)) が最大になる
+ * R を総当たりで選ぶ。autoFitZoom が使うのと**同じ式**で、あちらが「与えられた中身に
+ * 拡大率を合わせる」のに対し、こちらは「拡大率が最大になる中身の形を選ぶ」。
+ *
+ * 見積り式ではなく computeTidyY を実回しして測る。高さは本質的にあの関数の出力そのもので、
+ * 別式で近似すると「収まるはずの R」で収まらない。DOM には一切触らないので reflow は 0 回。
+ *
+ * **拡大率との相互誘発は起きない。** min(a/W, b/H) の argmax は (a,b) を同時にスカラー倍
+ * しても変わらない。枠のローカル寸法は 物理 ÷ 拡大率 なので、拡大率が動いても勝つ R は
+ * 変わらない（当初この輪を最大の危険と見ていたが、成立しないことが分かった）。
+ * 揺れるのはカード高が変わったときだけなので、そこにヒステリシスを置く。
+ */
+function chooseWrap(t, agents, hById) {
+  const build = (R, banned) => {
+    const b = buildLayoutNodes(agents, hById, R, banned);
+    b.laid = computeTidyY(b.nodes, b.nodeH);
+    b.R = R;
+    return b;
+  };
+  // 衝突したバンドを折り返しから外して組み直す。banned は増える一方なので必ず止まる。
+  const settle = (R) => {
+    let banned = null;
+    for (let pass = 0; pass < 8; pass++) {
+      const b = build(R, banned);
+      const bad = findFanCollisions(b);
+      if (!bad) return b;
+      banned = banned ? new Set([...banned, ...bad]) : bad;
+    }
+    return build(R, banned);
+  };
+
+  // 折り返さない基準形。R が大きいほど列数は減り、葉の数以上では必ず1列＝クラスタ無し。
+  const flat = settle(Number.MAX_SAFE_INTEGER);
+  const box = fitBox(t);
+  // 隠れているチーム（clientWidth が 0）では測れない。前回の R を保って何もしない。
+  if (!box) return t.wrapR > 0 ? settle(t.wrapR) : flat;
+
+  let maxLeaves = 0;
+  for (const c of buildLayoutNodes(agents, hById, 1, null).clusters) {
+    maxLeaves = Math.max(maxLeaves, c.grid.slots.length);
+  }
+  if (maxLeaves < WRAP_MIN) { t.wrapR = 0; return flat; }
+
+  const headH = bodyOffsetTop(t);
+  const fitOf = (b) => {
+    let w = 0, bands = 0;
+    for (const [, L] of lanesByGen(b)) { w += L * AGENT_W + (L - 1) * BAND_GAP; bands++; }
+    if (bands > 1) w += (bands - 1) * BAND_GAP;
+    const h = headH + b.laid.height;
+    return (w > 0 && h > 0) ? Math.min(box.w / w, box.h / h) : 0;
+  };
+
+  let best = flat, bestFit = fitOf(flat);
+  for (let R = 1; R <= maxLeaves; R++) {
+    const b = settle(R);
+    const f = fitOf(b);
+    if (f > bestFit) { best = b; bestFit = f; }   // 同点なら小さい R を採らない（決定論的）
+  }
+
+  // いま採用中の R から乗り換えるのは、fit が R_GAIN 倍より良くなるときだけ。
+  // 判定を fit の**比**で見るのが要：fit の絶対値は 1/拡大率でまるごとスケールするので、
+  // 絶対値を閾値と比べると 47% では常に成立し 300% では永久に成立しなくなる。
+  if (t.wrapR > 0 && best.R !== t.wrapR) {
+    const cur = settle(t.wrapR);
+    const curFit = fitOf(cur);
+    if (!(curFit > 0 && bestFit / curFit >= R_GAIN)) return cur;
+  }
+  t.wrapR = best.R;
+  return best;
+}
 
 /** そのチームの .tree-canvas から見た .gen-body の上端（＝世代見出しの高さ）。全列で同じ。 */
 function bodyOffsetTop(t) {
@@ -2937,13 +3353,24 @@ function computeTidyY(agents, heights) {
 /** 実測して縦位置を決め、top で反映する。戻り値は滑らせるべき移動があった機体の数。 */
 function layoutTree(t) {
   const agents = t.layoutOrder.filter((a) => t.cards.has(a.id));
-  if (!agents.length) { t.contentH = 0; return 0; }   // 前のミッションの高さを居座らせない
+  if (!agents.length) {
+    // 前のミッションの高さ・幅・折り返しを居座らせない。clusters を残すと、消えた
+    // 機体の id を指したまま drawLinks が線を引こうとする。
+    t.contentH = 0; t.contentW = 0;
+    t.clusters = []; t.clusteredIds.clear();
+    return 0;
+  }
 
   // 高さは実測する。完了で結果行が増え、モデル名が長いと札が折り返すので一定ではない。
   // getBoundingClientRect ではなく offsetHeight を使う：rect は .agent.born の
   // pop（transform: scale(1.18)）を拾い、生まれた瞬間だけ 1.18 倍の高さを返す。
-  const heights = agents.map((a) => t.cards.get(a.id).root.offsetHeight);
-  const laid = computeTidyY(agents, heights);
+  const hById = new Map();
+  for (const a of agents) hById.set(a.id, t.cards.get(a.id).root.offsetHeight);
+
+  // 折り返し方を決める。クラスタが1つも立たないときは、渡ってくるノード配列が
+  // 機体そのものの並びになるので、以下は従来と完全に同じ計算になる。
+  const built  = chooseWrap(t, agents, hById);
+  const nodes  = built.nodes, nodeH = built.nodeH, laid = built.laid;
   t.contentH = laid.height;   // 自動フォーカスが縦を測るのに使う（DOM は底上げされていて使えない）
 
   // 縦の中央寄せ。木が枠に収まるときだけ中央へ寄せ、はみ出すときは上寄せにする
@@ -2954,26 +3381,89 @@ function layoutTree(t) {
   const pad    = Math.max(0, Math.floor((availH - laid.height) / 2));
   const boxH   = Math.ceil(Math.max(laid.height, availH)) + 'px';
 
+  // バンドのレーン本数を CSS 変数で渡す。非数値を書くと calc が無効になって width:auto に
+  // 落ち、列が潰れる。Number() を通してから整数に丸めるのはそのため。
+  const lanes = lanesByGen(built);
+  const laneSig = [...lanes.keys()].sort((a, b) => a - b).map((g) => g + ':' + lanes.get(g)).join(',');
+  for (const [g, c] of t.cols) {
+    const L = Math.max(1, Math.round(Number(lanes.get(g))) || 1);
+    if (c.col.style.getPropertyValue('--band-lanes') !== String(L)) {
+      c.col.style.setProperty('--band-lanes', String(L));
+    }
+  }
+  // レーンの本数が変わったフレームは、全機を一括で着地させる（下の animate で使う）。
+  // .gen-col の幅にはトランジションを掛けられない（fitContent が offsetWidth を測って
+  // いるので、460ms のあいだ autoFitZoom が中間幅を追いかけて拡大率が脈打つ）。
+  // 幅が瞬間で変わる横で、カードだけが 0.46 秒かけて滑ると、動きが分裂して見える。
+  const lanesChanged = t.laneSig !== null && t.laneSig !== laneSig;
+  t.laneSig = laneSig;
+
   // 絶対配置の子は高さを作らないので、列の高さは明示的に入れる。
   // 入れないと .tree-canvas.scrollHeight まで潰れて親子線が消え、スクロールも効かない。
   for (const [, c] of t.cols) if (c.body.style.height !== boxH) c.body.style.height = boxH;
+
+  // ノードの位置を、機体ごとの (top, left) に展開する。合成ノードはここで葉に開く。
+  // 置く値と drawLinks へ渡す値は、必ずこの1回の計算から出す（二度計算すると
+  // 丸めの差でカードと線がずれる）。
+  const place = new Map();
+  const clusters = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const top = laid.y[i] - nodeH[i] / 2 + pad;
+    const cl  = nodes[i].__cluster;
+    if (!cl) { place.set(nodes[i].id, { top: Math.round(top), left: 0 }); continue; }
+    cl.top  = top;
+    cl.left = 0;
+    cl.generation = nodes[i].generation;
+    for (const s of cl.grid.slots) {
+      place.set(s.id, {
+        top:  Math.round(top + s.dy),
+        left: s.lane * (AGENT_W + BAND_GAP),
+      });
+    }
+    clusters.push(cl);
+  }
+  t.clusters = clusters;
+  t.clusteredIds = built.clusteredIds;
+
+  // 中身の実際の右端。バンドの宣言幅とレーンに置いたカードの右端がずれたとき、
+  // 小さいほうを信じると「もっと拡大してよい」と読まれて右端の機体が枠の外へ出る。
+  // コンテナは最終カードより右へ BUS_PAD_R、下へ BUS_PAD_B はみ出すので、それも足す。
+  let contentW = 0, contentH = laid.height;
+  for (const c of t.cols) {
+    const col = c[1].col;
+    contentW = Math.max(contentW, col.offsetLeft + col.offsetWidth);
+  }
+  for (const cl of clusters) {
+    const colEl = t.cols.get(cl.generation);
+    const base  = colEl ? colEl.col.offsetLeft : 0;
+    contentW = Math.max(contentW, base + cl.grid.w + BUS_PAD_R);
+    contentH = Math.max(contentH, cl.top - pad + cl.grid.h + BUS_PAD_B);
+  }
+  t.contentW = contentW;
+  t.contentH = contentH;
 
   // t.snapNext は「今回だけ滑らせない」の合図。隠れていた画面を出し直したときに立てる。
   // 隠れている間は clientHeight が 0 で、木は詰まった位置に置かれている。出した瞬間に
   // 正しい位置へ**滑らせる**と、木が動いたわけでもないのに毎回カードが 0.5 秒かけて
   // 移動する。動いたように見せてよいのは、本当に木が変わったときだけ。
-  const animate = agents.length <= MAX_ANIMATED && !t.snapNext;
+  const animate = agents.length <= MAX_ANIMATED && !t.snapNext && !lanesChanged;
   const snapped = [];
   let moved = 0;
   for (let i = 0; i < agents.length; i++) {
     const e = t.cards.get(agents[i].id);
-    e.h = heights[i];
-    const top = Math.round(laid.y[i] - heights[i] / 2) + pad;
-    if (e.top === top) continue;
-    if (e.top === null || !animate) { e.root.classList.add('snap'); snapped.push(e.root); }
-    else moved++;
-    e.top = top;
-    e.root.style.top = top + 'px';
+    e.h = hById.get(agents[i].id) || 0;
+    const p = place.get(agents[i].id);
+    if (!p) continue;          // ノード配列に載らなかった機体（起こらない想定の保険）
+    const top  = p.top;
+    const left = p.left;
+    // 判定は (top, left) の組で行う。top だけを見ていると、縦が動かず横だけ動く機体
+    // ——レーンの本数が変わっただけのクラスタの1行目——に left が一度も書かれない。
+    if (e.top === top && e.left === left) continue;
+    if (e.top === null || e.left === null || !animate) {
+      e.root.classList.add('snap'); snapped.push(e.root);
+    } else moved++;
+    if (e.top !== top)   { e.top = top;   e.root.style.top = top + 'px'; }
+    if (e.left !== left) { e.left = left; e.root.style.left = left + 'px'; }
   }
   if (snapped.length) {
     void t.els.gens.offsetHeight;                      // 新しい top を確定させてから
@@ -3068,9 +3558,21 @@ function drawLinks(t) {
   const zf = (base.width > 0 && t.els.canvas.offsetWidth > 0)
              ? base.width / t.els.canvas.offsetWidth : 1;
   const ids = new Set(t.state.agents.map((a) => a.id));
+  const local = (r) => ({                      // 物理px の矩形をローカル座標へ戻す
+    l: (r.left  - base.left) / zf, r: (r.right - base.left) / zf,
+    t: (r.top   - base.top)  / zf, b: (r.bottom - base.top) / zf,
+  });
+  // コンテナは必ず全ての線より下に敷く。SVG は後に書いたものが上に来るので、
+  // 文字列を2本に分けて最後に連結する。
+  let boxes = '';
   let out = '';
   let running = 0;
+  const status = new Map(t.state.agents.map((a) => [a.id, a.status]));
+
   for (const a of t.state.agents) {
+    // クラスタに入った機体へはベジェを引かない（幹線＋行ワイヤ＋スタブが受け持つ）。
+    // 除外し忘れると、レーン1以降のカードへ向かうベジェが手前のカードを正面から貫く。
+    if (t.clusteredIds.has(a.id)) continue;
     const pid = effectiveParentId(a, ids);
     if (!pid) continue;
     const p = t.cards.get(pid), c = t.cards.get(a.id);
@@ -3086,7 +3588,82 @@ function drawLinks(t) {
     out += '<path class="link ' + a.status + '" d="M ' + x1 + ' ' + y1 +
            ' C ' + (x1 + dx) + ' ' + y1 + ', ' + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2 + '"/>';
   }
-  t.els.links.innerHTML = out;
+
+  // --- 葉クラスタ。幹線1本 → 背骨 → 行ごとの横ワイヤ → 各機体の頭上へスタブ。
+  // 座標は実測（getBoundingClientRect）で取る。layoutTree が持っている数値と混ぜないのは、
+  // 460ms のトランジション中に「片方は目標値・片方は途中の位置」になって線がカードから
+  // 外れるため。同じ関数の中で座標系を2つ使わない、というのが既存コードからの決まりごと。
+  for (const cl of t.clusters) {
+    const slots = cl.grid.slots.map((s) => ({ s, e: t.cards.get(s.id) })).filter((x) => x.e);
+    if (!slots.length) continue;
+    const rects = slots.map((x) => ({ ...x, q: local(x.e.root.getBoundingClientRect()) }));
+
+    let bl = Infinity, br = -Infinity, bt = Infinity, bb = -Infinity;
+    for (const x of rects) {
+      if (x.q.l < bl) bl = x.q.l;
+      if (x.q.r > br) br = x.q.r;
+      if (x.q.t < bt) bt = x.q.t;
+      if (x.q.b > bb) bb = x.q.b;
+    }
+    const boxL = bl - BUS_PAD_L, boxR = br + BUS_PAD_R;
+    const boxT = bt - GAP_SIB, boxB = bb + BUS_PAD_B;
+    boxes += '<rect class="hangar" x="' + boxL + '" y="' + boxT +
+             '" width="' + Math.max(1, boxR - boxL) + '" height="' + Math.max(1, boxB - boxT) + '"/>';
+
+    // 行ワイヤは行間の隙間の中央に置く。行の上端から GAP_SIB/2 上が基準だが、
+    // トランジション中は行が重なって隙間が負になりうる。下限を入れないと、
+    // ワイヤが自分の行のカードを貫き、スタブの向きまで反転する。
+    const wires = new Map();
+    for (const x of rects) {
+      const cur = wires.get(x.s.row);
+      const up  = Math.max(BUS_UP_MIN, GAP_SIB / 2);
+      const y   = x.q.t - up;
+      if (!cur) wires.set(x.s.row, { y, x0: x.q.l, x1: x.q.l, items: [x] });
+      else {
+        cur.y = Math.min(cur.y, y);
+        cur.x1 = Math.max(cur.x1, x.q.l);
+        cur.items.push(x);
+      }
+    }
+    const spineX = boxL + BUS_PAD_L / 2;
+    let spineTop = Infinity, spineBot = -Infinity;
+    for (const [, wr] of wires) {
+      spineTop = Math.min(spineTop, wr.y);
+      spineBot = Math.max(spineBot, wr.y);
+    }
+
+    // 幹線: 親カードの右中央 → 分岐点（背骨の縦中央）。既存のベジェと同じ描き方にする。
+    const p = t.cards.get(cl.parentId);
+    if (p) {
+      const pr = local(p.card.getBoundingClientRect());
+      const x1 = pr.r, y1 = (pr.t + pr.b) / 2;
+      const x2 = spineX, y2 = (spineTop + spineBot) / 2;
+      const dx = Math.max(18, (x2 - x1) * 0.5);
+      out += '<path class="bus" d="M ' + x1 + ' ' + y1 + ' C ' + (x1 + dx) + ' ' + y1 +
+             ', ' + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2 + '"/>';
+    }
+    if (spineBot > spineTop) {
+      out += '<path class="bus" d="M ' + spineX + ' ' + spineTop +
+             ' L ' + spineX + ' ' + spineBot + '"/>';
+    }
+    for (const [, wr] of wires) {
+      // 右端は最後のスタブの少し先で止める。最終カードの右端まで引くと、
+      // 1列のクラスタでは線の全長がそのまま尾になって「どこにも繋がらない線」に見える。
+      const endX = wr.x1 + AGENT_W * 0.06;
+      out += '<path class="bus" d="M ' + spineX + ' ' + wr.y + ' L ' + endX + ' ' + wr.y + '"/>';
+      for (const x of wr.items) {
+        // スタブは .robot-slot の上辺へ落とす。.agent の上辺だと、完了して結果行が
+        // 生えたカード（.agent は align-items:center）でロボが下がり、線が空中で終わる。
+        const rs = local(x.e.root.querySelector('.robot-slot').getBoundingClientRect());
+        const sx = (rs.l + rs.r) / 2;
+        const st = status.get(x.s.id) || 'standby';
+        if (st === 'running') running++;
+        out += '<path class="stub ' + st + '" d="M ' + sx + ' ' + wr.y +
+               ' L ' + sx + ' ' + rs.t + '"/>';
+      }
+    }
+  }
+  t.els.links.innerHTML = boxes + out;
   // 流れる破線は stroke-dashoffset を動かすので合成できず、線の本数だけ毎フレーム再ペイントが走る。
   // 少数のうちは動かし、増えたら止める。止めてもシアンの破線で稼働中は読み取れる。
   // 数えるのはそのチームの稼働数だけ。全チームの合計で判定すると、
