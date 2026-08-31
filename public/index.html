@@ -446,7 +446,12 @@ body {
   100% { transform: scale(2.2); opacity: 0; }
 }
 
-.robot-slot { position: relative; width: var(--robot-w); flex: none;
+/* align-self: flex-start が要る理由: .agent は align-items:center なので、既定では
+   ロボがカード高に応じて (カード高 - ロボ高)/2 だけ下がる。線はロボの上辺へ落ちるので、
+   その差がそのままスタブの長さの差になり、同じ行に並んだ機体で線がバラバラの長さに見える
+   （実測で行内 35.84px のばらつき）。上端に固定するとロボの縦位置がカード高から独立し、
+   行内どころか全クラスタでスタブ長が揃う（実測 0.00px）。カード側の高さは変わらない。 */
+.robot-slot { position: relative; width: var(--robot-w); flex: none; align-self: flex-start;
               display: flex; align-items: center; justify-content: center; }
 /* 高さは viewBox(120x166) の比率から計算する。直書きにすると --robot-w を変えた瞬間に
    等倍関係が崩れ、レターボックスでロボがスロット内に浮く。 */
@@ -3135,6 +3140,34 @@ function lanesByGen(built) {
  * 重なったバンドは折り返しをやめて 1 レーンへ戻す。L=1 は常に安全で、レーン数は
  * 単調減少しかしないので、この繰り返しはバンド数回で必ず止まる。
  */
+/**
+ * 各内部節点の「扇」＝親の中心Yと全ての子の中心Yの外接区間を返す（親の添字 -> [lo, hi]）。
+ * クラスタも子の1つとして数える（親からクラスタへ向かう幹線も、親のバンドのレーンを横切るため）。
+ *
+ * findFanCollisions と reserveFanSpace の両方がこれを読む。同じ「扇とは何か」を2箇所に
+ * 書くと、必ず片方だけが直される——衝突を検出する側と、その衝突を避けるために場所を空ける側で
+ * 定義がずれたら、空けたのに衝突が消えないという最悪の壊れ方をする。
+ */
+function computeFans(built) {
+  const { nodes, laid } = built;
+  const idx = new Map();
+  for (let i = 0; i < nodes.length; i++) idx.set(nodes[i].id, i);
+  const ids = new Set(idx.keys());
+  const fan = new Map();            // 親の添字 -> [lo, hi]
+  for (let i = 0; i < nodes.length; i++) {
+    const p = effectiveParentId(nodes[i], ids);
+    if (p === null) continue;
+    const pi = idx.get(p);
+    if (pi === undefined || pi === i) continue;
+    if (genOf(nodes[i]) <= genOf(nodes[pi])) continue;   // 同世代・逆行は位置決めの材料にしない
+    let r = fan.get(pi);
+    if (!r) { r = [laid.y[pi], laid.y[pi]]; fan.set(pi, r); }
+    if (laid.y[i] < r[0]) r[0] = laid.y[i];
+    if (laid.y[i] > r[1]) r[1] = laid.y[i];
+  }
+  return fan;
+}
+
 function findFanCollisions(built) {
   const { nodes, nodeH, clusters, laid } = built;
   if (!clusters.length) return null;
@@ -3152,20 +3185,7 @@ function findFanCollisions(built) {
     rects.get(c.generation).push([top, top + nodeH[i]]);
   }
 
-  // 扇は「親の中心Y」と「全ての子の中心Y」の外接区間。クラスタも子の1つとして数える
-  // （親からクラスタへ向かう幹線も、親のバンドのレーンを横切るため）。
-  const fan = new Map();            // 親の添字 -> [lo, hi]
-  for (let i = 0; i < nodes.length; i++) {
-    const p = effectiveParentId(nodes[i], ids);
-    if (p === null) continue;
-    const pi = idx.get(p);
-    if (pi === undefined || pi === i) continue;
-    if (genOf(nodes[i]) <= genOf(nodes[pi])) continue;   // 同世代・逆行は位置決めの材料にしない
-    let r = fan.get(pi);
-    if (!r) { r = [laid.y[pi], laid.y[pi]]; fan.set(pi, r); }
-    if (laid.y[i] < r[0]) r[0] = laid.y[i];
-    if (laid.y[i] > r[1]) r[1] = laid.y[i];
-  }
+  const fan = computeFans(built);
 
   const bad = new Set();
   for (const [pi, r] of fan) {
@@ -3176,6 +3196,97 @@ function findFanCollisions(built) {
     }
   }
   return bad.size ? bad : null;
+}
+
+/** 予約の打ち切り回数。実測では dummy 2件が 3pass / 2pass で固定点に達した。
+ *  上げても得は無い——下の settle が「1列化より低いときだけ採る」ので、収束しなかった形は
+ *  そのまま1列化に落ちる。上限は「諦めるまでの時間」であって、正しさの条件ではない。 */
+const RESERVE_MAX_PASS = 4;
+
+/**
+ * 内部節点の扇が通る縦幅を、そのバンドの中で場所取りさせる。
+ *
+ * 衝突の正体は「computeTidyY がクラスタを内部節点の**本体**の直下に置く」ことにある。
+ * 内部節点の子は次のバンドに居るので同じバンドの縦の場所取りに参加せず、扇だけが下へはみ出す。
+ * そこで computeTidyY へ渡す高さだけを扇の外接区間まで膨らませ、クラスタを扇の下へ押し下げる。
+ * 扇は「親が子の中点に来る」ため y について対称なので、対称に膨らませれば覆える。
+ *
+ * 守っている約束が3つある。どれも実測で裏を取った上での判断で、外すと静かに壊れる。
+ *
+ *   1. **b.nodeH は1バイトも書き換えない。** 膨らませるのは computeTidyY へ渡すコピーだけ。
+ *      nodeH を直接書き換えると layoutTree の `top = laid.y[i] - nodeH[i]/2` がずれて、
+ *      カードの実位置が壊れる（線だけが正しい位置に残る）。
+ *   2. **多レーンのバンドの内部節点だけ膨らませる。** 1レーンのバンドは横切られようがない。
+ *      無条件に膨らませると、クラスタも衝突も無い普通の木で高さが 594→679(+14%) と
+ *      無駄に伸びる（実測）。
+ *   3. **「いま衝突しているノードだけ」に絞らない。** 絞ると
+ *      衝突解消 → 膨張解除 → 再衝突 → 再膨張 を繰り返して収束しない（実測で8passまで振動）。
+ *      「衝突が消えたこと」を「膨張が要らなかったこと」の証拠に使う自己参照になるため。
+ *
+ * 返すのは同じ b。b.laid だけが差し替わる。
+ */
+function reserveFanSpace(b) {
+  const lanes = lanesByGen(b);
+  let spacingH = b.nodeH.slice();
+  for (let pass = 0; pass < RESERVE_MAX_PASS; pass++) {
+    b.laid = computeTidyY(b.nodes, spacingH);
+    const next = b.nodeH.slice();          // 毎回実寸から作り直す（約束3）
+    for (const [pi, r] of computeFans(b)) {
+      const g = genOf(b.nodes[pi]);
+      if ((lanes.get(g) || 1) < 2) continue;                       // 約束2
+      const y = b.laid.y[pi];
+      next[pi] = Math.max(b.nodeH[pi], 2 * Math.max(y - r[0], r[1] - y));
+    }
+    let same = true;
+    for (let i = 0; i < next.length; i++) if (next[i] !== spacingH[i]) { same = false; break; }
+    if (same) break;
+    spacingH = next;
+  }
+  return b;
+}
+
+/**
+ * 与えられた R で、衝突が無い配置を1つ確定させる。
+ *
+ * 衝突したバンドの収め方は2つあり、**安いほうを実測で選ぶ**。
+ *   予約 …… 扇の縦幅を場所取りして、クラスタを扇の下へ押し下げる（折り返しは保つ）
+ *   1列化 …… そのバンドの折り返しをやめる（従来の手）
+ *
+ * 「衝突が消えたら予約を採る」にしてはいけない。予約が2passで収束して「衝突なし」を返す
+ * **成功経路そのもの**で、1列化より高くなる形が実在する。子の1体がさらに深い部分木を持つと、
+ * 親がその巨大な部分木の中心へ引かれて扇が 4197px まで開き、その全幅が実効高として要求される
+ * （実測: deepchain D=8 で 4328 → 4863px、現行比 +12.4%）。しかもこれは「衝突は解消された」
+ * という正常な信号の下に隠れる。だから高さで直接比べる。
+ *
+ * 比較相手は「このバンドを1列化した直後の高さ」。それ以降のパスで別のバンドがさらに1列化
+ * されれば1列化側はもっと高くなるだけなので、ここで予約が勝てば最終結果にも勝つ。
+ * これで「予約は現行より絶対に高くならない」が構造的に保証される。
+ *
+ * chooseWrap の中の入れ子ではなくトップレベルに置いてあるのは、回帰ゲートが
+ * **この関数そのもの**を index.html から抜き出して回せるようにするため。同じ手順を
+ * テスト側に書き写すと、写した側だけが正しいという状態を検出できない。
+ *
+ * 衝突が無いミッションでは1周目で return するので、予約の費用は 0。
+ */
+function settleWrap(agents, hById, R) {
+  const build = (banned) => {
+    const b = buildLayoutNodes(agents, hById, R, banned);
+    b.laid = computeTidyY(b.nodes, b.nodeH);
+    b.R = R;
+    return b;
+  };
+  let banned = null;
+  for (let pass = 0; pass < 8; pass++) {
+    const b = build(banned);
+    const bad = findFanCollisions(b);
+    if (!bad) return b;
+    const next = banned ? new Set([...banned, ...bad]) : bad;
+    const bBan = build(next);                        // 1列化した場合
+    const bRes = reserveFanSpace(build(banned));     // 予約した場合
+    if (!findFanCollisions(bRes) && bRes.laid.height < bBan.laid.height) return bRes;
+    banned = next;
+  }
+  return build(banned);
 }
 
 /**
@@ -3194,23 +3305,7 @@ function findFanCollisions(built) {
  * 揺れるのはカード高が変わったときだけなので、そこにヒステリシスを置く。
  */
 function chooseWrap(t, agents, hById) {
-  const build = (R, banned) => {
-    const b = buildLayoutNodes(agents, hById, R, banned);
-    b.laid = computeTidyY(b.nodes, b.nodeH);
-    b.R = R;
-    return b;
-  };
-  // 衝突したバンドを折り返しから外して組み直す。banned は増える一方なので必ず止まる。
-  const settle = (R) => {
-    let banned = null;
-    for (let pass = 0; pass < 8; pass++) {
-      const b = build(R, banned);
-      const bad = findFanCollisions(b);
-      if (!bad) return b;
-      banned = banned ? new Set([...banned, ...bad]) : bad;
-    }
-    return build(R, banned);
-  };
+  const settle = (R) => settleWrap(agents, hById, R);
 
   // 折り返さない基準形。R が大きいほど列数は減り、葉の数以上では必ず1列＝クラスタ無し。
   const flat = settle(Number.MAX_SAFE_INTEGER);
@@ -3665,12 +3760,20 @@ function drawLinks(t) {
       spineBot = Math.max(spineBot, wr.y);
     }
 
-    // 幹線: 親カードの右中央 → 分岐点（背骨の縦中央）。既存のベジェと同じ描き方にする。
+    // 幹線: 親カードの右中央 → 分岐点。既存のベジェと同じ描き方にする。
+    // 分岐点は「親に一番近い行ワイヤ」に合わせる。背骨の縦中央にしてはいけない：
+    // 中央は行と行のあいだの何も無い高さになりうるので、幹線が誰にも繋がっていない点へ
+    // 刺さって見える（実測: 行が 68/281/494/741 にあるのに合流点が 404.76 だった）。
     const p = t.cards.get(cl.parentId);
     if (p) {
       const pr = local(p.card.getBoundingClientRect());
       const x1 = pr.r, y1 = (pr.t + pr.b) / 2;
-      const x2 = spineX, y2 = (spineTop + spineBot) / 2;
+      let y2 = spineTop, near = Infinity;
+      for (const [, wr] of wires) {
+        const d = Math.abs(wr.y - y1);
+        if (d < near) { near = d; y2 = wr.y; }
+      }
+      const x2 = spineX;
       const dx = Math.max(18, (x2 - x1) * 0.5);
       out += '<path class="bus" d="M ' + x1 + ' ' + y1 + ' C ' + (x1 + dx) + ' ' + y1 +
              ', ' + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2 + '"/>';
