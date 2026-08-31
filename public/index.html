@@ -2948,15 +2948,19 @@ const R_GAIN        = 1.05; // 折り返し方を変えるのは fit がこの�
 const BUS_PAD_R     = 12;   // クラスタが最終カードの右へ持つ余白（中身の幅の計算用）
 const BUS_PAD_B     = 10;   // 同、最終行の下へ持つ余白
 const BUS_UP_MIN    = 4;    // 行ワイヤを行の上端からどれだけ上に置くかの下限（後述）
+const TOP_PAD_CLUSTER = 32; // クラスタの上に予約する空き。送り線を最上段の溝に通すため。
+// 内訳は、送り線を置く高さ 10px ＋ トランジション中の食い込み 4.4px（実測の最悪値）＋ 余裕。
+// gridSlots の中で cols>1 のときだけ効く。
 // 配線は「列ごとの縦レール」で組む。カードには**左から**入る（通常の親子線と同じ形）。
 // 使う通り道は2つだけで、どちらも実測で裏を取ってある。
 //   ・列と列のあいだの隙間 38px …… カードが1枚も無く、位置が left = 列 × (330+38) の固定式で
 //     決まるのでカード高が変わっても潰れない（幅900〜6000の51サンプルで 37.93〜38.10px、侵入0件、
 //     460ms のトランジション中も 38.04px で不動）。レールはここに立てる。
 //   ・行と行のあいだの溝 …… 列を横切ってよい唯一の高さ。送り線1本だけがここを通る。
-// **クラスタの上の余白（20px）は使えない。** 同じ親が内部節点と葉クラスタの両方を持つと
-// DFS 順で内部節点が真上に来るため、静止時で余白 -0.45〜+0.41px、トランジション中は
-// -4.43px まで食い込む（実測）。スケッチの「上を回る」経路はこの理由で採れない。
+// **クラスタの上には gridSlots が TOP_PAD_CLUSTER ぶんの空きを予約する。** 予約しないと、
+// 同じ親が内部節点と葉クラスタの両方を持つとき DFS 順で内部節点が真上に来て、送り線と
+// その真上のカードの下端との隙間が 7.69px（幅900〜2700を100px刻みで測った最小値）まで詰まり、
+// 460ms のトランジション中は -4.43px まで食い込む。予約を入れて初めて最上段を通せる。
 const RAIL_OFFSET   = 19;   // レールをカードの左端から何px離すか。38px の隙間のちょうど中央。
 // 中央に立てる理由は角の丸みの大きさ。丸みの半径はレールの左に残る余白で頭打ちになり、
 // 28px 離すと左が 9.96px しか空かず、半径 8px までしか取れない。実効拡大率は実測で 0.22〜0.89
@@ -3009,7 +3013,12 @@ function gridSlots(members, hById, R) {
     if (h > rowH[r]) rowH[r] = h;
   }
   const rowTop = new Array(rows);
-  let y = 0;
+  // 列が2本以上になるとき（＝実際にクラスタになるとき）だけ、送り線を通すぶんの空きを
+  // 上に予約する。cols===1 では 0 のままにする：1列に畳んだときレイアウトが1pxも変わらない
+  // ことを gate5 が要求しており、そこは折り返さない場合と同じでなければならない。
+  // **nodeH や cl.top の側に足してはいけない。** 第1行の dy は 0 で箱の上端に一致するので、
+  // 足した分は全部いちばん下に付き、上の空きは1pxも増えない。
+  let y = (cols > 1 ? TOP_PAD_CLUSTER : 0);
   for (let r = 0; r < rows; r++) { rowTop[r] = y; y += rowH[r] + GAP_SIB; }
   const slots = [];
   for (let i = 0; i < n; i++) {
@@ -3784,12 +3793,20 @@ function drawLinks(t) {
     const p  = t.cards.get(cl.parentId);
     const pr = p ? local(p.card.getBoundingClientRect()) : null;
     const y1 = pr ? (pr.t + pr.b) / 2 : null;
-    let feedY = null, near = Infinity;
+    // 送り線・レール・フックが使う高さは**最上段の溝**。クラスタの上を回って、列と列の
+    // あいだを下りてくる形になる。gridSlots が cols>1 のとき上に TOP_PAD_CLUSTER を
+    // 予約しているので、この高さにカードは来ない。
+    let feedY = Infinity;
+    for (const [, gy] of gutter) if (gy < feedY) feedY = gy;
+    if (!isFinite(feedY)) continue;
+    // 幹線だけは従来どおり「親に一番近い溝」へ着ける。最上段へ着けると、親とクラスタの
+    // あいだに別世代のカードが 9〜13枚あるケース（実測 BRAVO / ALPHA-1 / CHARLIE-1-A）で
+    // 縦に 220〜602px 動き、そのカードを貫く。差は1列目のレールへの角1本で吸収する。
+    let feedSpine = feedY, near = Infinity;
     for (const [, gy] of gutter) {
       const d = (y1 === null) ? gy : Math.abs(gy - y1);
-      if (d < near) { near = d; feedY = gy; }
+      if (d < near) { near = d; feedSpine = gy; }
     }
-    if (feedY === null) continue;
 
     let railL = Infinity, railR = -Infinity;
     for (const [, r] of rails) {
@@ -3810,7 +3827,23 @@ function drawLinks(t) {
       // 走りが 24px を切ったら下限を下げる（この幅は分岐点を左へ寄せたぶん現実に起こる）。
       const dx = run < 24 ? Math.max(6, run * 0.5) : Math.max(18, run * 0.5);
       out += '<path class="bus spine" d="M ' + x1 + ' ' + y1 + ' C ' + (x1 + dx) + ' ' + y1 +
-             ', ' + (x2 - dx) + ' ' + feedY + ', ' + x2 + ' ' + feedY + '"/>';
+             ', ' + (x2 - dx) + ' ' + feedSpine + ', ' + x2 + ' ' + feedSpine + '"/>';
+      // 幹線の着地（feedSpine）と送り線（feedY）の高さが違うときは、1列目のレールへ
+      // 角ひとつで入る。縦の移動が列と列のあいだの隙間（レールの x）の中だけで起きるので、
+      // カードを貫かない。幹線をそのまま最上段へ着けると、ここが 220〜602px の斜めになり、
+      // 親とクラスタのあいだにあるカード（実測で 9〜13枚）を必ず貫く。
+      let hi0 = -Infinity;
+      for (const [, r] of rails) if (r.x === railL) for (const x of r.items) {
+        const sy = x.cy - RAIL_HOOK_UP;
+        if (sy > hi0) hi0 = sy;
+      }
+      const aE = Math.max(0, Math.min(FORK_R, hi0 - feedSpine));
+      if (feedSpine - feedY > 0.5 && aE > 0.5) {
+        out += '<path class="bus" d="M ' + forkL + ' ' + feedSpine +
+               ' C ' + (forkL + FORK_K * FORK_R) + ' ' + feedSpine +
+               ', ' + railL + ' ' + (feedSpine + (1 - FORK_K) * aE) +
+               ', ' + railL + ' ' + (feedSpine + aE) + '"/>';
+      }
     }
     // 送り線: 行の溝を1本だけ横に走り、各列の分岐点へ配る。
     // 以前は行の数だけ横ワイヤを引いていた（実測で最大 799px が16本）。ここが1本になる。
@@ -3848,11 +3881,35 @@ function drawLinks(t) {
       if (hi - feedY <= 0.5 && feedY - lo <= 0.5) {
         out += '<path class="bus" d="M ' + fx + ' ' + feedY + ' L ' + r.x + ' ' + feedY + '"/>';
       }
+      // 機体ごとの専有トランク。レールの縦区間を「次に分かれる機体」ごとに切り、
+      // その1本しか通らない区間にだけ状態色を載せる。区間どうしは端点で接するだけで
+      // 重ならないので、共有された線を塗ったときの「4体中1体の稼働で列の全長がシアンに
+      // 見える」は起きない（同じ x の直線なので、y の区間が素であることがそのまま根拠）。
+      // 中立色のレール（branch）はそのまま下に残す：線としての連続性と、宙に浮く端点を
+      // 作らないことは、引き続き中立色の側が担保する。
+      for (const dir of [1, -1]) {
+        const taps = r.items.filter((x) => dir * (x.cy - RAIL_HOOK_UP - feedY) > 0.5)
+                            .sort((a, b) => dir * (a.cy - b.cy));
+        if (!taps.length) continue;
+        // 起点は角の終わり。角より内側に機体がいるときは、その機体の分岐点で止める。
+        let cursor = feedY + dir * Math.min(FORK_R, dir * (taps[0].cy - RAIL_HOOK_UP - feedY));
+        for (const x of taps) {
+          const sy = x.cy - RAIL_HOOK_UP;
+          if (dir * (sy - cursor) > 0.5) {
+            // ここで running を数えないこと。下のフックのループが同じ機体を数えており、
+            // 二重に数えると .calm へ落ちる閾値が実質半分になる。
+            out += '<path class="stub ' + (status.get(x.s.id) || 'standby') + '" d="M ' +
+                   r.x + ' ' + cursor + ' L ' + r.x + ' ' + sy + '"/>';
+          }
+          cursor = sy;
+        }
+      }
       for (const x of r.items) {
         // フック: レールから縦の接線で分かれ、ロボの左端へ水平の接線で入る。
         // 外接矩形は x∈[レール, ロボ左端]、y∈[cy-RAIL_HOOK_UP, cy] で、どちらも隙間の中。
-        // **状態色を持つのはここだけ。** レールと送り線に色を載せると、同じ隙間を通る線が
-        // 重なって塗り合い、4体中1体しか稼働していない列が全長シアンに見える（試作で実測）。
+        // 状態色を持つのは、このフックと、上の「機体ごとの専有トランク」だけ。送り線・角・
+        // レール本体は複数の機体で共有するので色を載せない。載せると重なって塗り合い、
+        // 4体中1体しか稼働していない列が全長シアンに見える（試作で実測）。
         const st = status.get(x.s.id) || 'standby';
         if (st === 'running') running++;
         const sy = x.cy - RAIL_HOOK_UP;
