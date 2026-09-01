@@ -1808,6 +1808,12 @@ function switchTab(key) {
   // カードだけが横滑りする。
   t.snapNext = true;
   if (t.state) scheduleLayout(t);
+  // **ここで付いていかないと、初回に引いた線が古い座標のまま残る。**
+  // 隠れていた器を出した直後は、カードの寸法と位置が 600ms ほど動き続ける（実測：親カードの
+  // 右端が 193.7 → 397 → 408 → 330）。1フレームだけ引いても、その1フレームが動いている
+  // 途中なら線はそこで固まる。ResizeObserver では足りない：寸法しか見ないので、中のロボが
+  // 遅れて現れてカードが右へずれる動きを拾えず、実測でも発火が止まったあとにまだ動いていた。
+  followMoves(t, 1200);
 }
 
 function markTabActive(key) {
@@ -3831,8 +3837,11 @@ function scheduleLayout(t) {
 }
 
 /** top のトランジション中だけ線を引き直す。有限ループで、木が動いたときしか走らない。 */
-function followMoves(t) {
-  t.followUntil = performance.now() + MOVE_MS + 80;
+function followMoves(t, ms) {
+  // ms を渡さなければ移動のトランジション1回ぶん。長く付いていきたい場面（タブを開いた
+  // 直後など、トランジションではない理由でカードが動き続ける場面）では明示して伸ばす。
+  const until = performance.now() + (ms || MOVE_MS + 80);
+  if (!(t.followUntil > until)) t.followUntil = until;
   if (t.followRaf) return;
   const step = () => {
     drawLinks(t);
