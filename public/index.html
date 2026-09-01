@@ -3997,6 +3997,13 @@ function drawLinks(t) {
     const ep    = n > 1 ? Math.min(EXIT_PITCH, usable / (n - 1)) : 0;
     kids.sort((a, b) => a.ct - b.ct);                       // 行き先が上のものほど出口も上
     kids.forEach((k, idx) => { k.ey = f.py + (idx - (n - 1) / 2) * ep; });
+    // 出口と行き先の高さの差が 2R より小さいと、四分円が2つ背中合わせに並んで S 字の段差になり、
+    // 半径がその段差の半分（実測 2.1〜8.2px）で頭打ちになる。差が小さいときは段差を作らず、
+    // 出口を行き先の高さちょうどに合わせて水平1本で届かせる。ct の順序は変わらないので、
+    // 出口の並び順（＝交差ゼロの前提）も保たれる。カードの右辺から出られる範囲に限る。
+    for (const k of kids) {
+      if (Math.abs(k.ct - k.ey) < 2 * FLOW_R && k.ct >= f.pt && k.ct <= f.pb) k.ey = k.ct;
+    }
 
     // --- 左回廊のトラック。
     //     交差ゼロの規則（崩すと必ず交差が出る）:
