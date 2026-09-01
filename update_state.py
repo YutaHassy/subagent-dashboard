@@ -459,7 +459,7 @@ def cmd_add(args) -> None:
         print(notice)
 
 
-def measure_from_records(project: dict, agent: dict):
+def measure_from_records(project: dict, agent: dict, state: dict):
     """完了した1体の実測値を、Claude Code が書いた記録から取り直す。取れなければ None。
 
     Workflow ツールで班を回すと完了通知が最後に1回しか来ないため、各機体の所要時間も
@@ -469,15 +469,20 @@ def measure_from_records(project: dict, agent: dict):
 
     livefeed 側は、対応する機体が一意に決まらなければ None を返す。曖昧なまま書くと
     別の機体の数字を記録に永久に残すことになり、画面のちらつきと違って後から直せない。
+    同じミッションの他の機体も渡すのは、その指示文が隣の機体の名前にも触れているなら
+    「本人だ」と言えないため（班全体への共通の前置きが渡っている場合に起きる）。
     """
     try:
         import livefeed
+        others = [a for a in (state.get("agents") or [])
+                  if isinstance(a, dict) and a.get("id") != agent.get("id")]
         return livefeed.measure_for(
             dashlib.as_str(project.get("path")),
             dashlib.as_str(agent.get("name")),
             dashlib.as_str(agent.get("model")),
             dashlib.as_str(agent.get("startedAt")),
             dashlib.as_str(agent.get("mission")),
+            others,
         )
     except Exception:
         return None
@@ -499,7 +504,7 @@ def cmd_done(args) -> None:
     tokens, tools = args.tokens, args.tools
     filled = None
     if tokens is None or tools is None or args.sec is None:
-        got = measure_from_records(project, agent)
+        got = measure_from_records(project, agent, state)
         if got:
             filled = got.get("agentId")
             if args.sec is None and got.get("elapsedSec") is not None:

@@ -95,7 +95,22 @@ def write_agent(subagents: Path, agent_id: str, *, start: float, cwd: str,
 
 
 def write_mission(missions: Path, slug: str, *, project_path: str, started: float,
-                  agents: list) -> None:
+                  agents: list, keep_others: bool = False) -> None:
+    if not keep_others:
+        # 同じ場所で何本ものミッションが同時に「稼働中」で残っているのは、実運用では
+        # 起きない形（起きるときは --project で分けた2本まで）。検査は場面ごとに
+        # 記録を積み増していくので、明示的に前の場面を締めておかないと、
+        # 「隣のチームがその機体を欲しがっている」という判定に毎回引っかかる。
+        for d in missions.iterdir() if missions.exists() else []:
+            f = d / "state.json"
+            if not f.exists() or d.name == slug:
+                continue
+            try:
+                v = json.loads(f.read_text(encoding="utf-8"))
+                v["mission"]["phase"] = "done"
+                f.write_text(json.dumps(v, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception:
+                pass
     (missions / slug).mkdir(parents=True, exist_ok=True)
     (missions / slug / "agents").mkdir(exist_ok=True)
     state = {
@@ -121,6 +136,8 @@ def reset(livefeed, *, sticky: bool = True) -> None:
     livefeed._enum_cache["at"] = 0.0
     livefeed._ledger["at"] = 0.0
     livefeed._ledger["taken"] = {}
+    livefeed._peer_cache["at"] = 0.0
+    livefeed._peer_cache["keys"] = {}
     if sticky:
         livefeed._sticky.clear()
 
@@ -368,6 +385,120 @@ def main() -> int:
         check("_ 始まりのキーが漏れていない", leaked, [])
         leaked_o = sorted(k for o in st["sources"]["liveOrphans"] for k in o if k.startswith("_"))
         check("孤児側にも漏れていない", leaked_o, [])
+
+        # ここから下は、レビューで実際に見つかった欠陥をそのまま固定したもの。
+        # どれも「静かに間違える」種類の壊れ方で、画面を見ても気づけなかった。
+
+        print()
+        print("[18] 先頭行が長くても素性を失わない（バイト数と文字数の取り違え）")
+        # 日本語の指示文は JSON のエスケープ込みで1文字が 1.7 バイト前後になる。
+        # 読み取りの上限を文字数の定数に合わせると行が途中で切れ、cwd ごと失って
+        # その機体が候補列挙から丸ごと落ちる（live にも孤児にも出ない）。
+        session6 = "55555555-2222-3333-4444-555555555555"
+        sub6 = live_root / slug / session6 / "subagents"
+        long_prompt = "観点: 長い指示文の機体。" + ("これは長い日本語の前置きである。" * 4000)
+        write_agent(sub6, "long1", start=started + 50, cwd=project_path, session=session6,
+                    model="sonnet", description="", workflow_run="wf_long",
+                    prompt=long_prompt,
+                    tools=[("Bash", {"description": "長い指示で動く"}, 0)], tokens=(1, 2, 600))
+        line_bytes = len((sub6 / "workflows" / "wf_long" / "agent-long1.jsonl")
+                         .read_bytes().split(b"\n")[0])
+        check("検査データの先頭行が十分に長い（>53KB）", line_bytes > 53 * 1024, True)
+        reset(livefeed)
+        got = livefeed.describe([e for e in livefeed.enumerate_agents()
+                                 if e["agentId"] == "long1"][0])
+        check("cwd を失わない", livefeed.norm_path(got["cwd"]), livefeed.norm_path(project_path))
+        check("指示文を失わない", "観点: 長い指示文の機体。" in got["prompt"], True)
+        write_mission(data_home / "missions", "t12", project_path=project_path, started=started,
+                      agents=[rec("L1", "観点: 長い指示文の機体", "claude-sonnet-5", started + 50)])
+        reset(livefeed)
+        st = dashlib.build_state("t12")
+        check("長い指示文でも結べる", (st["agents"][0]["live"] or {}).get("agentId"), "long1")
+
+        print()
+        print("[19] 同じ場所で2本走っているとき、隣のチームの機体を取らない")
+        # --project で名前を分けても、実際に動いている場所は同じなので project.path が
+        # 一致する。証拠の無い規則（候補が1つしか残っていないから、これだろう）は、
+        # その1つが隣のチームの機体でも同じように成り立ってしまう。
+        write_mission(data_home / "missions", "t13", project_path=project_path, started=started,
+                      agents=[rec("OWN", "観点: 長い指示文の機体", "claude-sonnet-5", started + 50)])
+        write_mission(data_home / "missions", "t14", project_path=project_path, started=started,
+                      agents=[rec("OTHER", "無関係な班", "claude-sonnet-5", started + 50)],
+                      keep_others=True)
+        reset(livefeed)
+        st_other = dashlib.build_state("t14")
+        check("証拠の無い隣のチームには載せない", st_other["agents"][0]["live"], None)
+        reset(livefeed)
+        st_own = dashlib.build_state("t13")
+        check("証拠のあるチームには載る", (st_own["agents"][0]["live"] or {}).get("agentId"), "long1")
+
+        print()
+        print("[20] 焼き付けは身元の裏付けが取れたときだけ（候補が1体でも省略しない）")
+        # Workflow 経由の実機は description が空なので、名前の門番を素通りする。
+        # 「たまたま1体しか残らなかった」で焼き付けると、別の機体の数字が記録に永久に残る。
+        reset(livefeed)
+        got = livefeed.measure_for(project_path, "どこにも出てこない名前", "claude-sonnet-5",
+                                   local_iso(started + 50), "任務も出てこない")
+        check("裏付けが無ければ焼き付けない", got, None)
+        reset(livefeed)
+        got = livefeed.measure_for(project_path, "観点: 長い指示文の機体", "claude-sonnet-5",
+                                   local_iso(started + 50))
+        check("裏付けがあれば焼き付ける", (got or {}).get("agentId"), "long1")
+
+        print()
+        print("[21] 起動時刻が無ければ焼き付けない（時間窓が丸ごと外れるため）")
+        reset(livefeed)
+        got = livefeed.measure_for(project_path, "観点: 長い指示文の機体", "claude-sonnet-5", "")
+        check("startedAt が無ければ諦める", got, None)
+
+        print()
+        print("[22] 読み取り窓より長い1行があっても、読み進みが止まらない")
+        # 1つの tool_result に画像が何枚も入るとありうる。ここで止まると offset が
+        # 永久に進まず、その機体は消えるか、古い値のまま「無風」と表示され続ける。
+        session7 = "44444444-2222-3333-4444-555555555555"
+        sub7 = live_root / slug / session7 / "subagents"
+        write_agent(sub7, "huge1", start=started + 60, cwd=project_path, session=session7,
+                    model="sonnet", description="巨大な行",
+                    tools=[("Bash", {"description": "大きな出力", "blob": "x" * 20000}, 0),
+                           ("Read", {"file_path": "/after/huge.py"}, 5)], tokens=(1, 2, 700))
+        huge_path = sub7 / "agent-huge1.jsonl"
+        saved_cap = livefeed.MAX_READ_BYTES
+        try:
+            livefeed.MAX_READ_BYTES = 4096      # 実物の 8MB 相当の状況を小さく作る
+            livefeed._file_cache.clear()
+            acc = None
+            for _ in range(12):                 # ティックが何回か来る想定
+                acc = livefeed.read_agent_file(huge_path)
+            check("窓より長い行を跨いで読み切る", acc["toolCalls"], 2)
+            check("最後まで読めている", (acc["lastTool"] or {}).get("name"), "Read")
+        finally:
+            livefeed.MAX_READ_BYTES = saved_cap
+            livefeed._file_cache.clear()
+
+        print()
+        print("[23] 同じ機体を複数スレッドが同時に読んでも二重に数えない")
+        # server.py は ThreadingHTTPServer で、/api/state と /api/run が並行に走る
+        # （タブを1回押すだけで重なる）。キャッシュ済みの集計をそのまま育てると、
+        # 同じ増分を2回数えてツール回数が水増しされる。
+        import threading
+        session8 = "33333333-2222-3333-4444-555555555555"
+        sub8 = live_root / slug / session8 / "subagents"
+        write_agent(sub8, "race1", start=started + 70, cwd=project_path, session=session8,
+                    model="sonnet", description="並行読み",
+                    tools=[("Bash", {"description": "1"}, 0), ("Bash", {"description": "2"}, 1),
+                           ("Bash", {"description": "3"}, 2), ("Bash", {"description": "4"}, 3)],
+                    tokens=(1, 2, 800))
+        race_path = sub8 / "agent-race1.jsonl"
+        livefeed._file_cache.clear()
+        results = []
+        def read_once():
+            results.append(livefeed.read_agent_file(race_path)["toolCalls"])
+        ths = [threading.Thread(target=read_once) for _ in range(16)]
+        for t_ in ths:
+            t_.start()
+        for t_ in ths:
+            t_.join()
+        check("何スレッドから読んでも 4 回", sorted(set(results)), [4])
 
     finally:
         os.environ.pop("AGENT_DASHBOARD_DATA_HOME", None)
