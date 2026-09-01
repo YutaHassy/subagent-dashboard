@@ -3033,20 +3033,22 @@ const BUS_PAD_B     = 10;   // 同、最終行の下へ持つ余白
 // 載せられず（4体中1体の稼働で列の全長がシアンに見える）、分岐点で別の色・別の破線位相の
 // 線が重なる。1辺1本にすれば、その2つは構造ごと消える。
 // 代わりに要るのが「線を通すための余白」で、dagre がランクを空けるのと同じ役割を、
-// クラスタの上に予約する帯（flowTopPad）と列と列のあいだの隙間（BAND_GAP）が担う。
+// クラスタの下に予約する帯（flowBandPad）と列と列のあいだの隙間（BAND_GAP）が担う。
 const FLOW_PITCH   = 8;   // トラックの間隔。1本の辺が占める幅／高さ。
 const FLOW_EDGE    = 8;   // 通り道の端に残す余白。カードや隣の帯に触れないための下駄。
 const FLOW_R       = 14;  // 直交する曲がり角の半径。
-const FLOW_PAD_MAX = 110; // 上帯の高さの上限。葉が多いクラスタでは間隔のほうを詰める。
+const FLOW_PAD_MAX = 110; // 帯の高さの上限。葉が多いクラスタでは間隔のほうを詰める。
 const EXIT_PITCH   = 14;  // 親カードの右辺で、子ごとの出口をどれだけ離すか（上限）。
 const EXIT_MARGIN  = 10;  // 出口をカードの上下端から離す量。
 const LEFT_PAD_MAX = 140; // 左回廊の予約量の上限。超える扇では間隔のほうを詰める。
-/** 上帯（クラスタの真上に予約する空き）の高さ。辺1本につきトラック1本ぶん取る。
- *  レーン0へ向かう辺も上帯を通す。親から斜めに直接ぶら下げると、親とクラスタのあいだに居る
- *  別レーンのカードを貫くため（実測：ALPHA-1 → 測定子d の線が 解析機ブラボー5 を 189点貫通）。
+/** 帯（クラスタの真下に予約する空き）の高さ。辺1本につきトラック1本ぶん取る。
+ *  ここが返すのは**厚みだけ**で、上に置くか下に置くかは呼ぶ側が決める。いまは下に置く。
+ *  通すのはレーン1以降へ向かう辺だけ（レーン0は左回廊からまっすぐ届く）。親から斜めに
+ *  直接ぶら下げる案は捨てた：親とクラスタのあいだに居る別レーンのカードを貫くため
+ *  （実測：ALPHA-1 → 測定子d の線が 解析機ブラボー5 を 189点貫通）。
  *  m=0 のとき 0 を返すのが要点で、これで1列に畳んだクラスタは折り返さない場合と1pxも変わらない
  *  （gate5 がそれを常設で見ている）。 */
-function flowTopPad(m) {
+function flowBandPad(m) {
   return m > 0 ? Math.min(FLOW_PAD_MAX, 2 * FLOW_EDGE + m * FLOW_PITCH) : 0;
 }
 
@@ -3071,7 +3073,7 @@ function flowLaneGap(rows) {
 //   ・列と列のあいだの隙間 38px …… カードが1枚も無く、位置が left = 列 × (330+38) の固定式で
 //     決まるのでカード高が変わっても潰れない（幅900〜6000の51サンプルで 37.93〜38.10px、侵入0件、
 //     460ms のトランジション中も 38.04px で不動）。ここを縦に降りる。
-//   ・クラスタの上に予約した帯（flowTopPad）…… 列を横切ってよい唯一の高さ。ここを横に走る。
+//   ・クラスタの下に予約した帯（flowBandPad）…… 列を横切ってよい唯一の高さ。ここを横に走る。
 // **予約は gridSlots が入れる。** 入れないと、同じ親が内部節点と葉クラスタの両方を持つとき
 // DFS 順で内部節点が真上に来て、線とその真上のカードの下端との隙間が 7.69px（幅900〜2700を
 // 100px刻みで測った最小値）まで詰まり、460ms のトランジション中は -4.43px まで食い込む。
@@ -3119,12 +3121,15 @@ function gridSlots(members, hById, R) {
   }
   const rowTop = new Array(rows);
   // 列が2本以上になるとき（＝実際にクラスタになるとき）だけ、送り線を通すぶんの空きを
-  // 上に予約する。cols===1 では 0 のままにする：1列に畳んだときレイアウトが1pxも変わらない
-  // ことを gate5 が要求しており、そこは折り返さない場合と同じでなければならない。
-  // **nodeH や cl.top の側に足してはいけない。** 第1行の dy は 0 で箱の上端に一致するので、
-  // 足した分は全部いちばん下に付き、上の空きは1pxも増えない。
+  // **下に**予約する。cols===1 では 0 のままにする：1列に畳んだときレイアウトが1pxも
+  // 変わらないことを gate5 が要求しており、そこは折り返さない場合と同じでなければならない。
+  // 予約は h の末尾に足す。第1行の dy は 0 で箱の上端に一致するので、h に足した分は
+  // そのままいちばん下に付く（＝欲しい形）。**箱の高さ h 自体は上に取っていたときと同じ**
+  // なので、computeTidyY が見る寸法も、兄弟との間隔も、キャンバスの高さも動かない。
+  // 空きが箱の中で上から下へ移るだけ。
   const laneGap = flowLaneGap(rows);
-  let y = (cols > 1 ? flowTopPad(n) : 0);
+  const bandPad = (cols > 1 ? flowBandPad(n) : 0);
+  let y = 0;
   for (let r = 0; r < rows; r++) { rowTop[r] = y; y += rowH[r] + GAP_SIB; }
   const slots = [];
   for (let i = 0; i < n; i++) {
@@ -3140,7 +3145,8 @@ function gridSlots(members, hById, R) {
     rows, cols, rowH, rowTop, slots,
     laneGap,
     w: cols * AGENT_W + (cols - 1) * laneGap,
-    h: Math.max(0, y - GAP_SIB),       // 最後に足した GAP_SIB は行間ではないので戻す
+    // 最後に足した GAP_SIB は行間ではないので戻し、代わりに下の帯ぶんを足す。
+    h: Math.max(0, y - GAP_SIB) + bandPad,
   };
 }
 
@@ -3930,7 +3936,7 @@ function drawLinks(t) {
     const q  = local(e.root.getBoundingClientRect());
     const sl = e.root.querySelector('.robot-slot');
     const rs = sl ? local(sl.getBoundingClientRect()) : null;
-    return { lx: q.l, cy: rs ? (rs.t + rs.b) / 2 : (q.t + q.b) / 2, qt: q.t };
+    return { lx: q.l, cy: rs ? (rs.t + rs.b) / 2 : (q.t + q.b) / 2, qt: q.t, qb: q.b };
   };
 
   const slotOf = new Map();
@@ -3959,22 +3965,28 @@ function drawLinks(t) {
     const kids = f.kids;
     if (!kids.length) continue;
 
-    // --- レーン1以降の辺は、クラスタの上に予約した帯を横に走ってから降りる。
-    //     レーン0とクラスタ外の辺は上帯を使わない（左回廊から素直に降りれば届く）。
+    // --- レーン1以降の辺は、クラスタの**下**に予約した帯を横に走ってから上がる。
+    //     レーン0とクラスタ外の辺は帯を使わない（左回廊から素直に届く）。
     const over = kids.filter((k) => k.lane > 0 && k.cl);
     if (over.length) {
       const cl   = over[0].cl;
       const mem  = kids.filter((k) => k.cl === cl);
-      const top  = Math.min.apply(null, mem.map((k) => k.qt));
-      const pad  = flowTopPad(mem.length);
+      const bot  = Math.max.apply(null, mem.map((k) => k.qb));
+      const pad  = flowBandPad(mem.length);
       const tp   = (pad - 2 * FLOW_EDGE) / over.length;
-      // 上帯のトラックは「遠いレーンほど上」。近いレーンの降り口は必ずその下から始まるので、
-      // 遠いレーンの横走りが近いレーンの縦線をまたがない。同じレーンの中は行の順。
-      over.sort((a, b) => (b.lane - a.lane) || (a.row - b.row));
-      over.forEach((k, idx) => { k.ty = top - pad + FLOW_EDGE + idx * tp; });
+      // 帯のトラックは「遠いレーンほど下」。近いレーンの上り口は必ずその上で終わるので、
+      // 遠いレーンの横走りが近いレーンの縦線をまたがない。
+      // **同じレーンの中は行の逆順**（下の行ほど下のトラック）。ここが上に帯を置いていた
+      // ときの裏返しになる：上向きに変わった縦線は、どの行のものも自分より下を必ず通るので、
+      // 浅い行の縦線が深い行の入り脚にかぶさる。深い行を下・右に置くとその重なりが消える。
+      // 実測で確かめた壊れ方：行の順のままだと、行1の入り脚 (770,910)→(792,910) が
+      // 行0の縦線 x=764 を (764,912) で横切った（同じ形がレーン1・2・3の3か所）。
+      over.sort((a, b) => (b.lane - a.lane) || (b.row - a.row));
+      over.forEach((k, idx) => { k.ty = bot + pad - FLOW_EDGE - idx * tp; });
 
-      // 降り口の x。そのレーンのカード左端から左へ、行0を右端にして1本ずつずらす。
-      // 上のトラックほど右で降りる入れ子になるので、横走りが下の行の縦線を横切らない。
+      // 上り口の x。そのレーンのカード左端から左へ、**いちばん下の行を右端**にして
+      // 1本ずつずらす。下のトラックほど右で上がる入れ子になるので、横走りが上の行の
+      // 縦線を横切らず、入り脚も自分より右の縦線（＝自分より下の行）とだけ並ぶ。
       const byLane = new Map();
       for (const k of over) {
         if (!byLane.has(k.lane)) byLane.set(k.lane, []);
@@ -3983,7 +3995,7 @@ function drawLinks(t) {
       for (const [lane, items] of byLane) {
         let laneL = Infinity;
         for (const k of mem) if (k.lane === lane && k.lx < laneL) laneL = k.lx;
-        items.sort((a, b) => a.row - b.row);
+        items.sort((a, b) => b.row - a.row);
         // カードへ入る最後の脚を 2R 確保する。ここを FLOW_EDGE(8) にすると角が半径 4 で
         // 頭打ちになる。トラックはそこからさらに左へ、レーン間隔の残りに収まる間隔で並べる。
         const gap = (over[0].cl.grid.laneGap || BAND_GAP);
@@ -3993,10 +4005,11 @@ function drawLinks(t) {
       }
     }
 
-    // --- 回廊で曲がって向かう先の y。上帯を回る辺は「上帯の高さ」であって行き先のカードではない。
-    //     ここに行き先のカードの y を入れると、上帯を右へ走る横線が、まっすぐ降りる辺の
-    //     縦線を横切る。ty はカードより上にあるので、下向きの群では「行き先がいちばん上」の
-    //     扱いになり、規則によって回廊の右端側のトラックを取る＝縦線は全部その左に来る。
+    // --- 回廊で曲がって向かう先の y。帯を回る辺は「帯の高さ」であって行き先のカードではない。
+    //     ここに行き先のカードの y を入れると、帯を右へ走る横線が、まっすぐ向かう辺の
+    //     縦線を横切る。ty はカードより**下**にあるので、帯を回る辺は扇の中で
+    //     「行き先がいちばん下」になり、出口はカード右辺の下側から出る。下の振り分けは
+    //     ct と ey の大小だけで決まる向きに依らない規則なので、式はそのままでよい。
     for (const k of kids) k.ct = (k.ty !== undefined) ? k.ty : k.cy;
 
     // --- 親カードの右辺に、子ごとの出口を割り当てる。ここを1点に集めると、扇の付け根で
