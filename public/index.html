@@ -681,11 +681,18 @@ body {
    決まらなくなる。共有される線は所属だけを表す中立色にする。
    クラスタを囲む半透明の枠は置かない。列ごとの縦レールと二重になって格子＝表の罫線に
    見えるため（実測の見た目で確認）、まとまりは線の束ね方だけで表す。 */
+/* 中立色も破線にする。実線のまま残すと、同じ木の中で「クラスタの中だけ線種が違う」ので、
+   .link / .stub（破線）とは別の種類の線に見える。周期を .standby の "3 6" と変えてあるのは、
+   同じにすると差が色（.34 と .28）だけになって中立と待機が見分けられなくなるため。
+   キャップを butt にするのは、round だと 2px の破片が丸い粒に見えるため。 */
 .bus         { fill: none; stroke: rgba(139,160,184,.34); stroke-width: 1.6;
-               stroke-linecap: round; }
+               stroke-linecap: butt; stroke-dasharray: 2 5; }
 /* 幹線と送り線だけ太くする。囲いを置かない代わりに「太い幹 → 細い枝 → フック」という
    線の太さの階層でクラスタのまとまりを見せる。 */
 .bus.spine   { stroke-width: 2.3; }
+/* レールの角だけはトランクと同じ太さにする。角（弧長 約25px）は破線にすると点が3〜4個に
+   なり、細いままだと低い拡大率で消える。.bus.spine の後に置くこと（同詳細度・後勝ち）。 */
+.bus.rail    { stroke-width: 2.5; }
 .stub        { fill: none; stroke-width: 2.5; stroke-linecap: round; }
 .stub.standby { stroke: rgba(139,160,184,.28); stroke-dasharray: 3 6; }
 .stub.running { stroke: rgba(62,224,255,.75); stroke-dasharray: 5 4;
@@ -2966,7 +2973,9 @@ const RAIL_OFFSET   = 19;   // レールをカードの左端から何px離す�
 // 28px 離すと左が 9.96px しか空かず、半径 8px までしか取れない。実効拡大率は実測で 0.22〜0.89
 // なので、画面上の丸みは 1.8〜7.1px ＝ 目には直角のまま残る。中央（19px）なら左右とも約19px
 // 空くので半径 16 が取れ、画面上 3.5〜14.2px になる。
-const RAIL_HOOK_UP  = 26;   // フックがレールから分かれる高さ（ロボの縦中央より上）
+const RAIL_HOOK_DN  = 19;   // フックがレールから分かれる高さ（ロボの縦中央より下）。
+// RAIL_OFFSET と同じ 19 にすると、フックが半径19の真円の四分円になる。26 にすると状態色は
+// 増えるが、自分のトランクとの重なりが 6px→8px に増え、レールがさらに 7px 下へ伸びる。
 const FORK_R        = 16;   // 送り線からレールへ分かれる角の半径。横の脚と縦の脚を同じ長さにする。
 // 縦に引き伸ばすと得ではない：横 a・縦 b の楕円弧は、水平な端での曲率半径が a²/b に落ちる。
 // a=8, b=40 なら 1.6px で、直角より鋭く見える。限られた横幅で丸みを最大にするのは等脚の四分円。
@@ -3799,6 +3808,12 @@ function drawLinks(t) {
     let feedY = Infinity;
     for (const [, gy] of gutter) if (gy < feedY) feedY = gy;
     if (!isFinite(feedY)) continue;
+    // 分岐点はロボの縦中央より**下**に置く。上に置くと、フックがレールから縦に離れるあいだ
+    // 「次の機体のトランク」と別の色・別の破線位相で約10px 重なる（実測 36〜132px／クラスタ）。
+    // 下から入れると、重なる相手が必ず自分自身のトランク＝同じ色になる。
+    const forkY = (q) => q.cy + RAIL_HOOK_DN;
+    // 幹線が上からレール0へ下りてきたか。送り線の左端とレール0の下向きの枝が変わる。
+    let rail0FromAbove = false;
     // 幹線だけは従来どおり「親に一番近い溝」へ着ける。最上段へ着けると、親とクラスタの
     // あいだに別世代のカードが 9〜13枚あるケース（実測 BRAVO / ALPHA-1 / CHARLIE-1-A）で
     // 縦に 220〜602px 動き、そのカードを貫く。差は1列目のレールへの角1本で吸収する。
@@ -3823,22 +3838,60 @@ function drawLinks(t) {
     if (pr) {
       const x1 = pr.r, x2 = forkL;
       const run = x2 - x1;
-      // dx の下限 18 は、横の走りが短いときに制御点を親カードの内側へ回り込ませる。
-      // 走りが 24px を切ったら下限を下げる（この幅は分岐点を左へ寄せたぶん現実に起こる）。
-      const dx = run < 24 ? Math.max(6, run * 0.5) : Math.max(18, run * 0.5);
-      out += '<path class="bus spine" d="M ' + x1 + ' ' + y1 + ' C ' + (x1 + dx) + ' ' + y1 +
-             ', ' + (x2 - dx) + ' ' + feedSpine + ', ' + x2 + ' ' + feedSpine + '"/>';
+      // 親が隣の世代列にいるとき、横の走りは BAND_GAP(38) - RAIL_OFFSET(19) - FORK_R(16) = 3px の
+      // 定数になる。そこへ両端が水平接線のベジェを架けると「横3px・縦20〜389px」の J 字＝ツノになる。
+      // この場合だけ、横に走ってから真円の四分円でレール0 へ下りるエルボに切り替える。
+      const SPINE_NEAR_RUN = 24;
+      let hi0e = -Infinity, lo0e = Infinity;
+      for (const [, rr] of rails) if (rr.x === railL) for (const xx of rr.items) {
+        const sy2 = forkY(xx);
+        if (sy2 > hi0e) hi0e = sy2;
+        if (sy2 < lo0e) lo0e = sy2;
+      }
+      // yTop ＝ レール0 で状態色トランクが始まる点。エルボはここで必ず止める。
+      // yBot まで下ろすと、中立色が状態色トランクの真下に戻る（実測 279〜813px）。
+      const yTop = feedY + Math.max(0, Math.min(FORK_R, hi0e - feedY));
+      const yBot = hi0e;
+      const above = (y1 < feedY), runS = railL - x1;
+      const elbowOK = (run < SPINE_NEAR_RUN) && (hi0e - feedY > 0.5)
+                      && (!above || (lo0e >= feedY - 0.5 && forkR > railL));
+      let usedElbow = false;
+      if (elbowOK) {
+        const yEnd = above ? yTop : Math.min(Math.max(y1 + FORK_R, yTop), yBot);
+        const dirE = (yEnd >= y1) ? 1 : -1;
+        const R = Math.min(FORK_R, runS, Math.abs(yEnd - y1));
+        if (R > 1 && runS > 1) {
+          if (above) rail0FromAbove = true;
+          usedElbow = true;
+          const bx = railL - R;
+          out += '<path class="bus spine" d="M ' + x1 + ' ' + y1 + ' L ' + bx + ' ' + y1 + '"/>';
+          let de = 'M ' + bx + ' ' + y1 +
+                   ' C ' + (bx + FORK_K * R) + ' ' + y1 +
+                   ', ' + railL + ' ' + (y1 + dirE * (1 - FORK_K) * R) +
+                   ', ' + railL + ' ' + (y1 + dirE * R);
+          // この尻尾は上の「角だけを描く」の対象外。rail0FromAbove のとき、
+          // [feedY, yTop] の中立色を描くのはこの1本だけになる。
+          if (Math.abs(yEnd - (y1 + dirE * R)) > 0.5) de += ' L ' + railL + ' ' + yEnd;
+          out += '<path class="bus spine" d="' + de + '"/>';
+        }
+      }
+      if (!usedElbow) {
+        // dx の下限 18 は、横の走りが短いときに制御点を親カードの内側へ回り込ませる。
+        const dx = run < 24 ? Math.max(6, run * 0.5) : Math.max(18, run * 0.5);
+        out += '<path class="bus spine" d="M ' + x1 + ' ' + y1 + ' C ' + (x1 + dx) + ' ' + y1 +
+               ', ' + (x2 - dx) + ' ' + feedSpine + ', ' + x2 + ' ' + feedSpine + '"/>';
+      }
       // 幹線の着地（feedSpine）と送り線（feedY）の高さが違うときは、1列目のレールへ
       // 角ひとつで入る。縦の移動が列と列のあいだの隙間（レールの x）の中だけで起きるので、
       // カードを貫かない。幹線をそのまま最上段へ着けると、ここが 220〜602px の斜めになり、
       // 親とクラスタのあいだにあるカード（実測で 9〜13枚）を必ず貫く。
       let hi0 = -Infinity;
       for (const [, r] of rails) if (r.x === railL) for (const x of r.items) {
-        const sy = x.cy - RAIL_HOOK_UP;
+        const sy = forkY(x);
         if (sy > hi0) hi0 = sy;
       }
       const aE = Math.max(0, Math.min(FORK_R, hi0 - feedSpine));
-      if (feedSpine - feedY > 0.5 && aE > 0.5) {
+      if (!usedElbow && feedSpine - feedY > 0.5 && aE > 0.5) {
         out += '<path class="bus" d="M ' + forkL + ' ' + feedSpine +
                ' C ' + (forkL + FORK_K * FORK_R) + ' ' + feedSpine +
                ', ' + railL + ' ' + (feedSpine + (1 - FORK_K) * aE) +
@@ -3847,14 +3900,17 @@ function drawLinks(t) {
     }
     // 送り線: 行の溝を1本だけ横に走り、各列の分岐点へ配る。
     // 以前は行の数だけ横ワイヤを引いていた（実測で最大 799px が16本）。ここが1本になる。
-    if (forkR > forkL) {
-      out += '<path class="bus spine" d="M ' + forkL + ' ' + feedY + ' L ' + forkR + ' ' + feedY + '"/>';
+    // 幹線が上からレール0へ下りてきたときは、送り線の左端はレール0そのもの。
+    // forkL から引くと、その左 FORK_R px が何にも乗らない端点として浮く。
+    const feedLeft = rail0FromAbove ? railL : forkL;
+    if (forkR > feedLeft) {
+      out += '<path class="bus spine" d="M ' + feedLeft + ' ' + feedY + ' L ' + forkR + ' ' + feedY + '"/>';
     }
     for (const [, r] of rails) {
       // レールは送り線と、その列の全フックの分岐点を覆う長さにする。
       let lo = feedY, hi = feedY;
       for (const x of r.items) {
-        const sy = x.cy - RAIL_HOOK_UP;
+        const sy = forkY(x);
         if (sy < lo) lo = sy;
         if (sy > hi) hi = sy;
       }
@@ -3865,17 +3921,21 @@ function drawLinks(t) {
       const branch = (end, dir) => {
         const len = dir * (end - feedY);
         if (len <= 0.5) return '';
+        // 角だけを描き、そこから先のレールの縦は引かない。その区間は機体ごとの
+        // 状態色トランクが 100% 覆っている（実測で覆えていない長さ 0.00px／全10通り）。
+        // 中立色の実線を下に敷くと、破線の隙間から透けて別の線に見える。
         // 枝が FORK_R より短いときは縦だけ縮める。横の脚は変えないので、始点は常に
-        // 送り線か幹線の上に乗り、d の書式も M→C→(L) のまま変わらない。
+        // 送り線か幹線の上に乗る。
         const a = Math.min(FORK_R, len);
-        let d = 'M ' + fx + ' ' + feedY +
-                ' C ' + (fx + FORK_K * FORK_R) + ' ' + feedY +
-                ', ' + r.x + ' ' + (feedY + dir * (1 - FORK_K) * a) +
-                ', ' + r.x + ' ' + (feedY + dir * a);
-        if (len - a > 0.5) d += ' L ' + r.x + ' ' + end;
-        return '<path class="bus" d="' + d + '"/>';
+        const d = 'M ' + fx + ' ' + feedY +
+                  ' C ' + (fx + FORK_K * FORK_R) + ' ' + feedY +
+                  ', ' + r.x + ' ' + (feedY + dir * (1 - FORK_K) * a) +
+                  ', ' + r.x + ' ' + (feedY + dir * a);
+        return '<path class="bus rail" d="' + d + '"/>';
       };
-      out += branch(hi, 1) + branch(lo, -1);
+      // 親がクラスタより上にいるときは、レール0 の下向きの枝を幹線がそのまま兼ねる。
+      // 二重に描くと、中立色が状態色トランクの真下へ戻る（実測 558〜813px）。
+      out += ((rail0FromAbove && r.x === railL) ? '' : branch(hi, 1)) + branch(lo, -1);
       // 上下どちらの枝も立たない列（フックの分岐点がちょうど送り線の高さ）。
       // 何も引かないとフックの根元が送り線から FORK_R px 離れて浮くので、横だけ繋ぐ。
       if (hi - feedY <= 0.5 && feedY - lo <= 0.5) {
@@ -3888,13 +3948,13 @@ function drawLinks(t) {
       // 中立色のレール（branch）はそのまま下に残す：線としての連続性と、宙に浮く端点を
       // 作らないことは、引き続き中立色の側が担保する。
       for (const dir of [1, -1]) {
-        const taps = r.items.filter((x) => dir * (x.cy - RAIL_HOOK_UP - feedY) > 0.5)
+        const taps = r.items.filter((x) => dir * (forkY(x) - feedY) > 0.5)
                             .sort((a, b) => dir * (a.cy - b.cy));
         if (!taps.length) continue;
         // 起点は角の終わり。角より内側に機体がいるときは、その機体の分岐点で止める。
-        let cursor = feedY + dir * Math.min(FORK_R, dir * (taps[0].cy - RAIL_HOOK_UP - feedY));
+        let cursor = feedY + dir * Math.min(FORK_R, dir * (forkY(taps[0]) - feedY));
         for (const x of taps) {
-          const sy = x.cy - RAIL_HOOK_UP;
+          const sy = forkY(x);
           if (dir * (sy - cursor) > 0.5) {
             // ここで running を数えないこと。下のフックのループが同じ機体を数えており、
             // 二重に数えると .calm へ落ちる閾値が実質半分になる。
@@ -3906,17 +3966,17 @@ function drawLinks(t) {
       }
       for (const x of r.items) {
         // フック: レールから縦の接線で分かれ、ロボの左端へ水平の接線で入る。
-        // 外接矩形は x∈[レール, ロボ左端]、y∈[cy-RAIL_HOOK_UP, cy] で、どちらも隙間の中。
+        // 外接矩形は x∈[レール, ロボ左端]、y∈[cy, cy+RAIL_HOOK_DN] で、どちらも隙間の中。
         // 状態色を持つのは、このフックと、上の「機体ごとの専有トランク」だけ。送り線・角・
         // レール本体は複数の機体で共有するので色を載せない。載せると重なって塗り合い、
         // 4体中1体しか稼働していない列が全長シアンに見える（試作で実測）。
         const st = status.get(x.s.id) || 'standby';
         if (st === 'running') running++;
-        const sy = x.cy - RAIL_HOOK_UP;
+        const sy = forkY(x);
         const w  = x.lx - r.x;
         out += '<path class="stub ' + st + '" d="M ' + r.x + ' ' + sy +
-               ' C ' + r.x + ' ' + (sy + RAIL_HOOK_UP * 0.55) +
-               ', ' + (r.x + w * 0.45) + ' ' + x.cy +
+               ' C ' + r.x + ' ' + (sy - FORK_K * RAIL_HOOK_DN) +
+               ', ' + (x.lx - FORK_K * w) + ' ' + x.cy +
                ', ' + x.lx + ' ' + x.cy + '"/>';
       }
     }
