@@ -2372,7 +2372,7 @@ function createTeam(slug, runId, live) {
     // 実際の右端がずれうるので、fitContent は両方の大きいほうを見る。過小評価すると
     // 「もっと拡大してよい」と読まれて右端の機体が黙って枠の外へ出る。
     contentW:     0,
-    wrapR:        0,      // 葉グリッドの1列あたりの行数。0＝未決定（次の start で戻る）
+    wrapMap:      null,   // 親id → その束の1列あたりの行数。null＝未決定（次の start で戻る）
     laneSig:      null,   // バンドごとのレーン本数の署名。変わったフレームは一括着地させる
     clusters:     [],     // layoutTree が確定させた葉クラスタ。drawLinks がこれだけを見る
     clusteredIds: new Set(), // クラスタに属する機体の id。既存のベジェから除外する
@@ -2779,8 +2779,8 @@ function resetView(t) {
   t.contentW = 0;
   // 折り返しの状態も落とす。clusters は消えた機体の id を指したまま残ると、次の
   // layoutTree まで drawLinks が死んだ id を引いて線を描こうとする。
-  // wrapR を 0 に戻すのがラチェットの唯一の完全リセット点（＝ミッションの start）。
-  t.wrapR = 0;
+  // wrapMap を null に戻すのがラチェットの唯一の完全リセット点（＝ミッションの start）。
+  t.wrapMap = null;
   t.laneSig = null;
   t.clusters = [];
   t.clusteredIds.clear();
@@ -3026,6 +3026,7 @@ const MOVE_MS      = 460;  // .agent の top トランジションと同じ長�
 const WRAP_MIN      = 4;    // 葉がこの数以上のときだけクラスタにする
 const MIN_WRAP_COLS = 2;    // 列が1本にしかならないならクラスタにしない（畳む意味がない）
 const R_GAIN        = 1.05; // 折り返し方を変えるのは fit がこの倍率より良くなるときだけ
+const WRAP_MAX_EVAL = 160;  // クラスタ別 R の探索で settleWrap を回してよい回数の上限
 const BUS_PAD_R     = 12;   // クラスタが最終カードの右へ持つ余白（中身の幅の計算用）
 const BUS_PAD_B     = 10;   // 同、最終行の下へ持つ余白
 // 配線は Mermaid のフローチャートと同じ「1辺＝1本の独立した線」で引く。共有のバス
@@ -3216,7 +3217,10 @@ function buildLayoutNodes(agents, hById, R, banned) {
     // （衝突すると computeTidyY の index Map が壊れて木が崩れる）。
     if (eligible.length >= WRAP_MIN && !ids.has(key) &&
         !(banned && banned.has(genOf(eligible[0])))) {
-      const g = gridSlots(eligible, hById, R);
+      // R は数値（木ぜんぶで同じ折り返し）でも Map（親id → その親のクラスタだけの折り返し）
+      // でもよい。Map に無い親は「折り返さない」に倒す（rows=n → cols=1 → 条件4で落ちる）。
+      const rr = (R instanceof Map) ? (R.get(node.id) || Number.MAX_SAFE_INTEGER) : R;
+      const g = gridSlots(eligible, hById, rr);
       if (g.cols >= MIN_WRAP_COLS) grid = g;                // 条件4
     }
 
@@ -3446,9 +3450,14 @@ function settleWrap(agents, hById, R) {
 /**
  * 折り返し方（R）を決めて、確定した配置を返す。
  *
- * R は「1列あたりの行数」。fit(R) = min(枠W / 中身W(R), 枠H / 中身H(R)) が最大になる
- * R を総当たりで選ぶ。autoFitZoom が使うのと**同じ式**で、あちらが「与えられた中身に
- * 拡大率を合わせる」のに対し、こちらは「拡大率が最大になる中身の形を選ぶ」。
+ * R は「1列あたりの行数」で、**クラスタ（＝同じ親の葉の束）ごとに別々に持てる**。
+ * fit = min(枠W / 中身W, 枠H / 中身H) が最大になる組み合わせを選ぶ。autoFitZoom が使うのと
+ * **同じ式**で、あちらが「与えられた中身に拡大率を合わせる」のに対し、こちらは
+ * 「拡大率が最大になる中身の形を選ぶ」。
+ *
+ * 木ぜんぶで R を1つにしていたときは、葉12体の束と葉7体の束が同じ折り返しを強いられ、
+ * どちらにとっても最良でない形で釣り合っていた。クラスタごとに選べるようにすると、
+ * 実測で 6通りの枠すべてで拡大率が上がった（+10.1% 〜 +41.8%）。
  *
  * 見積り式ではなく computeTidyY を実回しして測る。高さは本質的にあの関数の出力そのもので、
  * 別式で近似すると「収まるはずの R」で収まらない。DOM には一切触らないので reflow は 0 回。
@@ -3464,14 +3473,20 @@ function chooseWrap(t, agents, hById) {
   // 折り返さない基準形。R が大きいほど列数は減り、葉の数以上では必ず1列＝クラスタ無し。
   const flat = settle(Number.MAX_SAFE_INTEGER);
   const box = fitBox(t);
-  // 隠れているチーム（clientWidth が 0）では測れない。前回の R を保って何もしない。
-  if (!box) return t.wrapR > 0 ? settle(t.wrapR) : flat;
+  // 隠れているチーム（clientWidth が 0）では測れない。前回の折り返し方を保って何もしない。
+  if (!box) return t.wrapMap ? settle(new Map(t.wrapMap)) : flat;
 
+  // クラスタになりうる葉の束を、親ごとに数える。R=1 は必ず全部を列に開くので、ここに
+  // 出る一覧が「折り返し方を選べる場所」のすべて。大きい束から先に見る（効きが大きく、
+  // 打ち切りが起きても損が小さい）。同数のときは id 順にして探索を決定論的にする。
+  const cls = [];
   let maxLeaves = 0;
   for (const c of buildLayoutNodes(agents, hById, 1, null).clusters) {
+    cls.push({ pid: c.parentId, n: c.grid.slots.length });
     maxLeaves = Math.max(maxLeaves, c.grid.slots.length);
   }
-  if (maxLeaves < WRAP_MIN) { t.wrapR = 0; return flat; }
+  cls.sort((a, b) => (b.n - a.n) || (a.pid < b.pid ? -1 : a.pid > b.pid ? 1 : 0));
+  if (maxLeaves < WRAP_MIN) { t.wrapMap = null; return flat; }
 
   const headH = bodyOffsetTop(t);
   const fitOf = (b) => {
@@ -3485,25 +3500,81 @@ function chooseWrap(t, agents, hById) {
     for (const [g, L] of lanesByGen(b)) { w += L * AGENT_W + (L - 1) * (lg.get(g) || BAND_GAP); bands++; }
     if (bands > 1) w += (bands - 1) * BAND_GAP;
     const h = headH + b.laid.height;
-    return (w > 0 && h > 0) ? Math.min(box.w / w, box.h / h) : 0;
+    return { w, h, fit: (w > 0 && h > 0) ? Math.min(box.w / w, box.h / h) : 0 };
   };
 
-  let best = flat, bestFit = fitOf(flat);
+  // 出発点は「木ぜんぶで同じ R」の中の最良。ここまでは従来と同じ探索で、座標降下は
+  // その上から始める。だからクラスタ別にしても従来の答えより悪くなることは無い。
+  let seed = flat, seedFit = fitOf(flat).fit;
   for (let R = 1; R <= maxLeaves; R++) {
     const b = settle(R);
-    const f = fitOf(b);
-    if (f > bestFit) { best = b; bestFit = f; }   // 同点なら小さい R を採らない（決定論的）
+    const f = fitOf(b).fit;
+    if (f > seedFit) { seed = b; seedFit = f; }   // 同点なら小さい R を採らない（決定論的）
   }
 
-  // いま採用中の R から乗り換えるのは、fit が R_GAIN 倍より良くなるときだけ。
+  // 候補は「列数が変わる R」だけ。同じ列数になる R のうち行が多いほうは、幅が同じで
+  // 高さだけ増えるので必ず負ける（実測: 葉12の2列は R=6..11 の6通りで fit が単調に低下）。
+  const cand = (n) => {
+    const set = new Set();
+    for (let c = 1; c <= n; c++) set.add(Math.ceil(n / c));
+    return [...set].sort((a, b) => a - b);
+  };
+
+  // 同じ形を二度測らない。署名はクラスタの並び順に固定した R の列。
+  const memo = new Map();
+  const evalOf = (m) => {
+    const sig = cls.map((c) => m.get(c.pid)).join(',');
+    let e = memo.get(sig);
+    if (!e) {
+      const b = settle(new Map(m));               // settleWrap は R を持ち帰るので複製を渡す
+      const f = fitOf(b);
+      e = { b, fit: f.fit, w: f.w };
+      memo.set(sig, e);
+    }
+    return e;
+  };
+
+  const cur = new Map();
+  for (const c of cls) {
+    const R = (seed.R === Number.MAX_SAFE_INTEGER) ? c.n : seed.R;
+    cur.set(c.pid, Math.max(1, Math.min(R, c.n)));
+  }
+  let bestE = evalOf(cur);
+  for (let pass = 0; pass < 2; pass++) {
+    let moved = false;
+    for (const c of cls) {
+      if (memo.size >= WRAP_MAX_EVAL) break;
+      const keep = cur.get(c.pid);
+      let bR = keep, bF = bestE.fit, bW = bestE.w;
+      for (const R of cand(c.n)) {
+        if (R === keep || memo.size >= WRAP_MAX_EVAL) continue;
+        cur.set(c.pid, R);
+        const e = evalOf(cur);
+        // 拡大率が上がるなら採る。**同点なら幅の狭いほうを採る**——縦で効いている枠では
+        // 列を1本減らしても fit が動かないことがあり（クラスタが背を伸ばしても木全体の
+        // 高さが変わらない）、そこはただで幅が縮む。厳密な改善しか見ないと取りこぼす。
+        const tie = Math.abs(e.fit - bF) <= bF * 1e-9;
+        if (e.fit > bF * (1 + 1e-9) || (tie && e.w < bW - 0.5)) { bF = e.fit; bW = e.w; bR = R; }
+      }
+      cur.set(c.pid, bR);
+      if (bR !== keep) { moved = true; bestE = evalOf(cur); }
+    }
+    if (!moved) break;                             // 1周まわして誰も動かなければ止まる
+  }
+  let best = bestE.b, bestFit = bestE.fit;
+  if (seedFit > bestFit) { best = seed; bestFit = seedFit; }   // 起こらないはずの向きの保険
+
+  // いま採用中の折り返し方から乗り換えるのは、fit が R_GAIN 倍より良くなるときだけ。
   // 判定を fit の**比**で見るのが要：fit の絶対値は 1/拡大率でまるごとスケールするので、
   // 絶対値を閾値と比べると 47% では常に成立し 300% では永久に成立しなくなる。
-  if (t.wrapR > 0 && best.R !== t.wrapR) {
-    const cur = settle(t.wrapR);
-    const curFit = fitOf(cur);
-    if (!(curFit > 0 && bestFit / curFit >= R_GAIN)) return cur;
+  // 比べられるのはクラスタの顔ぶれが同じときだけ。機体が増減して束が変わったフレームは、
+  // 前回の形を持ち越さずに新しい最良を採る（持ち越すと消えた親の R を引きずる）。
+  if (t.wrapMap && t.wrapMap.size === cls.length && cls.every((c) => t.wrapMap.has(c.pid))) {
+    const prev = settle(new Map(t.wrapMap));
+    const prevFit = fitOf(prev).fit;
+    if (!(prevFit > 0 && bestFit / prevFit >= R_GAIN)) return prev;
   }
-  t.wrapR = best.R;
+  t.wrapMap = new Map(cur);
   return best;
 }
 
@@ -4021,11 +4092,35 @@ function drawLinks(t) {
     kids.forEach((k, idx) => { k.ey = f.py + (idx - (n - 1) / 2) * ep; });
     // 出口と行き先の高さの差が 2R より小さいと、四分円が2つ背中合わせに並んで S 字の段差になり、
     // 半径がその段差の半分（実測 2.1〜8.2px）で頭打ちになる。差が小さいときは段差を作らず、
-    // 出口を行き先の高さちょうどに合わせて水平1本で届かせる。ct の順序は変わらないので、
-    // 出口の並び順（＝交差ゼロの前提）も保たれる。カードの右辺から出られる範囲に限る。
-    for (const k of kids) {
-      if (Math.abs(k.ct - k.ey) < 2 * FLOW_R && k.ct >= f.pt && k.ct <= f.pb) k.ey = k.ct;
-    }
+    // 出口を行き先の高さちょうどに合わせて水平1本で届かせる。
+    //
+    // **ただし隣の出口を追い越してはいけない。** 出口は ct の昇順に割り当ててあり、その順序
+    // そのものが交差ゼロの前提になっている。追い越すと、追い越された辺は反対側へ回ることに
+    // なり、その縦線を追い越した辺の水平線が必ず横切る。実測（dummy-multi-tier）:
+    //   走査子二番の出口が 363 から 336 へ動いて、走査子一番の出口 349 を追い越し、
+    //   一番の縦線 x=2316 を (2316,336) で横切った。高層計1号/2号にも同じ形が出た。
+    // 追い越しかけたときに寄せるのをやめるだけだと段差が 0 と 2R のあいだに残るので、
+    // そのときは**逆に 2R 以上まで離して**角の半径を確保する。どちらも入らないときは
+    // 割り当てられた出口のまま置く（残る段差は前後で向きが打ち消し合う S 字＝角ではない）。
+    // 隣と空ける量は出口の間隔 ep を超えない。超えると、扇が混んでいるときに何も寄せられなくなる。
+    const eg = n > 1 ? Math.max(1, Math.min(FLOW_PITCH, ep)) : 0;
+    let low = -Infinity;
+    kids.forEach((k, idx) => {
+      if (Math.abs(k.ct - k.ey) >= 2 * FLOW_R) { low = k.ey; return; }   // もともと十分離れている
+      const lo = low + eg;
+      const hi = (idx + 1 < n ? kids[idx + 1].ey : Infinity) - eg;
+      const fits = (y) => y >= lo && y <= hi && y >= f.pt && y <= f.pb;
+      if (fits(k.ct)) {                       // ① 高さをそろえて水平1本で届かせる
+        k.ey = k.ct;
+      } else {                                // ② そろえられないなら 2R 以上まで離す
+        const side = k.ey >= k.ct ? 1 : -1;
+        const away = k.ct + side * 2 * FLOW_R;
+        const back = k.ct - side * 2 * FLOW_R;
+        if (fits(away))      k.ey = away;
+        else if (fits(back)) k.ey = back;
+      }
+      low = k.ey;
+    });
 
     // --- 左回廊のトラック。
     //     交差ゼロの規則（崩すと必ず交差が出る）:
