@@ -1,5 +1,5 @@
 @echo off
-rem 古い版（発行元 local）のサブエージェント管制室を VSCode から抜く。
+rem 古い版（発行元 local）の Subagent Dashboard を VSCode から抜く。
 rem 0.4.3 で発行元を変えたため拡張 ID が変わった。VSCode にとっては別物の拡張なので、
 rem 新しいほうを入れても古いほうは残り、2つ並んで動いてしまう。
 rem このファイルは自動生成物（build_vsix.py の CLEANUP_TEMPLATE）。手で直さないこと。
@@ -12,7 +12,7 @@ chcp 932 >nul
 set "OLD_IDS=local.agent-dashboard"
 
 echo.
-echo   古い版のサブエージェント管制室を抜きます
+echo   古い版の Subagent Dashboard を抜きます
 echo   ================================================
 echo.
 
@@ -27,7 +27,8 @@ if not defined CODE (
   echo       お手数ですが、手で抜いてください。
   echo         1. VSCode を開く
   echo         2. Ctrl+Shift+X で拡張機能パネルを開く
-  echo         3. 「管制室」で検索する
+  echo         3. 「Subagent Dashboard」で検索する
+  echo            出てこないときは、検索欄に @installed agent-dashboard と入れる
   echo         4. 発行元が local のほうを右クリックし、アンインストールを選ぶ
   goto :done
 )
@@ -52,7 +53,8 @@ echo.
 if %FAILED% GTR 0 (
   echo   [!] 抜けなかったものがあります。
   echo       VSCode を閉じてからもう一度実行するか、拡張機能パネル（Ctrl+Shift+X）で
-  echo       「管制室」を検索し、発行元が local のほうを手で削除してください。
+  echo       「Subagent Dashboard」または @installed agent-dashboard で探し、
+  echo       発行元が local のほうを手で削除してください。
 ) else if %REMOVED% GTR 0 (
   echo   [OK] 抜きました。VSCode を開いているときは再読み込みしてください。
   echo        Ctrl+Shift+P → Reload Window

@@ -14,7 +14,8 @@ PROJ = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJ)
 
 FILES = ['dashlib.py', 'server.py', 'update_state.py', 'install.py',
-         'diagnose.py', 'auto_setup.py', 'open_dashboard.py', 'dash.py']
+         'diagnose.py', 'auto_setup.py', 'open_dashboard.py', 'dash.py',
+         'livefeed.py']
 
 # 定数を経由して t() へ渡している原文（AST からは literal に見えない）
 EXTRA = ['not created yet']

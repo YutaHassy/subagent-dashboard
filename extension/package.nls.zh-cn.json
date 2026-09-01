@@ -11,6 +11,7 @@
   "cmd.stopServer.title": "停止服务器",
   "cmd.deploy.title": "放置／更新本体",
   "cmd.runSetup.title": "执行初始设置",
+  "cmd.runChangelogSetup.title": "设置变更历史追踪",
   "cmd.resetOnboarding.title": "重置初始设置的标志",
   "cmd.showLog.title": "显示日志",
   "config.title": "Subagent Dashboard",
@@ -28,5 +29,6 @@
   "config.showStatusBar.description": "在状态栏显示 Subagent Dashboard 的按钮。",
   "config.stopServerOnExit.markdownDescription": "关闭 VSCode 时，停止**这个扩展启动的**服务器。在外面启动的服务器不会被碰。",
   "config.runSetupOnFirstRun.markdownDescription": "第一次使用时，询问是否可以执行初始设置（`install.py`）。\n\n执行后会把 Subagent Dashboard 的用法写入 `~/.claude/CLAUDE.md`，并使其能用 `Ctrl+Shift+D` 打开。**绝不会不经确认就执行。** 一旦成功过一次就不会再问（随时都能从命令“执行初始设置”重新执行）。",
+  "config.runChangelogSetupOnFirstRun.markdownDescription": "第一次打开工作区（项目文件夹）时，询问是否可以为该工作区设置变更历史追踪（`changelog_setup.py`）。\n\n这与 `agentDashboard.runSetupOnFirstRun` 是不同的轴：大多数人会在同一台机器上打开多个仓库，所以不是每台机器问一次，而是每个工作区问一次。**绝不会不经确认就执行**，多根工作区也只会自动询问第一个文件夹。一旦对某个工作区成功过（或被拒绝）一次，就不会再为该工作区询问（随时都能从命令“设置变更历史追踪”重新执行）。对话框里还有「任何工作区都不再询问」，选了它之后到处都不会再自动弹出。不在本地文件系统上的文件夹（虚拟工作区）和你没有信任的工作区，一开始就不会去询问（在没有信任的工作区里，仍然可以从命令“设置变更历史追踪”执行）。",
   "config.autoUpdateOnNewVersion.markdownDescription": "更新扩展时，询问是否用内置的本体更新 `~/.claude/agent-dashboard`。不会触碰 `missions/` 等记录。"
 }

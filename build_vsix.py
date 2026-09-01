@@ -59,12 +59,22 @@ PAYLOAD_FILES = [
     "dash.py",              # 統合エントリポイント
     "server.py",            # 配信サーバー
     "dashlib.py",           # 共通ロジック
+    # 稼働中のサブエージェントを Claude Code の記録から実測で読む。dashlib が
+    # assign_live_safely() の中で import する。**必ず配ること。** 配らないと import が
+    # 失敗して、その except に吸われ「live が永久に出ない」という気づけない壊れ方になる。
+    "livefeed.py",
     "i18n.py",              # 文言の切り替え（dashlib が import する）
     "i18n_data.py",         # 文言表 ja/zh/ko。無くても英語で動くが、無いと英語しか出ない
     "i18n_data_update.py",  # 同上（update_state.py の分）
     "i18n_data_install.py", # 同上（install.py の分）
     "update_state.py",      # 状態更新CLI
     "install.py",           # 初期設定
+    # 変更履歴トラッキング（Claude Code 専用）。changelog_cli.py は hooks から、
+    # changelog_setup.py は拡張機能のワークスペース初期設定から呼ばれる。
+    # 3つとも配布先で要る——1つでも欠けると hooks が ImportError で落ちる。
+    "changelog_lib.py",     # 記録・要約・CHANGELOG.md 生成の土台
+    "changelog_cli.py",     # hooks から呼ばれる CLI 本体
+    "changelog_setup.py",   # プロジェクトローカルの初期設定
     "open_dashboard.py",    # キーバインドの旧形式が案内している
     "diagnose.py",          # 完了メッセージが案内している
     "dash.cmd",             # ランチャ（Windows）
@@ -96,6 +106,7 @@ PAYLOAD_SKIP = {
     "package_dist.py",
     "check_wiring.py",
     "check_i18n.py",
+    "check_livefeed.py",
     "check_agents.py",
     "check_lang.py",
     "auto_setup.py",

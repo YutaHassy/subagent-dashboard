@@ -16,3 +16,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# agent-dashboard: Claude Code changelog tracking (auto-added; safe to remove)
+.claude/changelog/log/

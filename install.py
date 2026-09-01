@@ -43,6 +43,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import dashlib  # noqa: E402
+import changelog_lib  # noqa: E402  (変更履歴ブロック用のシェル引用ヘルパー)
 import i18n  # noqa: E402
 from i18n import t  # noqa: E402
 
@@ -83,7 +84,16 @@ def detect_python_command() -> str:
 
 
 def quote(path: str) -> str:
-    """空白を含むパスを安全に渡せるようにする。"""
+    """空白を含むパスを安全に渡せるようにする。
+
+    **これは「人間が cmd.exe / PowerShell に打つ例」用**（README・画面の案内・
+    Subagent Dashboard のブロック）。cmd.exe には単一引用符の概念が無いので
+    二重引用符を使う。
+
+    Claude が Bash ツールで実行する行や hooks.command のように **POSIX シェルへ
+    渡る文字列にはこれを使わない**——バックスラッシュや `$` が化ける。そちらは
+    changelog_lib.sh_quote() / sh_cli_command()（単一引用符）を使うこと。
+    """
     return f'"{path}"' if " " in path else path
 
 
@@ -210,6 +220,7 @@ The target project is detected automatically from the current directory, so the 
 
 - **Do not forget `finish`.** Nothing breaks when you forget, which is exactly why nobody notices. The screen keeps saying "running", and the next time you `start`, that record is left behind as "unfinished" - **it can never be marked complete afterwards**. A reminder to run `finish` appears the moment you mark the last unit `done`, so close the mission when you see it.
 - **Leave out any number that was not in the completion report (`--tokens` / `--tools` / `--sec`); do not estimate it.** Leaving it out shows "—" on the screen, and that is the correct state. Writing an estimate defeats the whole purpose of this dashboard.
+- **Name each unit after wording that actually appears in the instructions you gave it.** The screen then reads that unit's own live record and shows what it is doing right now, plus its measured tool count and tokens. When the name matches nothing, the unit still shows up - listed separately as running but unrecorded - it just is not tied to its card.
 - **`--parent` is what draws the tree.** Leave it out and the unit is filed directly under Command, so the screen shows a single column however deep the team really goes. Pass the parent's `--id` for every unit that a subagent launched rather than you.
 - **Run `add` once per unit; never fold several into one entry.** An entry like "scout team (6)" loses the six members and everything they launched below them, and it cannot be recovered afterwards. When a subagent launches children of its own, put this in that subagent's own instructions: one JSON file per child, carrying **that subagent's own ID as `parentId`**, written into the grandchild self-report directory that `{py} {us} status` prints - `{op}` has the format.
 - **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you write it and shown on the screen exactly as recorded - nothing is translated afterwards. Follow the language of these instructions, not the language of the conversation.
@@ -243,6 +254,51 @@ When you run missions in parallel in the same directory, give each `start` a uni
     return BEGIN + "\n" + VERSION_MARK + tool_version() + " -->\n" + body + END
 
 
+# ---------------------------------------------------------------- 変更履歴ブロック
+#
+# Subagent Dashboard のブロック（上の build_block）とは完全に独立した、第2の
+# ブロック。書く先は CLAUDE.md（"claude" キー）だけ——変更履歴トラッキングは
+# Claude Code 専用の機能で、Codex/AGENTS.md 等は対象外（plan の合意事項どおり）。
+# マーカーは block_markers(CHANGELOG_BLOCK_ID) が生成するので、Subagent Dashboard
+# の BEGIN/END とは文字列として絶対に衝突しない。
+
+CHANGELOG_BLOCK_ID = "changelog"
+
+
+def build_changelog_block(py: str) -> str:
+    """変更履歴トラッキング機能の運用ルール（CLAUDE.md 用、第2のブロック）。
+
+    プロジェクトローカルの `.claude/changelog/` に hooks 経由で自動記録される。
+    ここに書くのは「実行してほしいコマンド」ではなく「Claude 自身への運用ルール」
+    ——hooks は既にプロジェクト側の settings.local.json に別途設定されている
+    （changelog_setup.py の仕事）ので、記録そのものを始めさせる必要はない。
+    """
+    # **ここに書く行は Claude が Bash ツール（＝POSIX シェル）へそのまま打つ。**
+    # だから quote()（cmd.exe 用の二重引用符）ではなく、共通のシェル引用ヘルパーを
+    # 使う。quote() のままだと `python C:\Users\...\changelog_cli.py summarize` と
+    # 引用符なしで書かれ、bash がバックスラッシュを食って
+    # `C:Usersyuta_.claude...` になる（実測）。理屈は changelog_lib の
+    # 「シェル用の引用符付け」の節に1か所だけ書いてある。
+    py = changelog_lib.sh_launcher(py)
+    cli = changelog_lib.sh_quote(str(HERE / "changelog_cli.py"))
+    begin, end = block_markers(CHANGELOG_BLOCK_ID)
+    body = t("""## Claude Code Changelog Tracking
+
+Some projects have Claude Code changelog tracking configured (project-local, under `.claude/changelog/` in that project). It is a separate feature from Subagent Dashboard above: it records what *you* changed in that project and why, not subagent missions. If `.claude/changelog/` does not exist in the current project, none of this applies to you here.
+
+When it is configured for the current project:
+
+- **Recording itself is fully automatic. You never have to run anything to make an entry exist.** A hook already logs every Edit/Write/NotebookEdit/Bash call to a raw log as you work — that part needs no action from you.
+- **At a natural breakpoint in the session, proactively call `summarize` yourself, on your own judgement, rather than waiting to be forced:**
+  ```
+  {py} {cli} summarize --session <id> --headline "<what changed and why, one line>" --body "<details, optional>"
+  ```
+  Run `{py} {cli} status` first if you need the current session's id — it lists any session for this project that still has unsummarized entries. A Stop hook exists as a safety net that blocks the end of a session if nothing has been summarized yet; treat hitting that as a fallback you would rather avoid, not the normal way this gets done.
+- **Write only what you can actually back up from the raw log. Never invent a headline or body.** If you are not sure what happened in the session, run `{py} {cli} status --session <id>` (or `list`) first and summarize from what it shows — do not guess or pad the description to sound more complete than it is.
+""").format(py=py, cli=cli)
+    return begin + "\n" + body + end
+
+
 class BrokenMarkerError(Exception):
     """運用ルールファイルのマーカーが片方しか無い（手で編集して壊れた）。
 
@@ -251,35 +307,68 @@ class BrokenMarkerError(Exception):
     """
 
 
-def _find_blocks(text: str) -> list[tuple[int, int]]:
-    """BEGIN..END で囲まれた範囲を全部返す。[(開始, 終了(END の直後)), ...]"""
+def block_markers(block_id: str | None = None) -> tuple[str, str]:
+    """ブロックIDに対応する BEGIN/END マーカーを返す。
+
+    **block_id を省略（None）したときは、Subagent Dashboard の元からの単一固定
+    マーカー（dashlib.BLOCK_BEGIN/BLOCK_END）をそのまま返す。この既定値は絶対に
+    変えない。** dashlib.block_installed()/block_version() がこの2つの文字列を
+    直接探しにいく作りなので、ここを変えると既存プロジェクトの「もう設定済み」
+    判定・版数判定が黙って壊れる。
+
+    block_id を渡すと、それ専用の独立したマーカー
+    （例: "changelog" → "<!-- agent-dashboard:changelog:begin -->"）を返す。
+    複数のブロックを同じファイルに共存させても、マーカー文字列が重ならない限り
+    互いに干渉しない（_find_blocks はマーカー文字列の完全一致でしか探さない）。
+    """
+    if not block_id:
+        return BEGIN, END
+    return (
+        "<!-- agent-dashboard:%s:begin -->" % block_id,
+        "<!-- agent-dashboard:%s:end -->" % block_id,
+    )
+
+
+def _find_blocks(text: str, block_id: str | None = None) -> list[tuple[int, int]]:
+    """begin..end で囲まれた範囲を全部返す。[(開始, 終了(end の直後)), ...]
+
+    block_id 省略時は従来どおり Subagent Dashboard の固定マーカーを探す。
+    """
+    begin, end = block_markers(block_id)
     spans: list[tuple[int, int]] = []
     i = 0
     while True:
-        start = text.find(BEGIN, i)
+        start = text.find(begin, i)
         if start == -1:
             return spans
-        end = text.find(END, start + len(BEGIN))
-        if end == -1:
+        stop = text.find(end, start + len(begin))
+        if stop == -1:
             return spans
-        spans.append((start, end + len(END)))
-        i = end + len(END)
+        spans.append((start, stop + len(end)))
+        i = stop + len(end)
 
 
-def apply_block(text: str, block: str) -> tuple[str, str, int]:
+def apply_block(text: str, block: str, block_id: str | None = None) -> tuple[str, str, int]:
     """マーカーで囲まれた範囲だけを差し替える。
+
+    block_id を省略すると、従来どおり Subagent Dashboard の固定マーカーを使う
+    （呼び出し側を変えなくてよい後方互換。既存の呼び出しは全部これに当たる）。
+    第2のブロック（changelog など）を書くときは block_id にそのブロックの名前を
+    渡す——他のブロックのマーカーには一切触れないので、同じファイルに複数の
+    独立したブロックを共存させられる。
 
     (新しい内容, 何をしたか, 片付けた重複ブロックの数) を返す。**2番目は表示文では
     なく符牒**（created / appended / updated）にしてある。表示文を返すと、呼び手が
     それを文に埋め込むことになり、訳した瞬間に文法が壊れる。
     """
-    spans = _find_blocks(text)
+    begin, end = block_markers(block_id)
+    spans = _find_blocks(text, block_id)
 
     if not spans:
-        if BEGIN in text or END in text:
+        if begin in text or end in text:
             raise BrokenMarkerError(
                 t("the markers ({begin} / {end}) are not paired")
-                .format(begin=BEGIN, end=END)
+                .format(begin=begin, end=end)
             )
         if not text.strip():
             return block + "\n", "created", 0
@@ -287,25 +376,30 @@ def apply_block(text: str, block: str) -> tuple[str, str, int]:
         return text + sep + block + "\n", "appended", 0
 
     # 1つ目があった場所に新しいブロックを置く。過去の二重書き込みで2つ以上ある場合は
-    # 余りを取り除く（マーカーの外にある記述には触らない）。
+    # 余りを取り除く（マーカーの外にある記述には触らない。他のブロックのマーカーは
+    # block_markers(block_id) が返す文字列と一致しないので _find_blocks には引っかから
+    # ず、無条件に無傷のまま残る）。
     at = spans[0][0]
     out = text
-    for start, end in reversed(spans):
-        out = out[:start] + out[end:]
+    for start, stop in reversed(spans):
+        out = out[:start] + out[stop:]
     out = out[:at] + block + out[at:]
 
     return out, "updated", len(spans) - 1
 
 
-def remove_block(text: str) -> tuple[str, bool]:
-    """BEGIN..END の範囲を全部取り除く。マーカーの外は触らない。"""
-    spans = _find_blocks(text)
+def remove_block(text: str, block_id: str | None = None) -> tuple[str, bool]:
+    """begin..end の範囲を全部取り除く。マーカーの外・他のブロックは触らない。
+
+    block_id 省略時は従来どおり Subagent Dashboard の固定マーカーを対象にする。
+    """
+    spans = _find_blocks(text, block_id)
     if not spans:
         return text, False
     out = text
-    for start, end in reversed(spans):
+    for start, stop in reversed(spans):
         head = out[:start].rstrip("\n")
-        tail = out[end:].lstrip("\n")
+        tail = out[stop:].lstrip("\n")
         if head and tail:
             out = head + "\n\n" + tail
         elif head:
@@ -937,6 +1031,12 @@ def do_install(print_only: bool, agent_choice: str = "auto") -> int:
                   .format(name=target.name, path=target))
         print(block)
         print()
+        if "claude" in agents:
+            changelog_target = dashlib.instruction_file("claude")
+            print(t("What will be added to {name} ({path}) (changelog tracking block):")
+                  .format(name=changelog_target.name, path=changelog_target))
+            print(build_changelog_block(py))
+            print()
         print(t("The entry that will be added to keybindings.json ({path}):")
               .format(path=keybindings_target))
         print(json.dumps(keybinding_entry, indent=4, ensure_ascii=False))
@@ -1022,6 +1122,34 @@ def do_install(print_only: bool, agent_choice: str = "auto") -> int:
     _box(t("Step 3/4: Writing to the config files"))
     print()
 
+    # **1文字も書く前に**、変更履歴ブロック（CLAUDE.md の第2ブロック）のマーカーが
+    # 壊れていないかだけ先に確かめる。以前はこの検査が下の書き込みループの後に
+    # あったため、「マーカーが壊れているので中止します」と言いながら、その時点で
+    # CLAUDE.md の本体ブロックは既に書き終わっていた——「1つでも書けなければ
+    # 止める」という上の規律と食い違う。検査はここで、書き込みはこれまでどおり
+    # 下で行う（本体ブロックの書き込みは changelog のマーカーに触らないので、
+    # ここで通れば下でも通る）。
+    if "claude" in agents:
+        precheck_target = dashlib.instruction_file("claude")
+        precheck_existing = ""
+        if precheck_target.is_file():
+            try:
+                precheck_existing = precheck_target.read_text(encoding="utf-8")
+            except OSError as e:
+                print(t("  ✗ Error: cannot read {path} ({err})")
+                      .format(path=precheck_target, err=e), file=sys.stderr)
+                return 1
+        try:
+            apply_block(precheck_existing, build_changelog_block(py), CHANGELOG_BLOCK_ID)
+        except BrokenMarkerError as e:
+            print(t("  ✗ Error: {path} cannot be touched ({err})")
+                  .format(path=precheck_target, err=e), file=sys.stderr)
+            print(t("    Writing now would wipe out your own text the next time "
+                    "--uninstall runs."), file=sys.stderr)
+            print(t("    Pair up the markers in {path}, then run this again.")
+                  .format(path=precheck_target), file=sys.stderr)
+            return 1
+
     # 書けない CLI が1つでもあれば止める。**残りに書いて成功と表示しない。**
     # 片方だけ書けた状態は、次に起動する CLI によって動いたり動かなかったりする
     # 一番たちの悪い壊れ方で、しかも成功と出ていたら誰も疑わない。
@@ -1071,6 +1199,66 @@ def do_install(print_only: bool, agent_choice: str = "auto") -> int:
         print("    " + str(target))
         print(t("    (only the marked block is updated; "
                 "anything already there is kept)"))
+
+    # 変更履歴トラッキングの運用ルール（第2の独立したブロック）は Claude Code
+    # (CLAUDE.md) だけに書く。上のループ（Subagent Dashboard 用）とは完全に別処理
+    # ——巻き込んで失敗させると、Claude Code しか入れていない環境で不要な依存が
+    # 生まれる。"claude" が対象に含まれていなければ何もしない。
+    if "claude" in agents:
+        changelog_target = dashlib.instruction_file("claude")
+        changelog_block = build_changelog_block(py)
+        changelog_existing = ""
+        if changelog_target.is_file():
+            try:
+                changelog_existing = changelog_target.read_text(encoding="utf-8")
+            except OSError as e:
+                print(t("  ✗ Error: cannot read {path} ({err})")
+                      .format(path=changelog_target, err=e), file=sys.stderr)
+                return 1
+
+        try:
+            # ここに来る時点で上の事前検査を通っている（＝通常この except には
+            # 落ちない）。残してあるのは、検査と書き込みの間に誰かが手で
+            # CLAUDE.md を編集した場合の保険。
+            changelog_updated, changelog_action, changelog_tidied = apply_block(
+                changelog_existing, changelog_block, CHANGELOG_BLOCK_ID)
+        except BrokenMarkerError as e:
+            print(t("  ✗ Error: {path} cannot be touched ({err})")
+                  .format(path=changelog_target, err=e), file=sys.stderr)
+            print(t("    Writing now would wipe out your own text the next time "
+                    "--uninstall runs."), file=sys.stderr)
+            print(t("    Pair up the markers in {path}, then run this again.")
+                  .format(path=changelog_target), file=sys.stderr)
+            return 1
+
+        if changelog_updated == changelog_existing:
+            print(t("  ✓ {name} (changelog tracking block) is already up to date (no change)")
+                  .format(name=changelog_target.name))
+        else:
+            try:
+                write_text_atomic(changelog_target, changelog_updated)
+            except OSError as e:
+                print(t("  ✗ Error: cannot write to {path} ({err})")
+                      .format(path=changelog_target, err=e), file=sys.stderr)
+                return 1
+
+            if changelog_action == "created":
+                print(t("  ✓ {name} was created (changelog tracking block).")
+                      .format(name=changelog_target.name))
+            elif changelog_action == "appended":
+                print(t("  ✓ The changelog tracking block was appended to {name}.")
+                      .format(name=changelog_target.name))
+            elif changelog_tidied:
+                print(t("  ✓ {name} was updated (changelog tracking block; "
+                        "also tidied up {n} duplicated old blocks).")
+                      .format(name=changelog_target.name, n=changelog_tidied))
+            else:
+                print(t("  ✓ {name} was updated (changelog tracking block).")
+                      .format(name=changelog_target.name))
+            print("    " + str(changelog_target))
+            print(t("    (only the marked block is updated; "
+                    "anything already there is kept — including the "
+                    "Subagent Dashboard block above)"))
 
     # keybindings.json を更新（VSCode が実際に読む場所）
     kb_status, kb_msg = install_keybinding(keybindings_target)
@@ -1218,7 +1406,7 @@ def do_uninstall() -> int:
     failed = False
 
     # 運用ルールファイルから削除
-    for _, target in targets:
+    for key, target in targets:
         name = target.name
         if not target.is_file():
             print(t("  {name} does not exist.").format(name=name))
@@ -1231,15 +1419,30 @@ def do_uninstall() -> int:
             return 1
 
         cleaned, removed = remove_block(existing)
-        if removed:
+        removed_changelog = False
+        if key == "claude":
+            # 変更履歴トラッキングの第2ブロックも同じファイルから外す（CLAUDE.md
+            # 限定。build_changelog_block 参照）。同じ読み書きの中でまとめて処理し、
+            # ファイルへの書き込みは1回で済ませる。
+            cleaned, removed_changelog = remove_block(cleaned, CHANGELOG_BLOCK_ID)
+
+        if removed or removed_changelog:
             try:
                 write_text_atomic(target, cleaned)
             except OSError as e:
                 print(t("Error: cannot write to {path} ({err})")
                       .format(path=target, err=e), file=sys.stderr)
                 return 1
-            print(t("  Removed the settings from {name} "
-                    "(anything else was left alone).").format(name=name))
+            if removed and removed_changelog:
+                print(t("  Removed the Subagent Dashboard and changelog tracking "
+                        "settings from {name} (anything else was left alone).")
+                      .format(name=name))
+            elif removed_changelog:
+                print(t("  Removed the changelog tracking settings from {name} "
+                        "(anything else was left alone).").format(name=name))
+            else:
+                print(t("  Removed the settings from {name} "
+                        "(anything else was left alone).").format(name=name))
             removed_any = True
         else:
             print(t("  {name} has no settings from this tool.").format(name=name))

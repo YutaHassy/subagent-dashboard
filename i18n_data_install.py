@@ -46,6 +46,7 @@ The target project is detected automatically from the current directory, so the 
 
 - **Do not forget `finish`.** Nothing breaks when you forget, which is exactly why nobody notices. The screen keeps saying "running", and the next time you `start`, that record is left behind as "unfinished" - **it can never be marked complete afterwards**. A reminder to run `finish` appears the moment you mark the last unit `done`, so close the mission when you see it.
 - **Leave out any number that was not in the completion report (`--tokens` / `--tools` / `--sec`); do not estimate it.** Leaving it out shows "—" on the screen, and that is the correct state. Writing an estimate defeats the whole purpose of this dashboard.
+- **Name each unit after wording that actually appears in the instructions you gave it.** The screen then reads that unit's own live record and shows what it is doing right now, plus its measured tool count and tokens. When the name matches nothing, the unit still shows up - listed separately as running but unrecorded - it just is not tied to its card.
 - **`--parent` is what draws the tree.** Leave it out and the unit is filed directly under Command, so the screen shows a single column however deep the team really goes. Pass the parent's `--id` for every unit that a subagent launched rather than you.
 - **Run `add` once per unit; never fold several into one entry.** An entry like "scout team (6)" loses the six members and everything they launched below them, and it cannot be recovered afterwards. When a subagent launches children of its own, put this in that subagent's own instructions: one JSON file per child, carrying **that subagent's own ID as `parentId`**, written into the grandchild self-report directory that `{py} {us} status` prints - `{op}` has the format.
 - **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you write it and shown on the screen exactly as recorded - nothing is translated afterwards. Follow the language of these instructions, not the language of the conversation.
@@ -101,6 +102,7 @@ BLOCK_JA = """## Subagent Dashboard
 
 - **`finish` を忘れないでください。** 打ち忘れても何も壊れないので気づけません。画面には「稼働中」と出続け、次に `start` したときその記録は「未完」として残り、**あとから完了にはできません**。最後の1体を `done` にした時点で `finish` の催促が出るので、それを見たら締めてください。
 - **完了通知に含まれていなかった数値（`--tokens` / `--tools` / `--sec`）は推定せず省略してください。** 省略すれば画面に「—」と表示され、それが正しい状態です。推定値を書くのはこのダッシュボードの目的を壊す行為です。
+- **`--name` には、その機体へ渡した指示文に実際に出てくる語句を使ってください。** そうすると画面がその機体の記録を読み、いま何をしているか・ツール回数・トークンを実測で出せます。名前がどれにも当たらない機体も消えはしませんが、カードには紐づかず「記録に無い稼働中の機体」として別に並びます。
 - **系統樹を描いているのは `--parent` です。** 付けないとその機体は指令塔の直下に置かれ、実際は何世代に展開していても画面は1列のままになります。自分ではなくサブエージェントが起動した機体には、必ず親の `--id` を渡してください。
 - **`add` は1体につき1回で、複数体を1件にまとめないでください。** 「調査班（6名）」のような1件は、6体とその配下に展開した機体を丸ごと失い、**あとから復元できません**。サブエージェント自身に子を起動させる場合は、**そのサブエージェント自身のIDを `parentId` にした**JSONを子1体につき1ファイル、`{py} {us} status` が表示する孫の自己申告フォルダへ書き出すよう、起動時の指示文に含めてください（形式は `{op}`）。
 - **自由記述は日本語で書いてください**（`--title` / `--name` / `--mission` / `--headline`）。書いたとおりに記録され、記録したとおりに画面へ出ます——あとから翻訳はされません。会話の言語ではなく、この指示の言語に合わせてください。
@@ -154,6 +156,7 @@ BLOCK_ZH = """## Subagent Dashboard
 
 - **请不要忘记 `finish`。** 忘了敲也不会坏掉任何东西，所以察觉不到。画面上会一直显示「运行中」，下次 `start` 时那条记录会作为「未完成」留下，**事后无法再改成完成**。把最后一体置为 `done` 的时点会出现 `finish` 的催促，看到它就请收尾。
 - **完成通知里没有的数值（`--tokens` / `--tools` / `--sec`）请不要估算，直接省略。** 省略后画面上会显示「—」，那才是正确的状态。写上估算值是破坏这个面板目的的行为。
+- **`--name` 请使用该机体所收到的指令文中实际出现的词句。** 这样画面就能读取该机体自己的记录，实测显示它此刻在做什么、工具次数和词元数。名字对不上的机体也不会消失，只是不与卡片绑定，而是另外列为「未记录但在运行的机体」。
 - **绘制树状结构的是 `--parent`。** 不加的话，那一体会直接归在指挥部之下，无论团队实际展开到多深，画面都会显示为一列。不是由你而是由子代理启动的每一体，都请传入其父级的 `--id`。
 - **每一体运行一次 `add`，绝不要把多体合并为一条记录。** 像「侦察小队（6名）」这样的条目会丢失那6体及其下方启动的所有单位，而且事后无法恢复。当子代理自行启动子级时，请在该子代理的启动指示中包含以下内容：为每个子级写入一个 JSON 文件，**将该子代理自身的 ID 作为 `parentId`**，写入 `{py} {us} status` 显示的孙级自我报告目录——格式见 `{op}`。
 - **自由文本请用中文书写**（`--title` / `--name` / `--mission` / `--headline`）。会照你写下的样子记录，照记录的样子显示在画面上——事后不会翻译。请对齐这份指示的语言，而不是对话的语言。
@@ -207,6 +210,7 @@ BLOCK_KO = """## Subagent Dashboard
 
 - **`finish` 를 잊지 마세요.** 잊고 치지 않아도 아무것도 망가지지 않기 때문에 알아챌 수 없습니다. 화면에는 계속 「가동 중」이라고 나오고, 다음에 `start` 했을 때 그 기록은 「미완」으로 남으며, **나중에 완료로 만들 수는 없습니다**. 마지막 한 대를 `done` 으로 만든 시점에 `finish` 를 재촉하는 안내가 나오므로, 그것을 보면 마무리하세요.
 - **완료 보고에 들어 있지 않던 수치(`--tokens` / `--tools` / `--sec`)는 추정하지 말고 생략하세요.** 생략하면 화면에 「—」로 표시되며, 그것이 올바른 상태입니다. 추정값을 적는 것은 이 대시보드의 목적을 망가뜨리는 행위입니다.
+- **`--name` 에는 그 기체에 준 지시문에 실제로 나오는 어구를 쓰세요.** 그러면 화면이 그 기체의 기록을 읽어 지금 무엇을 하고 있는지, 도구 횟수와 토큰을 실측으로 보여줍니다. 이름이 어디에도 맞지 않는 기체도 사라지지는 않지만 카드에 연결되지 않고 「기록에 없는 가동 중인 기체」로 따로 표시됩니다.
 - **계통도를 그리는 것은 `--parent` 입니다.** 붙이지 않으면 그 기체는 지령탑 바로 아래에 놓이며, 실제로는 몇 세대까지 전개되어 있어도 화면에는 한 열로만 표시됩니다. 자신이 아니라 서브에이전트가 띄운 기체에는 반드시 부모의 `--id` 를 넘겨주세요.
 - **`add` 는 한 대마다 한 번 실행하고, 여러 대를 한 건으로 합치지 마세요.** 「조사반(6명)」 같은 한 건은 여섯 대와 그 아래에 띄운 기체를 전부 잃게 만들며, 나중에 복원할 수 없습니다. 서브에이전트가 자신의 자식을 띄우는 경우에는, 자식 한 대마다 **그 서브에이전트 자신의 ID를 `parentId`로 넣은** JSON 파일 하나를 `{py} {us} status`가 표시하는 손자 자체 보고 폴더에 쓰도록 띄울 때의 지시문에 포함하세요(형식은 `{op}`).
 - **자유 기술은 한국어로 쓰세요**(`--title` / `--name` / `--mission` / `--headline`). 적은 그대로 기록되고, 기록된 그대로 화면에 나옵니다——나중에 번역되지 않습니다. 대화의 언어가 아니라 이 지시의 언어에 맞추세요.
@@ -236,10 +240,98 @@ BLOCK_KO = """## Subagent Dashboard
 - 서로 다른 디렉터리에서 도는 미션끼리는 기록 위치가 원래 다르므로 `--project` 는 필요 없습니다.
 """
 
+# ------------------------------------------------------------ CLAUDE.md 本文（変更履歴トラッキング）
+#
+# install.build_changelog_block() が書き込む第2のブロックの本文。Subagent Dashboard
+# のブロック（上）とは独立していて、書き先は CLAUDE.md だけ。
+# 差し込み {py} {cli} は install.py 側で .format() する。
+
+CHANGELOG_BLOCK_EN = """## Claude Code Changelog Tracking
+
+Some projects have Claude Code changelog tracking configured (project-local, under `.claude/changelog/` in that project). It is a separate feature from Subagent Dashboard above: it records what *you* changed in that project and why, not subagent missions. If `.claude/changelog/` does not exist in the current project, none of this applies to you here.
+
+When it is configured for the current project:
+
+- **Recording itself is fully automatic. You never have to run anything to make an entry exist.** A hook already logs every Edit/Write/NotebookEdit/Bash call to a raw log as you work — that part needs no action from you.
+- **At a natural breakpoint in the session, proactively call `summarize` yourself, on your own judgement, rather than waiting to be forced:**
+  ```
+  {py} {cli} summarize --session <id> --headline "<what changed and why, one line>" --body "<details, optional>"
+  ```
+  Run `{py} {cli} status` first if you need the current session's id — it lists any session for this project that still has unsummarized entries. A Stop hook exists as a safety net that blocks the end of a session if nothing has been summarized yet; treat hitting that as a fallback you would rather avoid, not the normal way this gets done.
+- **Write only what you can actually back up from the raw log. Never invent a headline or body.** If you are not sure what happened in the session, run `{py} {cli} status --session <id>` (or `list`) first and summarize from what it shows — do not guess or pad the description to sound more complete than it is.
+"""
+
+CHANGELOG_BLOCK_JA = """## Claude Code 変更履歴トラッキング
+
+プロジェクトによっては、Claude Code の変更履歴トラッキングが設定されています（プロジェクトローカル。そのプロジェクトの `.claude/changelog/` 配下）。上の Subagent Dashboard とは別の機能で、記録するのはサブエージェントの編成ではなく、**あなた自身がそのプロジェクトで何を・なぜ変更したか**です。いま作業しているプロジェクトに `.claude/changelog/` が無ければ、ここでは関係ありません。
+
+いま作業しているプロジェクトで設定されている場合:
+
+- **記録そのものは完全に自動です。記録を残すために何かを実行する必要はありません。** 作業中の Edit/Write/NotebookEdit/Bash はすべて hook が生ログへ書いています——その部分であなたがすることは何もありません。
+- **セッションの区切りがついたところで、強制されるのを待たず、自分の判断で `summarize` を呼んでください:**
+  ```
+  {py} {cli} summarize --session <id> --headline "<何を・なぜ変えたか、一行で>" --body "<詳細（任意）>"
+  ```
+  いまのセッションIDが必要なら、先に `{py} {cli} status` を実行してください——このプロジェクトで未要約の記録が残っているセッションが出ます。何も要約されないままセッションが終わろうとすると Stop hook が安全網として止めますが、それは避けたい最後の受け皿であって、通常の書き方ではありません。
+- **生ログから裏付けられることだけを書いてください。見出しや本文を捏造しないこと。** そのセッションで何があったか自信が持てないときは、先に `{py} {cli} status --session <id>`（または `list`）を実行し、出てきたものだけを踏まえて要約してください——推測で埋めたり、実際より充実して見えるように盛ったりしないこと。
+"""
+
+CHANGELOG_BLOCK_ZH = """## Claude Code 变更历史追踪
+
+有些项目配置了 Claude Code 的变更历史追踪（保存在项目本地，即该项目的 `.claude/changelog/` 下）。它与上面的 Subagent Dashboard 是两个功能：记录的不是子代理的编成，而是**你自己在那个项目里改了什么、为什么改**。如果当前项目里没有 `.claude/changelog/`，这一节在这里就与你无关。
+
+当前项目配置了它时:
+
+- **记录本身完全自动。为了留下一条记录，你不需要执行任何命令。** 你工作中的每一次 Edit/Write/NotebookEdit/Bash 都已由 hook 写入原始日志——这部分不需要你动手。
+- **在会话告一段落时，不要等着被强制，自己判断并主动调用 `summarize`:**
+  ```
+  {py} {cli} summarize --session <id> --headline "<改了什么、为什么，一行>" --body "<详情（可选）>"
+  ```
+  如果需要当前会话的 id，先执行 `{py} {cli} status`——它会列出这个项目里仍有未汇总记录的会话。若什么都没汇总就想结束会话，Stop hook 会作为安全网拦下来；但那是你宁可避免的兜底，不是正常的写法。
+- **只写你能从原始日志中确认的内容。绝不要编造标题或正文。** 如果你不确定这次会话里发生了什么，先执行 `{py} {cli} status --session <id>`（或 `list`），只根据它显示的内容来汇总——不要靠猜测填补，也不要把描述写得比实际更充实。
+"""
+
+CHANGELOG_BLOCK_KO = """## Claude Code 변경 이력 추적
+
+일부 프로젝트에는 Claude Code 변경 이력 추적이 설정되어 있습니다(프로젝트 로컬. 해당 프로젝트의 `.claude/changelog/` 아래). 위의 Subagent Dashboard 와는 별개의 기능으로, 기록하는 것은 서브에이전트의 편성이 아니라 **당신 자신이 그 프로젝트에서 무엇을 왜 바꿨는지**입니다. 지금 작업 중인 프로젝트에 `.claude/changelog/` 가 없다면 여기서는 해당되지 않습니다.
+
+지금 작업 중인 프로젝트에 설정되어 있는 경우:
+
+- **기록 자체는 완전히 자동입니다. 기록을 남기기 위해 무언가를 실행할 필요는 없습니다.** 작업 중의 Edit/Write/NotebookEdit/Bash 는 모두 hook 이 원본 로그에 쓰고 있습니다——그 부분에서 당신이 할 일은 없습니다.
+- **세션이 한 단락 지어지는 지점에서, 강제되기를 기다리지 말고 스스로 판단해 `summarize` 를 호출하세요:**
+  ```
+  {py} {cli} summarize --session <id> --headline "<무엇을 왜 바꿨는지, 한 줄로>" --body "<상세(선택)>"
+  ```
+  지금 세션의 id 가 필요하면 먼저 `{py} {cli} status` 를 실행하세요——이 프로젝트에서 아직 요약되지 않은 기록이 남아 있는 세션이 나옵니다. 아무것도 요약되지 않은 채 세션이 끝나려 하면 Stop hook 이 안전망으로 막지만, 그것은 피하고 싶은 최후의 받침이지 평소의 방식이 아닙니다.
+- **원본 로그로 뒷받침할 수 있는 것만 쓰세요. 제목이나 본문을 지어내지 마세요.** 그 세션에서 무슨 일이 있었는지 확신이 서지 않으면 먼저 `{py} {cli} status --session <id>`(또는 `list`)를 실행하고, 거기 나온 것만을 근거로 요약하세요——추측으로 메우거나 실제보다 충실해 보이도록 부풀리지 마세요.
+"""
+
 CATALOG: dict[str, dict[str, str]] = {}
 
 # ============================================================ 日本語
 CATALOG["ja"] = {
+    # ---- install: CLAUDE.md に書き込む本文（変更履歴トラッキングのブロック）
+    CHANGELOG_BLOCK_EN: CHANGELOG_BLOCK_JA,
+
+    '    (only the marked block is updated; anything already there is kept — including the Subagent Dashboard block above)':
+        '    （マーカーで囲まれた範囲のみ更新。既存の記述は保持されます——上の Subagent Dashboard のブロックも含めて）',
+    'What will be added to {name} ({path}) (changelog tracking block):':
+        '{name}（{path}）に追記される内容（変更履歴トラッキングのブロック）:',
+    '  ✓ {name} (changelog tracking block) is already up to date (no change)':
+        '  ✓ {name} は最新です（変更履歴トラッキングのブロック。変更なし）',
+    '  ✓ {name} was created (changelog tracking block).':
+        '  ✓ {name} を新規作成しました（変更履歴トラッキングのブロック）',
+    '  ✓ The changelog tracking block was appended to {name}.':
+        '  ✓ {name} に変更履歴トラッキングのブロックを追記しました',
+    '  ✓ {name} was updated (changelog tracking block; also tidied up {n} duplicated old blocks).':
+        '  ✓ {name} を更新しました（変更履歴トラッキングのブロック。重複していた古いブロック {n} 個も整理）',
+    '  ✓ {name} was updated (changelog tracking block).':
+        '  ✓ {name} を更新しました（変更履歴トラッキングのブロック）',
+    '  Removed the Subagent Dashboard and changelog tracking settings from {name} (anything else was left alone).':
+        '  {name} から Subagent Dashboard と変更履歴トラッキングの設定を削除しました（他の記述はそのままです）',
+    '  Removed the changelog tracking settings from {name} (anything else was left alone).':
+        '  {name} から変更履歴トラッキングの設定を削除しました（他の記述はそのままです）',
+
     # ---- install: CLAUDE.md に書き込む本文
     BLOCK_EN: BLOCK_JA,
 
@@ -478,6 +570,28 @@ CATALOG["ja"] = {
 
 # ============================================================ 中文（简体）
 CATALOG["zh"] = {
+    # ---- install: CLAUDE.md に書き込む本文（変更履歴トラッキングのブロック）
+    CHANGELOG_BLOCK_EN: CHANGELOG_BLOCK_ZH,
+
+    '    (only the marked block is updated; anything already there is kept — including the Subagent Dashboard block above)':
+        '    （只更新标记包围的范围，既有内容都会保留——包括上面的 Subagent Dashboard 块）',
+    'What will be added to {name} ({path}) (changelog tracking block):':
+        '将写入 {name}（{path}）的内容（变更历史追踪的块）:',
+    '  ✓ {name} (changelog tracking block) is already up to date (no change)':
+        '  ✓ {name} 已是最新（变更历史追踪的块，无变化）',
+    '  ✓ {name} was created (changelog tracking block).':
+        '  ✓ 已新建 {name}（变更历史追踪的块）',
+    '  ✓ The changelog tracking block was appended to {name}.':
+        '  ✓ 已向 {name} 追加变更历史追踪的块',
+    '  ✓ {name} was updated (changelog tracking block; also tidied up {n} duplicated old blocks).':
+        '  ✓ 已更新 {name}（变更历史追踪的块；同时整理了重复的旧块 {n} 个）',
+    '  ✓ {name} was updated (changelog tracking block).':
+        '  ✓ 已更新 {name}（变更历史追踪的块）',
+    '  Removed the Subagent Dashboard and changelog tracking settings from {name} (anything else was left alone).':
+        '  已从 {name} 删除 Subagent Dashboard 与变更历史追踪的设置（其他内容原样保留）',
+    '  Removed the changelog tracking settings from {name} (anything else was left alone).':
+        '  已从 {name} 删除变更历史追踪的设置（其他内容原样保留）',
+
     # ---- install: CLAUDE.md に書き込む本文
     BLOCK_EN: BLOCK_ZH,
 
@@ -711,6 +825,28 @@ CATALOG["zh"] = {
 
 # ============================================================ 한국어
 CATALOG["ko"] = {
+    # ---- install: CLAUDE.md に書き込む本文（変更履歴トラッキングのブロック）
+    CHANGELOG_BLOCK_EN: CHANGELOG_BLOCK_KO,
+
+    '    (only the marked block is updated; anything already there is kept — including the Subagent Dashboard block above)':
+        '    (마커로 둘러싸인 범위만 갱신합니다. 기존 내용은 그대로 유지됩니다——위의 Subagent Dashboard 블록 포함)',
+    'What will be added to {name} ({path}) (changelog tracking block):':
+        '{name}({path}) 에 추가되는 내용(변경 이력 추적 블록):',
+    '  ✓ {name} (changelog tracking block) is already up to date (no change)':
+        '  ✓ {name} 은(는) 이미 최신입니다(변경 이력 추적 블록. 변경 없음)',
+    '  ✓ {name} was created (changelog tracking block).':
+        '  ✓ {name} 을(를) 새로 만들었습니다(변경 이력 추적 블록)',
+    '  ✓ The changelog tracking block was appended to {name}.':
+        '  ✓ {name} 에 변경 이력 추적 블록을 추가했습니다',
+    '  ✓ {name} was updated (changelog tracking block; also tidied up {n} duplicated old blocks).':
+        '  ✓ {name} 을(를) 갱신했습니다(변경 이력 추적 블록. 중복된 오래된 블록 {n} 개도 정리)',
+    '  ✓ {name} was updated (changelog tracking block).':
+        '  ✓ {name} 을(를) 갱신했습니다(변경 이력 추적 블록)',
+    '  Removed the Subagent Dashboard and changelog tracking settings from {name} (anything else was left alone).':
+        '  {name} 에서 Subagent Dashboard 와 변경 이력 추적 설정을 삭제했습니다(다른 내용은 그대로 둡니다)',
+    '  Removed the changelog tracking settings from {name} (anything else was left alone).':
+        '  {name} 에서 변경 이력 추적 설정을 삭제했습니다(다른 내용은 그대로 둡니다)',
+
     # ---- install: CLAUDE.md に書き込む本文
     BLOCK_EN: BLOCK_KO,
 

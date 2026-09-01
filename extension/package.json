@@ -2,7 +2,7 @@
   "name": "agent-dashboard",
   "displayName": "%ext.displayName%",
   "description": "%ext.description%",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "publisher": "YutaHassy",
   "license": "SEE LICENSE IN README.md",
   "engines": {
@@ -134,6 +134,12 @@
         "icon": "$(gear)"
       },
       {
+        "command": "agentDashboard.runChangelogSetup",
+        "title": "%cmd.runChangelogSetup.title%",
+        "category": "%cmd.category%",
+        "icon": "$(history)"
+      },
+      {
         "command": "agentDashboard.resetOnboarding",
         "title": "%cmd.resetOnboarding.title%",
         "category": "%cmd.category%",
@@ -215,6 +221,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%config.runSetupOnFirstRun.markdownDescription%"
+        },
+        "agentDashboard.runChangelogSetupOnFirstRun": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.runChangelogSetupOnFirstRun.markdownDescription%"
         },
         "agentDashboard.autoUpdateOnNewVersion": {
           "type": "boolean",
