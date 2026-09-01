@@ -107,6 +107,8 @@ CATALOG["ja"] = {
     "Back home — {headline} ({detail})": "帰還 — {headline}（{detail}）",
     "no report": "報告なし",
     "Marked done: {id} ({detail})": "完了にしました: {id}（{detail}）",
+    "  * Values you left out were measured from Claude Code's own records ({id}).":
+        '  * 省略された数値は、Claude Code 自身の記録から実測で補いました（{id}）。',
     '  * No token count was given, so it is null (the screen shows "—").':
         "  ※ トークン数は未指定のため null（画面では「—」表示）",
     '  * No tool-call count was given, so it is null (the screen shows "—").':
@@ -407,6 +409,8 @@ CATALOG["zh"] = {
     "Back home — {headline} ({detail})": "归队 — {headline}（{detail}）",
     "no report": "无报告",
     "Marked done: {id} ({detail})": "已置为完成: {id}（{detail}）",
+    "  * Values you left out were measured from Claude Code's own records ({id}).":
+        '  * 省略的数值已从 Claude Code 自身的记录中实测补全（{id}）。',
     '  * No token count was given, so it is null (the screen shows "—").':
         "  ※ 未指定 Token 数，因此为 null（画面显示「—」）",
     '  * No tool-call count was given, so it is null (the screen shows "—").':
@@ -707,6 +711,8 @@ CATALOG["ko"] = {
     "Back home — {headline} ({detail})": "귀환 — {headline}({detail})",
     "no report": "보고 없음",
     "Marked done: {id} ({detail})": "완료로 만들었습니다: {id}({detail})",
+    "  * Values you left out were measured from Claude Code's own records ({id}).":
+        '  * 생략된 수치는 Claude Code 자체 기록에서 실측으로 채웠습니다({id}).',
     '  * No token count was given, so it is null (the screen shows "—").':
         "  ※ 토큰 수가 지정되지 않아 null 입니다 (화면에는 「—」로 표시)",
     '  * No tool-call count was given, so it is null (the screen shows "—").':

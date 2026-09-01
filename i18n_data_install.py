@@ -46,6 +46,7 @@ The target project is detected automatically from the current directory, so the 
 
 - **Do not forget `finish`.** Nothing breaks when you forget, which is exactly why nobody notices. The screen keeps saying "running", and the next time you `start`, that record is left behind as "unfinished" - **it can never be marked complete afterwards**. A reminder to run `finish` appears the moment you mark the last unit `done`, so close the mission when you see it.
 - **Leave out any number that was not in the completion report (`--tokens` / `--tools` / `--sec`); do not estimate it.** Leaving it out shows "—" on the screen, and that is the correct state. Writing an estimate defeats the whole purpose of this dashboard.
+- **Name each unit after wording that actually appears in the instructions you gave it.** The screen then reads that unit's own live record and shows what it is doing right now, plus its measured tool count and tokens. When the name matches nothing, the unit still shows up - listed separately as running but unrecorded - it just is not tied to its card.
 - **`--parent` is what draws the tree.** Leave it out and the unit is filed directly under Command, so the screen shows a single column however deep the team really goes. Pass the parent's `--id` for every unit that a subagent launched rather than you.
 - **Run `add` once per unit; never fold several into one entry.** An entry like "scout team (6)" loses the six members and everything they launched below them, and it cannot be recovered afterwards. When a subagent launches children of its own, put this in that subagent's own instructions: one JSON file per child, carrying **that subagent's own ID as `parentId`**, written into the grandchild self-report directory that `{py} {us} status` prints - `{op}` has the format.
 - **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you write it and shown on the screen exactly as recorded - nothing is translated afterwards. Follow the language of these instructions, not the language of the conversation.
@@ -101,6 +102,7 @@ BLOCK_JA = """## Subagent Dashboard
 
 - **`finish` を忘れないでください。** 打ち忘れても何も壊れないので気づけません。画面には「稼働中」と出続け、次に `start` したときその記録は「未完」として残り、**あとから完了にはできません**。最後の1体を `done` にした時点で `finish` の催促が出るので、それを見たら締めてください。
 - **完了通知に含まれていなかった数値（`--tokens` / `--tools` / `--sec`）は推定せず省略してください。** 省略すれば画面に「—」と表示され、それが正しい状態です。推定値を書くのはこのダッシュボードの目的を壊す行為です。
+- **`--name` には、その機体へ渡した指示文に実際に出てくる語句を使ってください。** そうすると画面がその機体の記録を読み、いま何をしているか・ツール回数・トークンを実測で出せます。名前がどれにも当たらない機体も消えはしませんが、カードには紐づかず「記録に無い稼働中の機体」として別に並びます。
 - **系統樹を描いているのは `--parent` です。** 付けないとその機体は指令塔の直下に置かれ、実際は何世代に展開していても画面は1列のままになります。自分ではなくサブエージェントが起動した機体には、必ず親の `--id` を渡してください。
 - **`add` は1体につき1回で、複数体を1件にまとめないでください。** 「調査班（6名）」のような1件は、6体とその配下に展開した機体を丸ごと失い、**あとから復元できません**。サブエージェント自身に子を起動させる場合は、**そのサブエージェント自身のIDを `parentId` にした**JSONを子1体につき1ファイル、`{py} {us} status` が表示する孫の自己申告フォルダへ書き出すよう、起動時の指示文に含めてください（形式は `{op}`）。
 - **自由記述は日本語で書いてください**（`--title` / `--name` / `--mission` / `--headline`）。書いたとおりに記録され、記録したとおりに画面へ出ます——あとから翻訳はされません。会話の言語ではなく、この指示の言語に合わせてください。
@@ -154,6 +156,7 @@ BLOCK_ZH = """## Subagent Dashboard
 
 - **请不要忘记 `finish`。** 忘了敲也不会坏掉任何东西，所以察觉不到。画面上会一直显示「运行中」，下次 `start` 时那条记录会作为「未完成」留下，**事后无法再改成完成**。把最后一体置为 `done` 的时点会出现 `finish` 的催促，看到它就请收尾。
 - **完成通知里没有的数值（`--tokens` / `--tools` / `--sec`）请不要估算，直接省略。** 省略后画面上会显示「—」，那才是正确的状态。写上估算值是破坏这个面板目的的行为。
+- **`--name` 请使用该机体所收到的指令文中实际出现的词句。** 这样画面就能读取该机体自己的记录，实测显示它此刻在做什么、工具次数和词元数。名字对不上的机体也不会消失，只是不与卡片绑定，而是另外列为「未记录但在运行的机体」。
 - **绘制树状结构的是 `--parent`。** 不加的话，那一体会直接归在指挥部之下，无论团队实际展开到多深，画面都会显示为一列。不是由你而是由子代理启动的每一体，都请传入其父级的 `--id`。
 - **每一体运行一次 `add`，绝不要把多体合并为一条记录。** 像「侦察小队（6名）」这样的条目会丢失那6体及其下方启动的所有单位，而且事后无法恢复。当子代理自行启动子级时，请在该子代理的启动指示中包含以下内容：为每个子级写入一个 JSON 文件，**将该子代理自身的 ID 作为 `parentId`**，写入 `{py} {us} status` 显示的孙级自我报告目录——格式见 `{op}`。
 - **自由文本请用中文书写**（`--title` / `--name` / `--mission` / `--headline`）。会照你写下的样子记录，照记录的样子显示在画面上——事后不会翻译。请对齐这份指示的语言，而不是对话的语言。
@@ -207,6 +210,7 @@ BLOCK_KO = """## Subagent Dashboard
 
 - **`finish` 를 잊지 마세요.** 잊고 치지 않아도 아무것도 망가지지 않기 때문에 알아챌 수 없습니다. 화면에는 계속 「가동 중」이라고 나오고, 다음에 `start` 했을 때 그 기록은 「미완」으로 남으며, **나중에 완료로 만들 수는 없습니다**. 마지막 한 대를 `done` 으로 만든 시점에 `finish` 를 재촉하는 안내가 나오므로, 그것을 보면 마무리하세요.
 - **완료 보고에 들어 있지 않던 수치(`--tokens` / `--tools` / `--sec`)는 추정하지 말고 생략하세요.** 생략하면 화면에 「—」로 표시되며, 그것이 올바른 상태입니다. 추정값을 적는 것은 이 대시보드의 목적을 망가뜨리는 행위입니다.
+- **`--name` 에는 그 기체에 준 지시문에 실제로 나오는 어구를 쓰세요.** 그러면 화면이 그 기체의 기록을 읽어 지금 무엇을 하고 있는지, 도구 횟수와 토큰을 실측으로 보여줍니다. 이름이 어디에도 맞지 않는 기체도 사라지지는 않지만 카드에 연결되지 않고 「기록에 없는 가동 중인 기체」로 따로 표시됩니다.
 - **계통도를 그리는 것은 `--parent` 입니다.** 붙이지 않으면 그 기체는 지령탑 바로 아래에 놓이며, 실제로는 몇 세대까지 전개되어 있어도 화면에는 한 열로만 표시됩니다. 자신이 아니라 서브에이전트가 띄운 기체에는 반드시 부모의 `--id` 를 넘겨주세요.
 - **`add` 는 한 대마다 한 번 실행하고, 여러 대를 한 건으로 합치지 마세요.** 「조사반(6명)」 같은 한 건은 여섯 대와 그 아래에 띄운 기체를 전부 잃게 만들며, 나중에 복원할 수 없습니다. 서브에이전트가 자신의 자식을 띄우는 경우에는, 자식 한 대마다 **그 서브에이전트 자신의 ID를 `parentId`로 넣은** JSON 파일 하나를 `{py} {us} status`가 표시하는 손자 자체 보고 폴더에 쓰도록 띄울 때의 지시문에 포함하세요(형식은 `{op}`).
 - **자유 기술은 한국어로 쓰세요**(`--title` / `--name` / `--mission` / `--headline`). 적은 그대로 기록되고, 기록된 그대로 화면에 나옵니다——나중에 번역되지 않습니다. 대화의 언어가 아니라 이 지시의 언어에 맞추세요.

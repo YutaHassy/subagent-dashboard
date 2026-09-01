@@ -133,6 +133,12 @@
     // --- 機体カード
     'card.self_reported':  'self-reported',
     'card.awaiting':       'awaiting report',
+    // 稼働中の実測（live）。値は Claude Code がその機体について書いている記録から数えたもの。
+    'live.unknown_tool':   'working',
+    'live.tools_n':        '{n} calls',
+    'live.quiet':          'quiet {s}',
+    'live.stalled':        'no activity {s}',
+    'live.orphans_title':  'RUNNING BUT NOT RECORDED ({n})',
     'card.no_mission':     '(no mission recorded)',
     'card.unknown_model':  'unknown',
     'gen.command':         'Command',
@@ -293,6 +299,11 @@
 
     'card.self_reported':  '自己申告',
     'card.awaiting':       '報告待ち',
+    'live.unknown_tool':   '作業中',
+    'live.tools_n':        'ツール {n}',
+    'live.quiet':          '静かです {s}',
+    'live.stalled':        '無風 {s}',
+    'live.orphans_title':  '記録に無い稼働中の機体（{n}）',
     'card.no_mission':     '（任務未記載）',
     'card.unknown_model':  '不明',
     'gen.command':         '指令塔',
@@ -443,6 +454,11 @@
 
     'card.self_reported':  '自行申报',
     'card.awaiting':       '等待回报',
+    'live.unknown_tool':   '作业中',
+    'live.tools_n':        '工具 {n}',
+    'live.quiet':          '安静 {s}',
+    'live.stalled':        '无动静 {s}',
+    'live.orphans_title':  '未记录但在运行的机体（{n}）',
     'card.no_mission':     '（未填写任务）',
     'card.unknown_model':  '未知',
     'gen.command':         '指挥塔',
@@ -593,6 +609,11 @@
 
     'card.self_reported':  '자가 보고',
     'card.awaiting':       '보고 대기',
+    'live.unknown_tool':   '작업 중',
+    'live.tools_n':        '도구 {n}',
+    'live.quiet':          '조용함 {s}',
+    'live.stalled':        '무풍 {s}',
+    'live.orphans_title':  '기록에 없는 가동 중인 기체({n})',
     'card.no_mission':     '（임무 미기재）',
     'card.unknown_model':  '알 수 없음',
     'gen.command':         '지휘탑',

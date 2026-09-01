@@ -459,6 +459,30 @@ def cmd_add(args) -> None:
         print(notice)
 
 
+def measure_from_records(project: dict, agent: dict):
+    """完了した1体の実測値を、Claude Code が書いた記録から取り直す。取れなければ None。
+
+    Workflow ツールで班を回すと完了通知が最後に1回しか来ないため、各機体の所要時間も
+    ツール回数も手元に無いまま done を打つことになり、画面には全員が同じ所要時間で並ぶ
+    （実測ではなく、まとめて打った時刻からの逆算になる）。ここで記録から拾い直せば、
+    打ち方を変えなくても実測値が入る。
+
+    livefeed 側は、対応する機体が一意に決まらなければ None を返す。曖昧なまま書くと
+    別の機体の数字を記録に永久に残すことになり、画面のちらつきと違って後から直せない。
+    """
+    try:
+        import livefeed
+        return livefeed.measure_for(
+            dashlib.as_str(project.get("path")),
+            dashlib.as_str(agent.get("name")),
+            dashlib.as_str(agent.get("model")),
+            dashlib.as_str(agent.get("startedAt")),
+            dashlib.as_str(agent.get("mission")),
+        )
+    except Exception:
+        return None
+
+
 def cmd_done(args) -> None:
     project = pick_project(args)
     slug = project["slug"]
@@ -470,20 +494,35 @@ def cmd_done(args) -> None:
 
     elapsed = args.sec if args.sec is not None else elapsed_sec_from(agent.get("startedAt"))
 
+    # 渡されなかった数値だけを、記録から実測で補う。渡された値は絶対に上書きしない
+    # （完了通知として受け取った値のほうが一次情報なので）。
+    tokens, tools = args.tokens, args.tools
+    filled = None
+    if tokens is None or tools is None or args.sec is None:
+        got = measure_from_records(project, agent)
+        if got:
+            filled = got.get("agentId")
+            if args.sec is None and got.get("elapsedSec") is not None:
+                elapsed = got["elapsedSec"]
+            if tokens is None:
+                tokens = got.get("tokens")
+            if tools is None:
+                tools = got.get("toolCalls")
+
     agent["status"] = "done"
     agent["finishedAt"] = now_iso()
     agent["result"] = {
         "elapsedSec": elapsed,
-        "tokens": args.tokens,
-        "toolCalls": args.tools,
+        "tokens": tokens,
+        "toolCalls": tools,
         "headline": args.headline,
     }
 
     bits = [t("elapsed {time}").format(time=fmt_sec(elapsed))]
-    if args.tokens is not None:
-        bits.append(t("{n} tokens").format(n=fmt_num(args.tokens)))
-    if args.tools is not None:
-        bits.append(t("{n} tool calls").format(n=args.tools))
+    if tokens is not None:
+        bits.append(t("{n} tokens").format(n=fmt_num(tokens)))
+    if tools is not None:
+        bits.append(t("{n} tool calls").format(n=tools))
 
     push_log(state, agent["name"],
              t("Back home — {headline} ({detail})")
@@ -493,9 +532,12 @@ def cmd_done(args) -> None:
     print(t("Marked done: {id} ({detail})")
           .format(id=args.id, detail=" / ".join(bits)))
     print(t("  Target project: {name}").format(name=project_label(project)))
-    if args.tokens is None:
+    if filled:
+        print(t("  * Values you left out were measured from Claude Code's own records ({id}).")
+              .format(id=filled))
+    if tokens is None:
         print(t('  * No token count was given, so it is null (the screen shows "—").'))
-    if args.tools is None:
+    if tools is None:
         print(t('  * No tool-call count was given, so it is null (the screen shows "—").'))
 
     if args.headline and dashlib.free_text_lang_mismatch(args.headline):

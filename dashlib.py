@@ -1871,8 +1871,12 @@ def resolve_project(explicit: str | None = None) -> dict:
                 t("the project hint \"{hint}\" matches {n} projects: {list}")
                 .format(hint=hint, n=len(matches), list=", ".join(matches))
             )
-        # 既存に無い場合は名前指定として新規作成する
-        return {"slug": sanitize_name(hint), "name": hint, "path": ""}
+        # 既存に無い場合は名前指定として新規作成する。
+        # path には、名前で分けていても「実際にどこで動いているか」は事実なので
+        # カレントディレクトリを記録する。ここを空にすると、あとから補う手段が無く
+        # （read_state は欠けている項目しか埋めない）、実際の作業場所を知る必要がある
+        # 機能——稼働中の実測の読み取りなど——がそのミッションで永久に動かなくなる。
+        return {"slug": sanitize_name(hint), "name": hint, "path": str(Path.cwd().resolve())}
 
     cwd = Path.cwd().resolve()
     return {"slug": slug_for_path(cwd), "name": cwd.name, "path": str(cwd)}
@@ -1955,6 +1959,7 @@ def normalize_agent(a, source: str):
         "mission": as_str(a.get("mission")),
         "status": status,
         "waiting": False,  # 下の assign_waiting で必ず上書きする（読み取り側の導出）
+        "live": None,      # 下の assign_live で上書きする（稼働中で、実機が特定できたときだけ）
         "startedAt": as_str(a.get("startedAt")) or None,
         "finishedAt": as_str(a.get("finishedAt")) or None,
         "result": result,
@@ -2025,6 +2030,29 @@ def assign_waiting(agents: list[dict]) -> None:
         a["waiting"] = a["status"] == "running" and a["id"] in has_running_child
 
 
+def assign_live_safely(agents: list[dict], project_path: str, mission: dict, slug: str) -> list:
+    """稼働中の機体に、Claude Code の記録から読んだ実測値を載せる。
+
+    載るのは実測値だけで、推定はしない（トークン・ツール回数・経過秒は、そのエージェントの
+    JSONL から数えた実数）。どの実機がどのカードかを確信できないときは何も載せない——
+    別の機体の数字をカードに出すのが最悪の結果なので、「分からない」を優先する。
+
+    livefeed は読むだけのモジュールだが、ここで例外を漏らすと /api/state が毎秒 500 を
+    返し、稼働中のチームまで画面から消える。だから何が起きても黙って諦める。
+    live が出ないことは、画面が壊れることより、はるかに軽い。
+
+    返り値は「記録に無いのに動いている機体」の一覧。系統樹には入れず別枠で出す
+    （親を推測して系統樹を描くと、それは実測ではなくなる）。
+    """
+    try:
+        import livefeed
+        return livefeed.assign_live(agents, project_path, mission, slug)
+    except Exception:
+        for a in agents:
+            a["live"] = None
+        return []
+
+
 def extract_from_self_report(value) -> tuple[list, list]:
     """孫の自己申告1ファイル分を読む。単体 dict・リスト・{agents,log} の3形式を受け付ける。"""
     agents: list = []
@@ -2051,12 +2079,16 @@ def _log_sort_key(e: dict):
         return (1, 0.0)
 
 
-def _build_state(slug: str, state_path: Path, agents_path: Path) -> dict:
+def _build_state(slug: str, state_path: Path, agents_path: Path, *, live: bool = False) -> dict:
     """state.json と agents/*.json をマージして1つの状態にする（置き場所は引数で受ける）。
 
     現在のミッション（missions/<slug>/）と過去の記録（history/<runId>/）を
     まったく同じ形に組み立てるため、実体はここ1つにしてある。画面は同じ描画機構で
     どちらも描く。
+
+    live=True のときだけ、稼働中の機体に実測の稼働状況を載せる（assign_live）。
+    既定を False にしてあるのは、履歴が誤って live 判定されないようにするため。
+    過去の記録は凍結されていなければならない。
     """
     warnings: list[str] = []
 
@@ -2109,14 +2141,19 @@ def _build_state(slug: str, state_path: Path, agents_path: Path) -> dict:
             if e:
                 logs.append(e)
 
-    agents = list(merged.values())
-    assign_generations(agents)
-    assign_waiting(agents)   # 孫の取り込み後に走らせる。孫だけが動いている親を取りこぼさないため
-    logs.sort(key=_log_sort_key)
-
+    # mission / summary / project は assign_live に渡すので、agents より先に組み立てる。
+    # （summary は mission から取るので3行セットで動かすこと）
     mission = base.get("mission") if isinstance(base.get("mission"), dict) else empty_state()["mission"]
     summary = mission.get("summary")
     project = base.get("project") if isinstance(base.get("project"), dict) else {}
+
+    agents = list(merged.values())
+    assign_generations(agents)
+    assign_waiting(agents)   # 孫の取り込み後に走らせる。孫だけが動いている親を取りこぼさないため
+    live_orphans: list = []
+    if live:
+        live_orphans = assign_live_safely(agents, as_str(project.get("path")), mission, slug)
+    logs.sort(key=_log_sort_key)
 
     return {
         "version": 2,
@@ -2147,13 +2184,17 @@ def _build_state(slug: str, state_path: Path, agents_path: Path) -> dict:
             "main": ok,
             "selfReports": len(self_files),
             "warnings": warnings,
+            # 記録に無いのに動いている機体。トップレベルではなくここに置くのは、画面の
+            # 再描画の判定（sig）が sources を見ているため。トップレベルに置くと、孤児が
+            # 増えても減っても画面が描き直されない。
+            "liveOrphans": live_orphans,
         },
     }
 
 
 def build_state(slug: str) -> dict:
     """いま画面に映すミッションの状態。"""
-    return _build_state(slug, state_file(slug), agents_dir(slug))
+    return _build_state(slug, state_file(slug), agents_dir(slug), live=True)
 
 
 def read_run(slug: str, run_id: str) -> dict:

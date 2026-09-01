@@ -639,6 +639,10 @@ body {
 }
 .badge.self { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
 .badge.b-wait { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+/* 沈黙の札。b-wait と同じで status は上書きしない（動いていないことと、記録上の
+   状態が「稼働中」であることは両立する）。無風のほうを強く出す。 */
+.badge.b-idle { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+.badge.b-idle.stalled { color: #ff9b9b; border-color: rgba(255,120,120,.42); background: rgba(255,120,120,.1); }
 .c-mission {
   font-size: 12px; color: #c3d2e4; line-height: 1.5; min-height: 2.5em;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -665,6 +669,32 @@ body {
 /* hidden 属性を効かせる。ブラウザ既定の [hidden]{display:none} は作成者の
    display:flex に負けるので、結果が無いときも空の「▸」の行が残ってしまう。 */
 .c-result[hidden] { display: none; }
+
+/* 稼働中に読んだ実測（live）。Claude Code がサブエージェントごとに書いている記録から
+   数えた実数で、推定ではない。それでも .c-metrics（完了通知として受け取って記録した値）
+   とは出所が違うので、位置と書体を分けて、ひと目で別物と分かるようにする。
+   トークンだけは「最後の行のコンテキスト長」という近似なので ≈ を付ける
+   （実測誤差 -0.002%。ツール回数と経過秒は数え上げなので近似ではない）。 */
+.c-live {
+  display: flex; align-items: baseline; gap: 7px; margin-top: 7px;
+  font-size: 11px; line-height: 1.45; color: #9ed3c6;
+}
+.c-live[hidden] { display: none; }
+.c-live .lv-tool { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-live .lv-tool b { color: #ddf3ec; font-weight: 700; }
+.c-live .lv-num { flex: none; font-family: Consolas, monospace; opacity: .82; }
+.c-live.quiet   { color: #ddc79a; }
+.c-live.stalled { color: #ffadad; }
+
+/* 記録に無いのに動いている機体。系統樹には入れない（親を推測して描くと実測でなくなる）。 */
+.live-orphans {
+  flex: none;
+  margin: 0 14px 14px; padding: 10px 12px; border-radius: 10px;
+  background: rgba(120,200,255,.07); border: 1px solid rgba(120,200,255,.28);
+  font-size: 11px; line-height: 1.6; color: #bfe0f5;
+}
+.live-orphans b { display: block; margin-bottom: 3px; color: #7fc4ee; font-size: 10.5px; letter-spacing: .08em; }
+.live-orphans div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ============================================================ 親子線 */
 .link { fill: none; stroke-width: 2.5; stroke-linecap: round; }
@@ -1156,6 +1186,7 @@ body {
           <div class="side-head"><span data-i18n="log.title">Event log</span><span class="count log-count">0</span></div>
           <div class="log"></div>
           <div class="warnings" hidden></div>
+          <div class="live-orphans" hidden></div>
         </div>
       </aside>
     </div>
@@ -2325,6 +2356,7 @@ function createTeam(slug, runId, live) {
       log:      q('.log'),
       logCount: q('.log-count'),
       warnings: q('.warnings'),
+      orphans:  q('.live-orphans'),
     },
     cards:   new Map(),   // id -> { root, card, metrics..., status }
     cols:    new Map(),   // generation -> { col, body }
@@ -2581,13 +2613,18 @@ function createAgent(t, a) {
     '<div class="c-top"><span class="c-name"></span><span class="c-id"></span></div>' +
     '<div class="c-badges"><span class="badge b-model"></span>' +
       '<span class="badge b-src self" hidden data-i18n="card.self_reported"></span>' +
-      '<span class="badge b-wait" hidden data-i18n="card.awaiting"></span></div>' +
+      '<span class="badge b-wait" hidden data-i18n="card.awaiting"></span>' +
+      '<span class="badge b-idle" hidden></span></div>' +
     '<div class="c-mission"></div>' +
     '<div class="c-metrics">' +
       '<div class="metric"><span class="mk" data-i18n="stat.elapsed"></span><span class="mv m-time">—</span></div>' +
       '<div class="metric"><span class="mk" data-i18n="stat.tokens"></span><span class="mv m-tok">—</span></div>' +
       '<div class="metric"><span class="mk" data-i18n="stat.tools"></span><span class="mv m-tool">—</span></div>' +
     '</div>' +
+    // 稼働中の実測は .c-metrics の中ではなく後ろに置く。中に足すと
+    // entry.timeK（.metric .mk の1つ目）が別の見出しを掴んで、言語を切り替えたときに
+    // 「経過／所要」の訳が当たらなくなる（切り替えるまで表に出ない壊れ方をする）。
+    '<div class="c-live" hidden><span class="lv-tool"></span><span class="lv-num"></span></div>' +
     '<div class="c-result" hidden></div>';
   if (i18nOk) window.I18N.apply(card);
 
@@ -2602,6 +2639,10 @@ function createAgent(t, a) {
     src:    card.querySelector('.b-src'),
     mission:card.querySelector('.c-mission'),
     wait:   card.querySelector('.b-wait'),
+    idle:   card.querySelector('.b-idle'),
+    live:   card.querySelector('.c-live'),
+    lvTool: card.querySelector('.lv-tool'),
+    lvNum:  card.querySelector('.lv-num'),
     time:   card.querySelector('.m-time'),
     timeK:  card.querySelector('.metric .mk'),
     tok:    card.querySelector('.m-tok'),
@@ -2664,11 +2705,48 @@ function setMetric(el, text, hasValue) {
   el.classList.toggle('none', !hasValue);
 }
 
+// 稼働中の実測を1行に描く。値の出所は Claude Code がその機体について書いている記録で、
+// ツール回数と経過秒は数え上げた実数、トークンだけは最後の行のコンテキスト長という
+// 近似なので ≈ を付ける。記録された実測値（.c-metrics）とは混ぜない——同じ枠に出すと、
+// 完了通知として受け取った値と見分けが付かなくなる。
+function paintLive(entry, a) {
+  const lv = a.status === 'running' ? a.live : null;
+  entry.live.hidden = !lv;
+  entry.idle.hidden = !(lv && lv.state !== 'active');
+  if (!lv) { entry.live.className = 'c-live'; return; }
+
+  entry.live.className = 'c-live' + (lv.state === 'active' ? '' : ' ' + lv.state);
+
+  const label = lv.toolLabel || '';
+  entry.lvTool.textContent = '';
+  const name = document.createElement('b');
+  name.textContent = lv.tool || tr('live.unknown_tool');
+  entry.lvTool.appendChild(name);
+  if (label) entry.lvTool.appendChild(document.createTextNode(' ' + label));
+  entry.lvTool.title = (lv.tool || '') + (label ? ' ' + label : '');
+
+  const parts = [];
+  if (lv.toolCalls !== null && lv.toolCalls !== undefined) {
+    parts.push(tr('live.tools_n', { n: fmtNum(lv.toolCalls) }));
+  }
+  if (lv.tokens !== null && lv.tokens !== undefined) parts.push('≈' + fmtTokens(lv.tokens));
+  entry.lvNum.textContent = parts.join('   ');
+
+  if (lv.state !== 'active') {
+    entry.idle.classList.toggle('stalled', lv.state === 'stalled');
+    entry.idle.textContent = tr(lv.state === 'stalled' ? 'live.stalled' : 'live.quiet',
+                                { s: fmtSec(lv.idleSec) });
+  }
+}
+
 function updateAgentClock(entry, a, refNow) {
   let sec = null;
   if (a.status === 'running') sec = elapsedFrom(a.startedAt, refNow);
   else if (a.status === 'done') sec = a.result ? a.result.elapsedSec : null;
   setMetric(entry.time, fmtSec(sec), sec !== null);
+  // live は毎秒変わる。sig（再描画の判定）には数値を入れていないので、
+  // 経過時間と同じこの経路で塗る。ここを通さないと値が固まったままになる。
+  paintLive(entry, a);
 }
 
 /** そのチームの枠で次のミッションが始まったら、前のミッションの表示を完全に捨てる。
@@ -3932,8 +4010,54 @@ function drawLinks(t) {
 /** 内容が変わっていなくても毎秒動かす部分（稼働中の経過時間）。
  *  過去の記録では tick() から呼ばれず、読み込み直後に1回だけ通る。
  *  そのとき t.refNow が入っているので、経過は記録された時点で止まる。 */
+// 再描画するかどうかの判定に使う指紋。
+// live の数値（トークン・ツール回数・経過秒・無風秒）は毎秒変わるので、ここには入れない。
+// 入れると毎秒 render() が走り、ログの作り直しと系統樹のレイアウト計算が1秒ごとに起きる。
+// 数値は updateClocks が塗るので、ここで見るのは構造だけ——どの機体に live が付いたか、
+// active から静／無風へ変わったか。孤児も同じ理由で id と状態だけを見る。
+function stateSig(ts) {
+  const src = ts.sources || {};
+  return JSON.stringify({
+    p: ts.project,
+    m: ts.mission,
+    a: ts.agents.map((a) => Object.assign({}, a, {
+      live: a.live ? { i: a.live.agentId, s: a.live.state } : null,
+    })),
+    l: ts.log.length,
+    s: Object.assign({}, src, {
+      liveOrphans: (src.liveOrphans || []).map((o) => [o.agentId, o.state]),
+    }),
+  });
+}
+
+// 記録に無いのに動いている機体。add の打ち忘れがその場で見えるようにする。
+// 系統樹には入れない——親を推測して線を引いたら、それは実測ではなくなる。
+function paintOrphans(t) {
+  const el = t.els.orphans;
+  if (!el) return;
+  const list = (t.state && t.state.sources && t.state.sources.liveOrphans) || [];
+  el.textContent = '';
+  el.hidden = !list.length;
+  if (!list.length) return;
+  const head = document.createElement('b');
+  head.textContent = tr('live.orphans_title', { n: list.length });
+  el.appendChild(head);
+  for (const o of list) {
+    const row = document.createElement('div');
+    const bits = [o.model || tr('card.unknown_model')];
+    if (o.tool) bits.push(o.tool + (o.toolLabel ? ' ' + o.toolLabel : ''));
+    if (o.toolCalls !== null && o.toolCalls !== undefined) {
+      bits.push(tr('live.tools_n', { n: fmtNum(o.toolCalls) }));
+    }
+    row.textContent = bits.join('  /  ');
+    row.title = o.agentId + '  /  ' + bits.join('  /  ');
+    el.appendChild(row);
+  }
+}
+
 function updateClocks(t) {
   if (!t.state) return;
+  paintOrphans(t);
   if (t.state.mission.phase === 'running') {
     t.els.elapsed.textContent = fmtSec(elapsedFrom(t.state.mission.startedAt, t.refNow));
   } else if (t.state.mission.summary) {
@@ -4138,11 +4262,12 @@ async function tick() {
 
       // sig はチームごとに持つ。1つにまとめると、どこか1チームが動いた拍子に
       // 全チームが再描画されて、動いていないチームのログも作り直される。
-      const sig = JSON.stringify({ p: ts.project, m: ts.mission, a: ts.agents,
-                                   l: ts.log.length, s: ts.sources });
+      const sig = stateSig(ts);
+      // 数値だけが動いたときも updateClocks が新しい値を塗れるように、state は毎回入れ替える。
+      // 描き直す（render）かどうかは sig で決める、という切り分けはそのまま。
+      t.state = ts;
       if (sig !== t.prevSig) {
         t.prevSig = sig;
-        t.state = ts;
         render(t, ts);
       }
     }
