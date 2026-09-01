@@ -381,8 +381,9 @@ body {
    非数値を書くと calc が無効になり width:auto に落ちて列が潰れる（未設定の 1 では救われない）。 */
 .gen-col {
   display: flex; flex-direction: column; gap: 20px; flex: none;
-  width: calc(var(--band-lanes, 1) * var(--agent-w)
-              + (var(--band-lanes, 1) - 1) * var(--band-gap));
+  width: calc(var(--band-pad-l, 0px)
+              + var(--band-lanes, 1) * var(--agent-w)
+              + (var(--band-lanes, 1) - 1) * var(--band-lane-gap, var(--band-gap)));
 }
 /* 全列の .gen-body の上端が揃っていることが、列をまたいだ共通Y座標系の前提。
    高さを line-height で確定させておく。 */
@@ -395,7 +396,11 @@ body {
    なり、世代見出しの高さぶん全機がずれる。height は layoutTree() が px で入れる。
    入れないと絶対配置の子は高さを作らないので列が 0 になり、.tree-canvas.scrollHeight
    まで潰れて drawLinks が viewBox「0 0 0 0」を書き、親子線が全部消える。 */
-.gen-body { position: relative; }
+/* --band-pad-l は「左回廊」。この帯へ入ってくる扇のうち最大のものが、辺を縦に走らせる
+   ぶんの幅。列の宣言幅（上の calc）と .gen-body の寄せの**両方**に足すこと。片方だけだと、
+   列が広がったのにカードが左端のままになる（＝回廊ができない）か、カードだけ右へ出て
+   隣の列に重なる。layoutTree が px 付きの文字列で書く。既定は 0px。 */
+.gen-body { position: relative; margin-left: var(--band-pad-l, 0px); }
 .empty-note { color: var(--dim); font-size: 13px; padding: 40px 4px; line-height: 1.9; }
 .empty-note code { background: rgba(255,255,255,.06); padding: 2px 7px; border-radius: 5px;
                    font-family: Consolas, monospace; color: var(--cyan); }
@@ -3023,10 +3028,13 @@ const BUS_PAD_B     = 10;   // 同、最終行の下へ持つ余白
 // 線が重なる。1辺1本にすれば、その2つは構造ごと消える。
 // 代わりに要るのが「線を通すための余白」で、dagre がランクを空けるのと同じ役割を、
 // クラスタの上に予約する帯（flowTopPad）と列と列のあいだの隙間（BAND_GAP）が担う。
-const FLOW_PITCH   = 6;   // トラックの間隔。1本の辺が占める幅／高さ。
+const FLOW_PITCH   = 8;   // トラックの間隔。1本の辺が占める幅／高さ。
 const FLOW_EDGE    = 8;   // 通り道の端に残す余白。カードや隣の帯に触れないための下駄。
-const FLOW_R       = 12;  // 直交する曲がり角の半径。
+const FLOW_R       = 14;  // 直交する曲がり角の半径。
 const FLOW_PAD_MAX = 110; // 上帯の高さの上限。葉が多いクラスタでは間隔のほうを詰める。
+const EXIT_PITCH   = 14;  // 親カードの右辺で、子ごとの出口をどれだけ離すか（上限）。
+const EXIT_MARGIN  = 10;  // 出口をカードの上下端から離す量。
+const LEFT_PAD_MAX = 140; // 左回廊の予約量の上限。超える扇では間隔のほうを詰める。
 /** 上帯（クラスタの真上に予約する空き）の高さ。辺1本につきトラック1本ぶん取る。
  *  レーン0へ向かう辺も上帯を通す。親から斜めに直接ぶら下げると、親とクラスタのあいだに居る
  *  別レーンのカードを貫くため（実測：ALPHA-1 → 測定子d の線が 解析機ブラボー5 を 189点貫通）。
@@ -3034,6 +3042,24 @@ const FLOW_PAD_MAX = 110; // 上帯の高さの上限。葉が多いクラスタ
  *  （gate5 がそれを常設で見ている）。 */
 function flowTopPad(m) {
   return m > 0 ? Math.min(FLOW_PAD_MAX, 2 * FLOW_EDGE + m * FLOW_PITCH) : 0;
+}
+
+/** 左回廊（親のすぐ右、辺が縦に走る帯）に要る幅。子が n 体の扇1つぶん。
+ *
+ *  数えるのが n ではなく ceil(n/2) なのは、**上向きの辺と下向きの辺が同じ x を共有できる**
+ *  ため。両者の縦の区間は出口を挟んで反対側にあり、決して重ならない。整形木は親を子の
+ *  中央に置くので、扇はおおむね半々に割れる。片側へ寄った扇では下の間隔の頭打ちが効く。
+ *  2*FLOW_R は、最初と最後の角が半径いっぱいに丸くなるための脚の長さ。 */
+function flowLeftPad(n) {
+  return Math.min(LEFT_PAD_MAX, 4 * FLOW_R + Math.max(0, Math.ceil(n / 2) - 1) * FLOW_PITCH);
+}
+
+/** クラスタのレーンとレーンのあいだの幅。ここを辺が縦に降りる。
+ *  帯の隙間（BAND_GAP=38）を使い回すと、カードへ入る最後の脚が 8px しか取れず、
+ *  角の半径が 4px で頭打ちになる（実測。角ひとつが半径 R まで丸くなるには、その両側の脚が
+ *  それぞれ 2R 要る）。行の数だけトラックが要るので、行数で決める。 */
+function flowLaneGap(rows) {
+  return Math.max(BAND_GAP, 2 * FLOW_R + FLOW_EDGE + Math.max(0, rows - 1) * FLOW_PITCH);
 }
 // 線が使ってよい通り道は2つだけ。どちらも実測で裏を取ってある。
 //   ・列と列のあいだの隙間 38px …… カードが1枚も無く、位置が left = 列 × (330+38) の固定式で
@@ -3091,6 +3117,7 @@ function gridSlots(members, hById, R) {
   // ことを gate5 が要求しており、そこは折り返さない場合と同じでなければならない。
   // **nodeH や cl.top の側に足してはいけない。** 第1行の dy は 0 で箱の上端に一致するので、
   // 足した分は全部いちばん下に付き、上の空きは1pxも増えない。
+  const laneGap = flowLaneGap(rows);
   let y = (cols > 1 ? flowTopPad(n) : 0);
   for (let r = 0; r < rows; r++) { rowTop[r] = y; y += rowH[r] + GAP_SIB; }
   const slots = [];
@@ -3105,7 +3132,8 @@ function gridSlots(members, hById, R) {
   }
   return {
     rows, cols, rowH, rowTop, slots,
-    w: cols * AGENT_W + (cols - 1) * BAND_GAP,
+    laneGap,
+    w: cols * AGENT_W + (cols - 1) * laneGap,
     h: Math.max(0, y - GAP_SIB),       // 最後に足した GAP_SIB は行間ではないので戻す
   };
 }
@@ -3436,7 +3464,13 @@ function chooseWrap(t, agents, hById) {
   const headH = bodyOffsetTop(t);
   const fitOf = (b) => {
     let w = 0, bands = 0;
-    for (const [, L] of lanesByGen(b)) { w += L * AGENT_W + (L - 1) * BAND_GAP; bands++; }
+    // レーン間隔はクラスタごとに違う（flowLaneGap は行数で決まる）。ここで固定の BAND_GAP を
+    // 使うと見積り幅が実際より狭くなり、R の選び方が実際の見た目とずれる。
+    const lg = new Map();
+    for (const c of b.clusters) {
+      if (c.grid.laneGap > (lg.get(c.generation) || BAND_GAP)) lg.set(c.generation, c.grid.laneGap);
+    }
+    for (const [g, L] of lanesByGen(b)) { w += L * AGENT_W + (L - 1) * (lg.get(g) || BAND_GAP); bands++; }
     if (bands > 1) w += (bands - 1) * BAND_GAP;
     const h = headH + b.laid.height;
     return (w > 0 && h > 0) ? Math.min(box.w / w, box.h / h) : 0;
@@ -3602,10 +3636,43 @@ function layoutTree(t) {
   // 落ち、列が潰れる。Number() を通してから整数に丸めるのはそのため。
   const lanes = lanesByGen(built);
   const laneSig = [...lanes.keys()].sort((a, b) => a - b).map((g) => g + ':' + lanes.get(g)).join(',');
+
+  // 左回廊の予約量を帯ごとに出す。その帯へ入ってくる扇（同じ親から出る辺の束）のうち
+  // いちばん大きいものが必要とする幅から、もともと有る列と列の隙間（BAND_GAP）を引いた残り。
+  // 扇の大きさは「子の数」であって「その帯の機体数」ではない。別の親から来た辺どうしは
+  // 高さが違うので同じ x を使ってよく、まとめて数えると要らない幅まで取ってしまう。
+  const idSet = new Set(agents.map((a) => a.id));
+  const kidsPerParent = new Map();
+  for (const a of agents) {
+    const pid = effectiveParentId(a, idSet);
+    if (!pid || !t.cards.has(pid)) continue;
+    const g = genOf(a);
+    const k = pid + '@' + g;
+    kidsPerParent.set(k, (kidsPerParent.get(k) || 0) + 1);
+  }
+  const padByGen = new Map();
+  for (const [k, cnt] of kidsPerParent) {
+    const g = Number(k.slice(k.lastIndexOf('@') + 1));
+    const need = Math.max(0, flowLeftPad(cnt) - BAND_GAP);
+    if (need > (padByGen.get(g) || 0)) padByGen.set(g, need);
+  }
+
   for (const [g, c] of t.cols) {
     const L = Math.max(1, Math.round(Number(lanes.get(g))) || 1);
     if (c.col.style.getPropertyValue('--band-lanes') !== String(L)) {
       c.col.style.setProperty('--band-lanes', String(L));
+    }
+    // 非数値を書くと calc が無効になって列が潰れるのは --band-lanes と同じ。px を必ず付ける。
+    const PL = Math.max(0, Math.round(Number(padByGen.get(g)) || 0)) + 'px';
+    if (c.col.style.getPropertyValue('--band-pad-l') !== PL) {
+      c.col.style.setProperty('--band-pad-l', PL);
+    }
+    // レーン間隔。クラスタが無い帯は BAND_GAP のまま（レーンが1本なので幅にも効かない）。
+    let LG = BAND_GAP;
+    for (const cl of built.clusters) if (cl.generation === g && cl.grid.laneGap > LG) LG = cl.grid.laneGap;
+    const LGs = Math.max(1, Math.round(LG)) + 'px';
+    if (c.col.style.getPropertyValue('--band-lane-gap') !== LGs) {
+      c.col.style.setProperty('--band-lane-gap', LGs);
     }
   }
   // レーンの本数が変わったフレームは、全機を一括で着地させる（下の animate で使う）。
@@ -3634,7 +3701,7 @@ function layoutTree(t) {
     for (const s of cl.grid.slots) {
       place.set(s.id, {
         top:  Math.round(top + s.dy),
-        left: s.lane * (AGENT_W + BAND_GAP),
+        left: s.lane * (AGENT_W + cl.grid.laneGap),
       });
     }
     clusters.push(cl);
@@ -3653,7 +3720,10 @@ function layoutTree(t) {
   for (const cl of clusters) {
     const colEl = t.cols.get(cl.generation);
     const base  = colEl ? colEl.col.offsetLeft : 0;
-    contentW = Math.max(contentW, base + cl.grid.w + BUS_PAD_R);
+    // 左回廊のぶんを足す。cl.grid.w は回廊を含まない「カードだけの幅」なので、
+    // 足さないと右端を狭く見積もり、「もっと拡大してよい」と読まれて右端の機体が枠から出る。
+    const padL  = Math.max(0, Number(padByGen.get(cl.generation)) || 0);
+    contentW = Math.max(contentW, base + padL + cl.grid.w + BUS_PAD_R);
     contentH = Math.max(contentH, cl.top - pad + cl.grid.h + BUS_PAD_B);
   }
   t.contentW = contentW;
@@ -3799,158 +3869,172 @@ function drawLinks(t) {
   let running = 0;
   const status = new Map(t.state.agents.map((a) => [a.id, a.status]));
 
-  // カード矩形を1回だけ集める。「この曲線はまっすぐ引いてよいか」を決めるのに使う。
-  // 実測（getBoundingClientRect）で取るのは線と同じ理由で、460ms のトランジション中に
-  // 目標値と途中の位置が混ざらないようにするため。
+  // カード矩形を1回だけ集める。線が通ってよい場所かの判定に使う。
   const cardRects = [];
   for (const [cid, ce] of t.cards) cardRects.push({ id: cid, q: local(ce.card.getBoundingClientRect()) });
-  /** 3次ベジェがどれかのカードの中を通るか。始点側と終点側の2枚は当然通るので除く。
-   *  刻みは48。カードの短辺は 156px あり、拡大率 0.29 の最長の曲線（約 1300px）でも
-   *  1刻み 27px なので、カードを跨いで素通りすることはない。 */
-  const cubicHitsCard = (x1, y1, c1x, c1y, c2x, c2y, x2, y2, skipA, skipB) => {
-    for (let i = 1; i < 48; i++) {
-      const u = i / 48, v = 1 - u;
-      const bx = v*v*v*x1 + 3*v*v*u*c1x + 3*v*u*u*c2x + u*u*u*x2;
-      const by = v*v*v*y1 + 3*v*v*u*c1y + 3*v*u*u*c2y + u*u*u*y2;
-      for (const c of cardRects) {
-        if (c.id === skipA || c.id === skipB) continue;
-        if (bx > c.q.l + 2 && bx < c.q.r - 2 && by > c.q.t + 2 && by < c.q.b - 2) return true;
-      }
+  /** 軸に平行な線分がどれかのカードの中を通るか。両端のカード2枚は当然通るので除く。
+   *  矩形どうしの重なりで判定できる（線分が軸に平行なので、外接矩形＝線分そのもの）。 */
+  const segHitsCard = (x1, y1, x2, y2, skipA, skipB) => {
+    const lo = Math.min(x1, x2), hi = Math.max(x1, x2);
+    const up = Math.min(y1, y2), dn = Math.max(y1, y2);
+    for (const c of cardRects) {
+      if (c.id === skipA || c.id === skipB) continue;
+      if (hi > c.q.l + 2 && lo < c.q.r - 2 && dn > c.q.t + 2 && up < c.q.b - 2) return true;
     }
     return false;
   };
 
+  /** 直交折れ線を1本組み立てる。角は真円の四分円（FORK_K は四分円を3次ベジェで近似する比）。
+   *  半径は隣り合う脚の長さの半分で頭打ちにするので、隣の角と食い合って線が後戻りすることはない。
+   *  **曲線を使うのは角の中だけ。** これが「線の書式は1種類」の実体で、クラスタの中も外も、
+   *  世代から世代への線も、全部この関数を通る。 */
+  const orthoPath = (pts) => {
+    const p = [];
+    for (const q of pts) {           // 同じ点が続くと向きが定義できないので先に潰す
+      const last = p[p.length - 1];
+      if (!last || Math.abs(q[0] - last[0]) + Math.abs(q[1] - last[1]) > 0.01) p.push(q);
+    }
+    if (p.length < 2) return '';
+    let d = 'M ' + p[0][0] + ' ' + p[0][1];
+    for (let k = 1; k < p.length - 1; k++) {
+      const a = p[k - 1], b = p[k], c = p[k + 1];
+      const inLen  = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const outLen = Math.hypot(c[0] - b[0], c[1] - b[1]);
+      const r = Math.min(FLOW_R, inLen / 2, outLen / 2);
+      if (r < 0.5) { d += ' L ' + b[0] + ' ' + b[1]; continue; }
+      const ux = (b[0] - a[0]) / inLen, uy = (b[1] - a[1]) / inLen;
+      const vx = (c[0] - b[0]) / outLen, vy = (c[1] - b[1]) / outLen;
+      const sx = b[0] - ux * r, sy = b[1] - uy * r;
+      const ex = b[0] + vx * r, ey = b[1] + vy * r;
+      d += ' L ' + sx + ' ' + sy +
+           ' C ' + (sx + ux * FORK_K * r) + ' ' + (sy + uy * FORK_K * r) +
+           ', ' + (ex - vx * FORK_K * r) + ' ' + (ey - vy * FORK_K * r) +
+           ', ' + ex + ' ' + ey;
+    }
+    const z = p[p.length - 1];
+    return d + ' L ' + z[0] + ' ' + z[1];
+  };
+
+  // 着地点はロボの左端・縦中央。ロボは align-self:flex-start でカード上端に張り付くので、
+  // ここはカード高が変わっても動かない。クラスタの中も外も同じ入り方にする。
+  const landing = (e) => {
+    const q  = local(e.root.getBoundingClientRect());
+    const sl = e.root.querySelector('.robot-slot');
+    const rs = sl ? local(sl.getBoundingClientRect()) : null;
+    return { lx: q.l, cy: rs ? (rs.t + rs.b) / 2 : (q.t + q.b) / 2, qt: q.t };
+  };
+
+  const slotOf = new Map();
+  for (const cl of t.clusters) for (const sl of cl.grid.slots) slotOf.set(sl.id, { cl, s: sl });
+
+  // --- 扇（同じ親から出る辺の束）ごとにまとめる。クラスタも通常の親子も区別しない。
+  const fans = new Map();
   for (const a of t.state.agents) {
-    // クラスタに入った機体へはベジェを引かない（幹線＋行ワイヤ＋スタブが受け持つ）。
-    // 除外し忘れると、レーン1以降のカードへ向かうベジェが手前のカードを正面から貫く。
-    if (t.clusteredIds.has(a.id)) continue;
     const pid = effectiveParentId(a, ids);
     if (!pid) continue;
     const p = t.cards.get(pid), c = t.cards.get(a.id);
     if (!p || !c) continue;
-    const pr = p.card.getBoundingClientRect();
-    const cr = c.root.getBoundingClientRect();
-    const x1 = (pr.right - base.left) / zf;
-    const y1 = (pr.top + pr.height / 2 - base.top) / zf;
-    const x2 = (cr.left - base.left) / zf;
-    const y2 = (cr.top + cr.height / 2 - base.top) / zf;
-    const dx = Math.max(18, (x2 - x1) * 0.5);
-    if (a.status === 'running') running++;
-    out += '<path class="link ' + a.status + '" d="M ' + x1 + ' ' + y1 +
-           ' C ' + (x1 + dx) + ' ' + y1 + ', ' + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2 + '"/>';
+    let f = fans.get(pid);
+    if (!f) {
+      const pr = local(p.card.getBoundingClientRect());
+      f = { pid: pid, pt: pr.t, pb: pr.b, px: pr.r, py: (pr.t + pr.b) / 2, kids: [] };
+      fans.set(pid, f);
+    }
+    const g = slotOf.get(a.id);
+    f.kids.push(Object.assign({ id: a.id, st: status.get(a.id) || 'standby',
+                                lane: g ? g.s.lane : 0, row: g ? g.s.row : 0,
+                                cl: g ? g.cl : null }, landing(c)));
   }
 
-  // --- 葉クラスタ。1辺＝1本の独立した線で引く（Mermaid のフローチャートと同じ）。
-  // 共有のバスを持たないので、線は通常の親子線と同じ .link で、色はその機体の状態そのもの。
-  //
-  // どの辺も同じ形で引く。親から扇状に立ち上がり、クラスタの上に予約した帯を横に走り、
-  // 列と列のあいだの隙間を降りて、カードの左へ入る。レーン0だけ親から直接ぶら下げる案は
-  // 実装して捨てた：親とクラスタのあいだに居る別レーンのカードを貫く（実測で 189点）。
-  //
-  // **交差が1本も出ないのは、次の2つの順序が噛み合っているからで、崩すと交差が出る。**
-  //   ・上帯のトラックは「遠いレーンほど上」。近いレーンの降り口は必ずその下から始まるので、
-  //     遠いレーンの横走りが近いレーンの縦線をまたぐことがない。
-  //   ・同じレーンの中は「行0がいちばん上のトラック、かついちばん右の降り口」。
-  //     上のトラックほど右で降りる入れ子になるので、横走りが下の行の縦線を横切らない。
-  // 座標は実測（getBoundingClientRect）で取る。layoutTree の数値と混ぜないのは、460ms の
-  // トランジション中に「片方は目標値・片方は途中の位置」になって線がカードから外れるため。
-  for (const cl of t.clusters) {
-    const slots = cl.grid.slots.map((s) => ({ s, e: t.cards.get(s.id) })).filter((x) => x.e);
-    if (!slots.length) continue;
-    const p = t.cards.get(cl.parentId);
-    if (!p) continue;
-    const pr = local(p.card.getBoundingClientRect());
-    const px = pr.r, py = (pr.t + pr.b) / 2;
+  for (const [, f] of fans) {
+    const kids = f.kids;
+    if (!kids.length) continue;
 
-    const rects = slots.map((x) => ({ ...x, q: local(x.e.root.getBoundingClientRect()) }));
-    for (const x of rects) {
-      // 着地点はロボの左端・縦中央。ロボは align-self:flex-start でカード上端に張り付くので、
-      // ここはカード高が変わっても動かない（実測で常にカード内）。
-      const sl = x.e.root.querySelector('.robot-slot');
-      const rs = sl ? local(sl.getBoundingClientRect()) : null;
-      x.cy   = rs ? (rs.t + rs.b) / 2 : (x.q.t + x.q.b) / 2;
-      x.lx   = x.q.l;
-      x.lane = x.s.lane;
-      x.row  = x.s.row;
-    }
+    // --- レーン1以降の辺は、クラスタの上に予約した帯を横に走ってから降りる。
+    //     レーン0とクラスタ外の辺は上帯を使わない（左回廊から素直に降りれば届く）。
+    const over = kids.filter((k) => k.lane > 0 && k.cl);
+    if (over.length) {
+      const cl   = over[0].cl;
+      const mem  = kids.filter((k) => k.cl === cl);
+      const top  = Math.min.apply(null, mem.map((k) => k.qt));
+      const pad  = flowTopPad(mem.length);
+      const tp   = (pad - 2 * FLOW_EDGE) / over.length;
+      // 上帯のトラックは「遠いレーンほど上」。近いレーンの降り口は必ずその下から始まるので、
+      // 遠いレーンの横走りが近いレーンの縦線をまたがない。同じレーンの中は行の順。
+      over.sort((a, b) => (b.lane - a.lane) || (a.row - b.row));
+      over.forEach((k, idx) => { k.ty = top - pad + FLOW_EDGE + idx * tp; });
 
-    // まっすぐ引いてカードに当たらない辺は、まっすぐ引く。当たる辺だけが上帯を回る。
-    // 全部を回すと、トラックが 6px 間隔になり、拡大率 0.37 では 2.2 画面px ＝ 束が1本の
-    // 太線に見えて、1辺1本にした意味が絵の上で消える。
-    for (const x of rects) {
-      const bx = Math.max(18, (x.lx - px) * 0.5);
-      x.direct = !cubicHitsCard(px, py, px + bx, py, x.lx - bx, x.cy, x.lx, x.cy,
-                                cl.parentId, x.s.id);
-    }
-    const over = rects.filter((x) => !x.direct);
-    // 上帯のトラック。k=0 が最上。予約は gridSlots が全機体ぶん入れているので、上を回る辺が
-    // それより少なければ、そのぶん間隔を広く取れる（束が1本に見えないための唯一の余地）。
-    const top   = Math.min(...rects.map((x) => x.q.t));
-    const pad   = flowTopPad(rects.length);
-    const pitch = over.length ? (pad - 2 * FLOW_EDGE) / over.length : 0;
-    over.sort((a, b) => (b.lane - a.lane) || (a.row - b.row));
-    over.forEach((x, k) => { x.ty = top - pad + FLOW_EDGE + k * pitch; });
-
-    // 降り口の x。そのレーンのカード左端から左へ、行0を右端にして1本ずつずらす。
-    // 隙間（BAND_GAP）に収まる間隔まで詰める。詰めても隙間から出さないことを優先する：
-    // 出た先はカードなので、はみ出せば線がカードを貫く。
-    const laneL = new Map();
-    for (const x of rects) {
-      const c = laneL.get(x.lane);
-      if (c === undefined || x.lx < c) laneL.set(x.lane, x.lx);
-    }
-    const byLane = new Map();
-    for (const x of over) {
-      if (!byLane.has(x.lane)) byLane.set(x.lane, []);
-      byLane.get(x.lane).push(x);
-    }
-    for (const [lane, items] of byLane) {
-      items.sort((a, b) => a.row - b.row);
-      const gp = Math.min(FLOW_PITCH, (BAND_GAP - 2 * FLOW_EDGE) / Math.max(1, items.length));
-      const right = laneL.get(lane) - FLOW_EDGE;
-      items.forEach((x, i) => { x.dx = right - i * gp; });
-    }
-    // 扇の出口。レーン0の隙間のいちばん左に置く。ここが全ての降り口より左でないと、
-    // 上帯を右へ走るはずの区間が逆走する。右へ出しすぎるとレーン0のカードを貫く。
-    const lane0 = (laneL.get(0) !== undefined) ? laneL.get(0) : Math.min(...rects.map((x) => x.lx));
-    const xg = lane0 - BAND_GAP + FLOW_EDGE * 0.5;
-
-    for (const x of rects) {
-      const st = status.get(x.s.id) || 'standby';
-      if (st === 'running') running++;
-      if (x.direct) {
-        // 通常の親子線と1文字も変わらない書き方。クラスタでもここが多数派になる。
-        const bx = Math.max(18, (x.lx - px) * 0.5);
-        out += '<path class="link ' + st + '" d="M ' + px + ' ' + py +
-               ' C ' + (px + bx) + ' ' + py + ', ' + (x.lx - bx) + ' ' + x.cy +
-               ', ' + x.lx + ' ' + x.cy + '"/>';
-        continue;
+      // 降り口の x。そのレーンのカード左端から左へ、行0を右端にして1本ずつずらす。
+      // 上のトラックほど右で降りる入れ子になるので、横走りが下の行の縦線を横切らない。
+      const byLane = new Map();
+      for (const k of over) {
+        if (!byLane.has(k.lane)) byLane.set(k.lane, []);
+        byLane.get(k.lane).push(k);
       }
-      // 親 → 上帯（扇）。制御点を左に寄せて、親のそばでは水平に近く走らせる。対称に置くと
-      // 中間点で高さの半分まで動き、親とクラスタのあいだにあるカード（実測で 9〜13枚）を貫く。
-      const run = Math.max(1, xg - px);
-      let d = 'M ' + px + ' ' + py +
-              ' C ' + (px + run * 0.62) + ' ' + py +
-              ', ' + (xg - run * 0.26) + ' ' + x.ty +
-              ', ' + xg + ' ' + x.ty;
-      // 上帯を横へ → 角 → 隙間を縦へ → 角 → カードの左へ。角は真円の四分円。
-      const vy = x.cy - x.ty;
-      const r1 = Math.max(0, Math.min(FLOW_R, (x.dx - xg) / 2, vy / 2));
-      const r2 = Math.max(0, Math.min(FLOW_R, (x.lx - x.dx) / 2, vy / 2));
-      d += (r1 > 0.5)
-        ? ' L ' + (x.dx - r1) + ' ' + x.ty +
-          ' C ' + (x.dx - r1 + FORK_K * r1) + ' ' + x.ty +
-          ', ' + x.dx + ' ' + (x.ty + r1 - FORK_K * r1) +
-          ', ' + x.dx + ' ' + (x.ty + r1)
-        : ' L ' + x.dx + ' ' + x.ty;
-      d += (r2 > 0.5)
-        ? ' L ' + x.dx + ' ' + (x.cy - r2) +
-          ' C ' + x.dx + ' ' + (x.cy - r2 + FORK_K * r2) +
-          ', ' + (x.dx + r2 - FORK_K * r2) + ' ' + x.cy +
-          ', ' + (x.dx + r2) + ' ' + x.cy
-        : ' L ' + x.dx + ' ' + x.cy;
-      d += ' L ' + x.lx + ' ' + x.cy;
-      out += '<path class="link ' + st + '" d="' + d + '"/>';
+      for (const [lane, items] of byLane) {
+        let laneL = Infinity;
+        for (const k of mem) if (k.lane === lane && k.lx < laneL) laneL = k.lx;
+        items.sort((a, b) => a.row - b.row);
+        // カードへ入る最後の脚を 2R 確保する。ここを FLOW_EDGE(8) にすると角が半径 4 で
+        // 頭打ちになる。トラックはそこからさらに左へ、レーン間隔の残りに収まる間隔で並べる。
+        const gap = (over[0].cl.grid.laneGap || BAND_GAP);
+        const gp  = Math.min(FLOW_PITCH,
+                             Math.max(0, gap - 2 * FLOW_R - FLOW_EDGE) / Math.max(1, items.length - 1));
+        items.forEach((k, idx) => { k.dx = laneL - 2 * FLOW_R - idx * gp; });
+      }
+    }
+
+    // --- 回廊で曲がって向かう先の y。上帯を回る辺は「上帯の高さ」であって行き先のカードではない。
+    //     ここに行き先のカードの y を入れると、上帯を右へ走る横線が、まっすぐ降りる辺の
+    //     縦線を横切る。ty はカードより上にあるので、下向きの群では「行き先がいちばん上」の
+    //     扱いになり、規則によって回廊の右端側のトラックを取る＝縦線は全部その左に来る。
+    for (const k of kids) k.ct = (k.ty !== undefined) ? k.ty : k.cy;
+
+    // --- 親カードの右辺に、子ごとの出口を割り当てる。ここを1点に集めると、扇の付け根で
+    //     全部の線が重なる（実測で、重なりの長さの 11.7% がパスの最初の 20% に集中していた）。
+    const n     = kids.length;
+    const usable = Math.max(0, (f.pb - f.pt) - 2 * EXIT_MARGIN);
+    const ep    = n > 1 ? Math.min(EXIT_PITCH, usable / (n - 1)) : 0;
+    kids.sort((a, b) => a.ct - b.ct);                       // 行き先が上のものほど出口も上
+    kids.forEach((k, idx) => { k.ey = f.py + (idx - (n - 1) / 2) * ep; });
+
+    // --- 左回廊のトラック。
+    //     交差ゼロの規則（崩すと必ず交差が出る）:
+    //       ・下向きの群（行き先が出口より下）は、行き先が上のものほど x を大きく（右で曲がる）
+    //       ・上向きの群は、行き先が上のものほど x を小さく（左で曲がる）
+    //       ・上下の群は x を共有してよい。縦の区間が出口を挟んで反対側にあり重ならないため。
+    //     だから要るトラックは max(上向き, 下向き) 本。gridSlots が予約する flowLeftPad の
+    //     ceil(n/2) はこの数のこと。
+    // いちばん右のトラックはカード左端から 2R、いちばん左は親の右端から 2R 離す。
+    // 角ひとつが半径 R まで丸くなるには、その両側の脚がそれぞれ 2R 必要なため。
+    // 予約（flowLeftPad）が 4R ベースなのはこの2つを足したもの。狭いときは間隔のほうを詰める。
+    let corridorR = Infinity;
+    for (const k of kids) if (k.lx < corridorR) corridorR = k.lx;
+    corridorR -= 2 * FLOW_R;
+    const up   = kids.filter((k) => k.ct <  k.ey);
+    const down = kids.filter((k) => k.ct >= k.ey);
+    const K    = Math.max(up.length, down.length);
+    const t0   = Math.min(corridorR,
+                          Math.max(f.px + 2 * FLOW_R, corridorR - Math.max(0, K - 1) * FLOW_PITCH));
+    const tp2  = K > 1 ? Math.min(FLOW_PITCH, Math.max(0, corridorR - t0) / (K - 1)) : 0;
+    const trk  = (idx) => t0 + idx * tp2;
+    up.forEach((k, idx)   => { k.cx = trk(idx); });
+    down.forEach((k, idx) => { k.cx = trk(K - 1 - idx); });
+
+    for (const k of kids) {
+      if (k.st === 'running') running++;
+      const pts = (k.ty !== undefined)
+        ? [[f.px, k.ey], [k.cx, k.ey], [k.cx, k.ty], [k.dx, k.ty], [k.dx, k.cy], [k.lx, k.cy]]
+        : [[f.px, k.ey], [k.cx, k.ey], [k.cx, k.cy], [k.lx, k.cy]];
+      // 親のすぐ右の横走りだけは、途中に別の帯のカードが居ることがある（親とクラスタの
+      // あいだに 9〜13枚あるケースが実在する）。当たるときは親の縦中央まで戻して逃がす：
+      // 扇の付け根が1点に寄るぶん重なりは増えるが、カードを貫くよりは軽い。
+      if (segHitsCard(f.px, k.ey, k.cx, k.ey, f.pid, k.id) &&
+          !segHitsCard(f.px, f.py, k.cx, f.py, f.pid, k.id)) {
+        pts[0] = [f.px, f.py];
+        pts[1] = [k.cx, f.py];
+      }
+      out += '<path class="link ' + k.st + '" d="' + orthoPath(pts) + '"/>';
     }
   }
   t.els.links.innerHTML = out;
