@@ -53,7 +53,8 @@ def write_agent(subagents: Path, agent_id: str, *, start: float, cwd: str,
                 session: str, model: str = "sonnet", description: str = "",
                 tools=(), tokens=(0, 0, 0), tail_open: bool = False,
                 broken_line: bool = False, workflow_run: str = "",
-                prompt: str = "任務") -> None:
+                prompt: str = "任務", spawn_depth: int = 1,
+                tool_use_id: str = "") -> None:
     """1体ぶんの jsonl と meta.json を書く。
 
     tools は [(ツール名, 引数dict, 何秒後), ...]。tail_open=True なら最後の呼び出しの
@@ -61,7 +62,11 @@ def write_agent(subagents: Path, agent_id: str, *, start: float, cwd: str,
     """
     d = subagents / "workflows" / workflow_run if workflow_run else subagents
     d.mkdir(parents=True, exist_ok=True)
-    meta = {"agentType": "workflow-subagent" if workflow_run else "Explore", "spawnDepth": 1}
+    meta = {"agentType": "workflow-subagent" if workflow_run else "Explore",
+            "spawnDepth": spawn_depth}
+    if tool_use_id:
+        # その機体を起動した Agent 呼び出しのID。親のログの tool_use と同じものになる。
+        meta["toolUseId"] = tool_use_id
     if model:
         meta["model"] = model
     if description:
@@ -78,7 +83,8 @@ def write_agent(subagents: Path, agent_id: str, *, start: float, cwd: str,
         at = start + offset
         rows.append(dict(base, type="assistant", timestamp=iso(at), message={
             "role": "assistant",
-            "content": [{"type": "tool_use", "id": f"tu{i}", "name": name, "input": inp}],
+            "content": [{"type": "tool_use", "id": f"{agent_id}-tu{i}",
+                         "name": name, "input": inp}],
             "usage": {"input_tokens": tin, "cache_creation_input_tokens": tcc,
                       "cache_read_input_tokens": tcr, "output_tokens": 7},
         }))
@@ -86,7 +92,8 @@ def write_agent(subagents: Path, agent_id: str, *, start: float, cwd: str,
         if not (last and tail_open):
             rows.append(dict(base, type="user", timestamp=iso(at + 1), message={
                 "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": f"tu{i}", "content": "ok"}],
+                "content": [{"type": "tool_result", "tool_use_id": f"{agent_id}-tu{i}",
+                             "content": "ok"}],
             }))
     lines = [json.dumps(r, ensure_ascii=False) for r in rows]
     if broken_line:
@@ -499,6 +506,46 @@ def main() -> int:
         for t_ in ths:
             t_.join()
         check("何スレッドから読んでも 4 回", sorted(set(results)), [4])
+
+        print()
+        print("[24] 記録に無い機体に、実測した起動元が載る")
+        # 親が Agent ツールで子を起動し、その呼び出しのIDが子の meta.toolUseId になる、
+        # という実データの形をそのまま作る。実測（手元の全記録 213 本）では、
+        # spawnDepth>=2 の 15 体すべてがこの形でちょうど1体の親に解決し、
+        # そのツール名は 15/15 とも "Agent" だった。
+        # 専用の作業フォルダを使う。ここまでの項目と同じ場所にすると、前に書いた機体まで
+        # このミッションの候補に入り、孤児の顔ぶれが検査したい形にならない。
+        work9 = tmp / "work9"
+        work9.mkdir(parents=True, exist_ok=True)
+        path9 = str(work9.resolve())
+        slug9 = dashlib.slug_for_path(work9.resolve())
+        session9 = "99999999-2222-3333-4444-555555555555"
+        sub9 = live_root / slug9 / session9 / "subagents"
+        t9 = now - 200
+        write_agent(sub9, "oya1", start=t9, cwd=path9, session=session9,
+                    model="sonnet", description="偵察班 地形走査",
+                    tools=[("Agent", {"description": "走査子 一番"}, 1)])
+        write_agent(sub9, "ko1", start=t9 + 2, cwd=path9, session=session9,
+                    model="haiku", description="走査子 一番",
+                    spawn_depth=2, tool_use_id="oya1-tu0",   # 親の Agent 呼び出しのID
+                    tools=[("Read", {"file_path": "/a.py"}, 1)])
+        write_agent(sub9, "hitori", start=t9 + 2, cwd=path9, session=session9,
+                    model="haiku", description="どこにも属さない機体",
+                    tools=[("Read", {"file_path": "/b.py"}, 1)])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t24", project_path=path9, started=t9 - 5,
+                      agents=[rec("A", "偵察班 地形走査", "claude-sonnet-5", t9)])
+        st = dashlib.build_state("t24")
+        orph = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}
+        check("親は記録に結ばれ、孤児にならない", "oya1" in orph, False)
+        check("記録に無い2体だけが孤児として出る", sorted(orph), ["hitori", "ko1"])
+        check("孤児に説明が載る", orph["ko1"].get("description"), "走査子 一番")
+        check("起動元が実測で載る", orph["ko1"].get("parentAgentId"), "oya1")
+        check("起動元は結ばれた記録の名前で出る", orph["ko1"].get("parentName"), "偵察班 地形走査")
+        check("親が分からない機体には起動元を補わない",
+              orph["hitori"].get("parentAgentId"), None)
+        check("対応づけ用の手がかりは孤児にも漏れない",
+              sorted(k for o in orph.values() for k in o if k.startswith("_")), [])
 
     finally:
         os.environ.pop("AGENT_DASHBOARD_DATA_HOME", None)
