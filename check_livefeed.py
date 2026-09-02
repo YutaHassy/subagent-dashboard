@@ -54,7 +54,7 @@ def write_agent(subagents: Path, agent_id: str, *, start: float, cwd: str,
                 tools=(), tokens=(0, 0, 0), tail_open: bool = False,
                 broken_line: bool = False, workflow_run: str = "",
                 prompt: str = "任務", spawn_depth: int = 1,
-                tool_use_id: str = "") -> None:
+                tool_use_id: str = "", parent_agent_id: str = "") -> None:
     """1体ぶんの jsonl と meta.json を書く。
 
     tools は [(ツール名, 引数dict, 何秒後), ...]。tail_open=True なら最後の呼び出しの
@@ -67,6 +67,9 @@ def write_agent(subagents: Path, agent_id: str, *, start: float, cwd: str,
     if tool_use_id:
         # その機体を起動した Agent 呼び出しのID。親のログの tool_use と同じものになる。
         meta["toolUseId"] = tool_use_id
+    if parent_agent_id:
+        # 親そのものが書かれている個体もある（実データで確認）。
+        meta["parentAgentId"] = parent_agent_id
     if model:
         meta["model"] = model
     if description:
@@ -147,6 +150,13 @@ def reset(livefeed, *, sticky: bool = True) -> None:
     livefeed._peer_cache["keys"] = {}
     if sticky:
         livefeed._sticky.clear()
+
+
+def command(model: str, started: float, status: str = "running") -> dict:
+    """指令塔（主セッション）の記録。start が必ず1件だけ作る。"""
+    return {"id": "COMMAND", "name": "指令塔", "parentId": None, "generation": 0,
+            "model": model, "mission": "全体統括", "status": status,
+            "startedAt": local_iso(started), "finishedAt": None, "result": None}
 
 
 def rec(agent_id: str, name: str, model: str, started: float, status: str = "running") -> dict:
@@ -546,6 +556,43 @@ def main() -> int:
               orph["hitori"].get("parentAgentId"), None)
         check("対応づけ用の手がかりは孤児にも漏れない",
               sorted(k for o in orph.values() for k in o if k.startswith("_")), [])
+
+        print()
+        print("[25] 指令塔のカードには、実測を絶対に載せない")
+        # 実物で出た形。下請けが自分で起動した孫は meta.json に model を持たないことが
+        # あり（実データで確認）、モデル一致の門は「両方に値があるときだけ」外すので
+        # 素通りする。残った候補が1つだと規則4が成立し、**別の機体の数字が指令塔の
+        # カードに載った**。指令塔は主セッションであってサブエージェントではないので、
+        # その記録が subagents/ の下にあることは原理的にありえない。
+        work25 = tmp / "work25"
+        work25.mkdir(parents=True, exist_ok=True)
+        path25 = str(work25.resolve())
+        slug25 = dashlib.slug_for_path(work25.resolve())
+        session25 = "25252525-2222-3333-4444-555555555555"
+        sub25 = live_root / slug25 / session25 / "subagents"
+        t25 = now - 150
+        write_agent(sub25, "oya25", start=t25, cwd=path25, session=session25,
+                    model="sonnet", description="親の仕事",
+                    tools=[("Agent", {"description": "孫の仕事"}, 1)])
+        write_agent(sub25, "mago25", start=t25 + 3, cwd=path25, session=session25,
+                    model="", description="孫の仕事",       # meta に model が無い
+                    spawn_depth=2, parent_agent_id="oya25",  # 親が直接書かれている形
+                    tools=[("Read", {"file_path": "/x.py"}, 1)])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t25", project_path=path25, started=t25 - 5,
+                      agents=[command("claude-opus-5", t25 - 5),
+                              rec("A", "親の仕事", "claude-sonnet-5", t25)])
+        st = dashlib.build_state("t25")
+        by = {a["id"]: a for a in st["agents"]}
+        check("指令塔に実測は載らない", by["COMMAND"]["live"], None)
+        check("名前が一致する機体には載る",
+              (by["A"]["live"] or {}).get("agentId"), "oya25")
+        orph = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}
+        check("記録に無い孫は孤児として出る", sorted(orph), ["mago25"])
+        check("meta の parentAgentId から起動元が出る",
+              orph["mago25"].get("parentAgentId"), "oya25")
+        check("起動元は結ばれた記録の名前で出る",
+              orph["mago25"].get("parentName"), "親の仕事")
 
     finally:
         os.environ.pop("AGENT_DASHBOARD_DATA_HOME", None)

@@ -4223,6 +4223,14 @@ function paintOrphans(t) {
     if (o.toolCalls !== null && o.toolCalls !== undefined) {
       bits.push(tr('live.tools_n', { n: fmtNum(o.toolCalls) }));
     }
+    // **黙っていることを言う。** この欄は記録が無い＝完了の合図も無い機体を並べるので、
+    // 終わった機体もそのまま残る（ログに終わりの印は無い。実測: 終了直後の最後の行は
+    // ただの assistant/text で、終端を示す行は書かれない）。だから「終わったかどうか」は
+    // 沈黙の長さでしか読めない。カードと同じ言い方で、その長さをそのまま出す。
+    if (o.state && o.state !== 'active' && o.idleSec !== null && o.idleSec !== undefined) {
+      bits.push(tr(o.state === 'stalled' ? 'live.stalled' : 'live.quiet',
+                   { s: fmtSec(o.idleSec) }));
+    }
     row.textContent = bits.join('  /  ');
     row.title = o.agentId + '  /  ' + bits.join('  /  ');
     el.appendChild(row);
