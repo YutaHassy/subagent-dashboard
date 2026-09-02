@@ -213,6 +213,13 @@ def tool_label(inp) -> str:
 
 # ---------------------------------------------------------------- 1本の JSONL を読む
 
+# 子を起動するツールの名前。ここで拾った tool_use のIDが、生まれた子の
+# meta.json の toolUseId と一致する＝親子が実測で決まる。
+# 実測（手元の全記録）: spawnDepth>=2 の 15 体すべてが親のログの "Agent" 呼び出しに
+# 解決した。"Task" は同じ役割の旧名なので併せて見る（外れても親が出ないだけで害はない）。
+SPAWN_TOOLS = ("Agent", "Task")
+
+
 def _new_acc() -> dict:
     return {
         "firstTs": None,
@@ -220,6 +227,7 @@ def _new_acc() -> dict:
         "toolCalls": 0,
         "openTools": {},   # tool_use_id -> True（結果がまだ来ていない呼び出し）
         "lastTool": None,  # {"name", "label", "at"}
+        "spawns": {},      # tool_use_id -> True（この機体が起動した子の呼び出し）
         "tokens": None,
         "lines": 0,
     }
@@ -255,14 +263,17 @@ def _feed(acc: dict, row: dict) -> None:
         kind = block.get("type")
         if kind == "tool_use":
             acc["toolCalls"] += 1
+            name = dashlib.as_str(block.get("name")) or "?"
             acc["lastTool"] = {
-                "name": dashlib.as_str(block.get("name")) or "?",
+                "name": name,
                 "label": tool_label(block.get("input")),
                 "at": ts,
             }
             bid = dashlib.as_str(block.get("id"))
             if bid:
                 acc["openTools"][bid] = True
+                if name in SPAWN_TOOLS:
+                    acc["spawns"][bid] = True
         elif kind == "tool_result":
             bid = dashlib.as_str(block.get("tool_use_id"))
             if bid:
@@ -306,6 +317,7 @@ def read_agent_file(path: Path):
         # 負けた側の組は丸ごと捨てられるだけなので、取りこぼしも二重読みも起きない。
         acc = dict(cached["acc"])
         acc["openTools"] = dict(acc["openTools"])   # _feed が中身を直接いじるので浅い複製では足りない
+        acc["spawns"] = dict(acc["spawns"])         # 同上
     else:
         offset = 0
         acc = _new_acc()
@@ -511,6 +523,8 @@ def describe(entry: dict) -> dict:
         "cwd": dashlib.as_str(head.get("cwd")),
         "sessionId": dashlib.as_str(head.get("sessionId")) or entry["sessionId"],
         "description": dashlib.as_str(meta.get("description")),
+        # この機体を起動した Agent 呼び出しのID。親のログの tool_use と突き合わせる。
+        "toolUseId": dashlib.as_str(meta.get("toolUseId")),
         "agentType": dashlib.as_str(meta.get("agentType")),
         "model": dashlib.as_str(meta.get("model")),
         "spawnDepth": dashlib.as_num(meta.get("spawnDepth")),
@@ -682,6 +696,8 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         # 対応づけにだけ使う手がかりは _ 始まりにして持ち回り、画面へ渡す前に落とす。
         m["_firstTs"] = acc["firstTs"]
         m["_prompt"] = c.get("prompt") or ""
+        m["_toolUseId"] = c.get("toolUseId") or ""
+        m["_spawns"] = list(acc["spawns"])
         cands.append(m)
     if not cands:
         return []
@@ -806,8 +822,31 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
             for k in list(_sticky)[:-32]:
                 _sticky.pop(k, None)
 
-    return [public(c) for c in sorted(cands, key=lambda x: x["agentId"])
-            if c["agentId"] not in used]
+    # 記録に無い実機の親を、実測で辿る。meta.json の toolUseId はその機体を起動した
+    # Agent 呼び出しのIDで、同じIDは親のログに tool_use として現れる。だから親子は
+    # **推測ではなく実測**で決まる（系統樹に線を引かないのは変えない。ここで出すのは
+    # 素性だけで、線を引けば「どの世代のどこに置くか」という推測が必ず入るため）。
+    owner = {}
+    for c in cands:
+        for tid in (c.get("_spawns") or ()):
+            owner[tid] = c["agentId"]
+    rec_of_agent = {aid: rid for rid, aid in pairs.items()}
+    name_of_rec = {dashlib.as_str(r.get("id")): dashlib.as_str(r.get("name")) for r in agents}
+    desc_of_agent = {c["agentId"]: c["description"] for c in cands}
+
+    orphans = []
+    for c in sorted(cands, key=lambda x: x["agentId"]):
+        if c["agentId"] in used:
+            continue
+        o = public(c)
+        pid = owner.get(c.get("_toolUseId") or "")
+        if pid:
+            # 親がカードに結ばれていればその名前を、まだなら親自身の説明を出す。
+            o["parentAgentId"] = pid
+            o["parentName"] = (name_of_rec.get(rec_of_agent.get(pid, ""), "")
+                               or desc_of_agent.get(pid, ""))
+        orphans.append(o)
+    return orphans
 
 
 def measure_for(project_path: str, name: str, model: str, started_at: str,
