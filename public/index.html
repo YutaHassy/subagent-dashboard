@@ -4209,16 +4209,20 @@ function paintOrphans(t) {
     const row = document.createElement('div');
     // 先頭は description（Agent ツールへ渡した説明）。--name をこれに合わせれば
     // 対応づけの規則1で必ず結ばれるので、直し方が画面から直に読める。
+    // **素性を先、様子を後**にする。この欄は1行に収める作りで、溢れた右端は「…」に
+    // なって消える。実測で、説明と起動元を末尾に置くと幅1500pxでも起動元が切れた。
+    // 消えてよいのは「いま何をしているか」（次のティックでまた出る）で、
+    // 「どの機体か」「誰が起動したか」は消えてはいけない。
     const bits = [];
     if (o.description) bits.push(o.description);
+    // 起動元は実測（meta.json の toolUseId が親のログの tool_use と一致した相手）。
+    // 分かったときだけ出す。分からない機体に「指令塔」などと補わないこと。
+    if (o.parentName) bits.push(tr('live.orphan_parent', { name: o.parentName }));
     bits.push(o.model || tr('card.unknown_model'));
     if (o.tool) bits.push(o.tool + (o.toolLabel ? ' ' + o.toolLabel : ''));
     if (o.toolCalls !== null && o.toolCalls !== undefined) {
       bits.push(tr('live.tools_n', { n: fmtNum(o.toolCalls) }));
     }
-    // 起動元は実測（meta.json の toolUseId が親のログの tool_use と一致した相手）。
-    // 分かったときだけ出す。分からない機体に「指令塔」などと補わないこと。
-    if (o.parentName) bits.push(tr('live.orphan_parent', { name: o.parentName }));
     row.textContent = bits.join('  /  ');
     row.title = o.agentId + '  /  ' + bits.join('  /  ');
     el.appendChild(row);
