@@ -336,6 +336,15 @@ CATALOG["ja"] = {
     "specify a registered project path": "登録済みのプロジェクトのパスを指定してください",
     "specify a valid sessionId": "正しい sessionId を指定してください",
     "no such session": "そのセッションはありません",
+    # ---- update_state: finish / autofinish（記録に無い機体の焼き付け）
+    '  Units with no record':
+        '  記録に無い機体',
+    '{n} (frozen into the record as they were)':
+        '{n} 体（そのままの姿で記録に焼き付けました）',
+    'closed automatically when the session ended':
+        'セッション終了により自動で締めました',
+    'close the mission automatically at the end of a session (for the SessionEnd hook; silent when nothing is running)':
+        'セッションの終わりにミッションを自動で締める（SessionEnd hook 用。稼働していなければ何もしない）',
 }
 
 # ============================================================ 中文（简体）
@@ -635,6 +644,15 @@ CATALOG["zh"] = {
     "specify a registered project path": "请指定已注册的项目路径",
     "specify a valid sessionId": "请指定正确的 sessionId",
     "no such session": "没有该会话",
+    # ---- update_state: finish / autofinish（記録に無い機体の焼き付け）
+    '  Units with no record':
+        '  无记录的机体',
+    '{n} (frozen into the record as they were)':
+        '{n} 台（按当时的样子固化到记录中）',
+    'closed automatically when the session ended':
+        '会话结束时自动收尾',
+    'close the mission automatically at the end of a session (for the SessionEnd hook; silent when nothing is running)':
+        '在会话结束时自动收尾任务（供 SessionEnd hook 使用；没有运行中的任务时不做任何事）',
 }
 
 # ============================================================ 한국어
@@ -941,4 +959,13 @@ CATALOG["ko"] = {
     "specify a registered project path": "등록된 프로젝트 경로를 지정하세요",
     "specify a valid sessionId": "올바른 sessionId 를 지정하세요",
     "no such session": "해당 세션이 없습니다",
+    # ---- update_state: finish / autofinish（記録に無い機体の焼き付け）
+    '  Units with no record':
+        '  기록에 없는 기체',
+    '{n} (frozen into the record as they were)':
+        '{n}대 (당시 모습 그대로 기록에 새겼습니다)',
+    'closed automatically when the session ended':
+        '세션 종료로 자동으로 마감했습니다',
+    'close the mission automatically at the end of a session (for the SessionEnd hook; silent when nothing is running)':
+        '세션이 끝날 때 미션을 자동으로 마감한다(SessionEnd hook용. 가동 중이 아니면 아무것도 하지 않는다)',
 }

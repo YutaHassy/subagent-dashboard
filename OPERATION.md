@@ -344,6 +344,8 @@ dash finish --headline "impact scoped; the change set is settled at 12 files"
 - The unit count, total tokens and elapsed time are totalled by the CLI (you do not need to pass anything other than `--headline`)
 - The total token count is the sum over the units you passed `--tokens` for. If no unit has a figure, it shows "—"
 - A unit still sitting in `standby` is treated as finished, as "ended without ever deploying"
+- **Before** it marks the mission finished, it freezes whatever units are running right now with no
+  record into `state.json` (see "Freezing units with no record into the close" below)
 
 ### The watch for a forgotten close
 
@@ -377,6 +379,72 @@ If you `start` the next one while units have not returned, that is not a "forgot
 that never returned)`. This also happens without fail when you try to run two missions in parallel in the same
 directory, so in that case it goes on to give the countermeasure (splitting the record destination with
 `--project`). → "6.1. Running two or more missions at the same time in the same directory"
+
+### Closing automatically from a SessionEnd hook
+
+Every row in the table above only tells you — none of them fixes anything. **`autofinish` closes that gap by
+automating the close instead of nagging about it.** A nag never reaches someone who has already walked away, so
+this is tied to the end of the session rather than to a person noticing.
+
+```bash
+dash autofinish                      # same as python update_state.py autofinish
+dash autofinish --project <name>
+dash autofinish --headline "..."
+```
+
+- **With no mission running, it prints nothing and exits.** SessionEnd fires every time a session ends, so this
+  keeps output from mixing in on the runs where no mission is open.
+- **Without `--project`, it closes every mission running in that directory** — including one split off in
+  parallel with `--project <name>`. Closing only the single mission the current directory resolves to would
+  leave a split-off one running forever. **It never touches a mission in a different folder** (it only looks at
+  projects whose `project.path` matches the current directory).
+- Pass `--project <name>` explicitly and it looks at only that one mission (the caller has already decided the
+  target, so the ownership check below does not apply).
+- **It never closes a mission opened by a different session (when `--project` is omitted).** Running two Claude
+  Code sessions in the same folder is ordinary, and in practice one session ending closed a mission another
+  session was still actively working on (hit for real on 2026-09-03). A mechanism built to catch a forgotten
+  close is not license to close someone else's record. `start` records the session that opened the mission
+  (`mission.sessionId`, taken from the `CLAUDE_CODE_SESSION_ID` environment variable), and `autofinish` compares
+  that against its own session ID, silently skipping any mission it does not own. **Where a session ID cannot be
+  read, it closes the mission anyway, as before** — refusing to close on "unknown" would let this whole
+  mechanism fail silently, and closing too eagerly can be redone with the next `start` while a forgotten close
+  cannot be fixed at all.
+- Omit `--headline` and it fills in "closed automatically when the session ended".
+- It takes the lock one mission at a time (taking them all at once would make a hook mid-close wait on another).
+
+**Note**: `/clear` also raises SessionEnd, so a mission can get closed mid-task. Closing too eagerly can be
+redone with the next `start`; a forgotten close cannot be fixed at all — that trade-off is why it works this way.
+
+Example configuration (`.claude/settings.local.json`):
+
+```json
+"SessionEnd": [
+  {
+    "matcher": "",
+    "hooks": [
+      { "type": "command", "command": "python 'C:\\path\\to\\update_state.py' autofinish; exit 0" }
+    ]
+  }
+]
+```
+
+### Freezing units with no record into the close
+
+`finish` and `autofinish` both freeze, into `state.json`'s `orphans`, whatever units are running right now but
+have no record — **before** the mission is marked finished. Only a running mission has its live state read, so
+without this, a unit like that would vanish from both the screen and history the instant you close it — there
+would be no trace it was ever there.
+
+What gets frozen stays exactly where it was when you closed. Since it is no longer running, it is shown **as
+finished** — showing it with a live face would be a lie. Whatever elapsed time, tokens and tool calls had
+already been measured by the time you closed stay on the card. It is never counted toward the unit total
+(counting it would throw off whether "every unit is back"), and it is never rebuilt after the close (that would
+pull in a different mission's units caught inside the same time window, which is not the same thing as what was
+actually measured at close time). `finish` / `autofinish` print one extra line for it:
+
+```
+Units with no record    2 (frozen into the record as they were)
+```
 
 ---
 
@@ -500,6 +568,8 @@ dash finish --project PAVS_ER-issue51 --headline "..."
 - Missions running in different directories already have different record destinations, so `--project` is not needed.
 - Each split is treated as an independent project. Two tabs line up on the screen, and running teams are shown at the same time.
 - It can also be given with the environment variable `AGENT_DASHBOARD_PROJECT` (`--project` takes priority).
+- **`autofinish` can close both in one call.** Run it without `--project` and it closes **every mission running
+  in that directory** — split-off ones included. One call from a SessionEnd hook is enough.
 
 When a push-out does happen, you are told in two places. **Both only tell you; neither fixes it.**
 

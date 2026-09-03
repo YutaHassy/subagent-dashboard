@@ -165,6 +165,15 @@ Running `dash` on its own prints the list. Each command has details under `dash 
 The commands that write state (`start` / `add` / `done` / `finish`) are normally run by Claude automatically,
 so you do not need to type them yourself.
 
+`dash autofinish` is a command apart from those — it is meant to be called from a SessionEnd hook, to **close
+whatever mission is still running when the session ends.** A forgotten close is the one failure mode this tool
+cannot fix after the fact (the next `start` pushes it into history still marked running, and there is no way to
+mark it finished from there), so this ties the close to the end of the session rather than to a person
+remembering. With no mission running it prints nothing and exits; leave out `--project` and it closes every
+mission running in parallel in that directory. It only closes missions it opened, though — a mission another
+session in the same folder is still working on is left alone (skipped silently where the session ID is known,
+closed as before where it is not). See [OPERATION.md](OPERATION.md) for an example hook configuration.
+
 ### Running two missions at once in the same folder
 
 There is one record destination per project (= per working folder). If you `start` a second mission in the
@@ -464,6 +473,14 @@ work in parallel.
 For the same reason, token counts and tool-use counts that were not in the completion report are shown as `—`.
 That is not a fault; it is the correct way to display "unknown". The command post's own model follows the same
 rule: leave `--model` out of `start` and it shows as "unknown" too, instead of a guessed or hard-coded value.
+
+### Freezing units with no record when a mission closes
+
+`finish` (and `dash autofinish`) freezes whatever units are running right now with no record into `state.json`,
+**before** the mission is marked finished. Only a running mission has its live state read, so without this,
+those units would vanish from both the screen and history the moment you close — there would be no trace they
+were ever there. What gets frozen stays where it was when you closed, shown **as finished** (whatever elapsed
+time, tokens and tool calls had been measured by then stay on the card). It is never counted toward the unit total.
 
 ---
 

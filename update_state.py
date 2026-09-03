@@ -258,6 +258,12 @@ def cmd_start(args) -> None:
 
     state = dashlib.empty_state(project)
     state["mission"].update({"phase": "running", "title": title, "startedAt": at})
+    # **このミッションの持ち主。** autofinish がこれを見て、他のセッションが開いた
+    # ミッションを締めないようにする。取れない環境では空のまま（そのときは今までどおり
+    # 締める側に倒す。理由は running_missions_here を参照）。
+    owner = current_session()
+    if owner:
+        state["mission"]["sessionId"] = owner
     state["agents"].append(
         {
             "id": COMMAND_ID,
@@ -568,10 +574,32 @@ def cmd_done(args) -> None:
                 '--headline "<one-line summary of the whole mission>"'))
 
 
+def snapshot_orphans(slug: str) -> list:
+    """締める直前の「記録に無い稼働中の機体」を、そのまま持ち帰る。
+
+    採り方を画面と同じ経路（build_state）にそろえてあるのは、ここで別の判定を
+    書き足すと、締めた瞬間に画面の内容と食い違うものが記録に残るため。
+
+    読むだけで、失敗しても黙って空を返す。**締めることのほうが大事**——
+    焼き付けに失敗して finish が落ちたら、ミッションが稼働中のまま残る。
+    それはこのツールで唯一あとから直せない壊れ方なので、天秤にかけない。
+    """
+    try:
+        payload = dashlib.build_state(slug)
+        got = payload.get("sources", {}).get("liveOrphans")
+        return got if isinstance(got, list) else []
+    except Exception:
+        return []
+
+
 def cmd_finish(args) -> None:
     project = pick_project(args)
     slug = project["slug"]
     state = read_state(slug, project, required=True)
+
+    # **phase を done にする前に採る。** assign_live は稼働中のミッションしか見ないので、
+    # 順番を逆にすると必ず空になり、記録に無いまま動いていた機体は跡形もなく消える。
+    frozen = snapshot_orphans(slug)
 
     workers = [a for a in state["agents"] if a.get("id") != COMMAND_ID]
     unfinished = [a for a in workers if a.get("status") != "done"]
@@ -634,6 +662,11 @@ def cmd_finish(args) -> None:
         }
     )
 
+    if frozen:
+        # 記録には無かったが確かに動いていた機体。数には混ぜず、別の場所に残す
+        # （混ぜると「機体数」も「全機帰還したか」の判定も狂う）。
+        state["orphans"] = frozen
+
     push_log(
         state,
         t("Command"),
@@ -650,11 +683,101 @@ def cmd_finish(args) -> None:
     print(pad(t("  Total tokens"), w) + fmt_num(total_tokens)
           + (t(" (nothing measured)") if total_tokens is None else ""))
     print(pad(t("  Elapsed"), w) + fmt_sec(elapsed))
+    if frozen:
+        print(pad(t("  Units with no record"), w)
+              + t("{n} (frozen into the record as they were)").format(n=len(frozen)))
 
     if args.headline and dashlib.free_text_lang_mismatch(args.headline):
         notice = dashlib.free_text_lang_notice([("--headline", args.headline)], fixable=True)
         if notice:
             print(notice)
+
+
+#: いま動いている Claude Code のセッション。**ミッションの持ち主を決めるのはこれだけ。**
+#: hook もこの CLI も、同じ実行ファイルの子プロセスとして起動されるので同じ値が渡る。
+ENV_SESSION = "CLAUDE_CODE_SESSION_ID"
+
+
+def current_session() -> str:
+    return (os.environ.get(ENV_SESSION) or "").strip()
+
+
+def running_missions_here(explicit, session: str = "") -> list:
+    """いま「このディレクトリで」稼働中のミッションの slug 一覧。
+
+    **カレントディレクトリから決まる1本だけでは足りない。** 同じフォルダで2本を
+    並行させるときは `--project <名前>` で記録先を分ける運用になっていて、分けた側は
+    カレントディレクトリからは引けない。1本だけ締めると、分けたほうが稼働中のまま
+    残る——締め忘れを無くすための仕組みが、いちばん締め忘れやすい形を取りこぼす。
+    （実測 2026-09-03: autofinish が分けた側を残した。）
+
+    そこで記録を全部見て、**project.path がここと同じで、かつ稼働中のもの**を拾う。
+    別のフォルダのミッションは巻き込まない。--project を明示されたときは、
+    その1本だけを見る（呼び手が対象を決めているのに広げない）。
+    """
+    if explicit:
+        try:
+            cands = [dashlib.resolve_project(explicit)["slug"]]
+        except ValueError:
+            return []
+        by_path = False
+    else:
+        cands = dashlib.list_slugs()
+        by_path = True
+
+    here = os.path.normcase(os.path.abspath(os.getcwd()))
+    out = []
+    for slug in cands:
+        ok, value, _err = dashlib.read_json_safe(state_file(slug))
+        if not ok or not isinstance(value, dict):
+            continue
+        mission = value.get("mission")
+        if not isinstance(mission, dict) or mission.get("phase") != "running":
+            continue
+        if by_path:
+            info = value.get("project")
+            path = dashlib.as_str(info.get("path")) if isinstance(info, dict) else ""
+            if not path or os.path.normcase(os.path.abspath(path)) != here:
+                continue
+            # **他のセッションが開いたミッションは締めない。**
+            # 同じフォルダで Claude Code を2つ開くのは普通にあることで、片方が終わった
+            # だけで、まだ作業しているもう片方のミッションが完了になっていた
+            # （実測 2026-09-03: 別セッションの終了が、稼働中のミッションを締めた）。
+            # 締め忘れを防ぐ仕組みが、他人の記録を勝手に閉じてよい理由にはならない。
+            #
+            # 素性が分からないとき（環境変数が渡ってこない環境）は、今までどおり締める。
+            # ここで「分からないから締めない」にすると、**この仕組みが黙って死ぬ**——
+            # 閉じすぎは次の start でやり直せるが、閉じ忘れは直せない。
+            owner = dashlib.as_str(mission.get("sessionId"))
+            if session and owner and owner != session:
+                continue
+        out.append(slug)
+    return out
+
+
+def cmd_autofinish(args) -> None:
+    """セッションが終わったら締める（SessionEnd hook から呼ばれる）。
+
+    締め忘れは、このツールで**あとから直せない唯一の壊れ方**である。打ち忘れても
+    何も壊れないので気づけず、画面は「稼働中」と言い続け、次に start した時点で
+    その記録は「未完」として履歴へ押し出される——そこから完了にする手段は無い。
+    催促を増やしても、催促を読む人が席を立ったあとには効かない。だから人ではなく
+    セッションの終わりに結びつける。
+
+    **稼働中でなければ何もしない。** hook はセッションが終わるたびに走るので、
+    ここで喋ると、ミッションを開いていないときにまで出力が混ざる。
+
+    /clear でも SessionEnd は上がる。そこで締まってしまうことはあるが、
+    「動いていない記録が完了として残る」ほうが「終わった記録が稼働中のまま
+    永久に残る」より軽い——前者は次の start でやり直せるが、後者は直せない。
+    """
+    for slug in running_missions_here(getattr(args, "project", None), current_session()):
+        one = argparse.Namespace(**vars(args))
+        one.project = slug
+        if not one.headline:
+            one.headline = t("closed automatically when the session ended")
+        # 錠は1本ずつ取る。まとめて抱えると、締めている最中の hook が待たされる。
+        under_state_lock(cmd_finish)(one)
 
 
 # ---------------------------------------------------------------- hook（自動登録）
@@ -1664,6 +1787,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help=t("one-line summary of the whole mission"))
     add_project_arg(f)
     f.set_defaults(func=under_state_lock(cmd_finish))
+
+    af = sub.add_parser("autofinish",
+                        help=t("close the mission automatically at the end of a session "
+                               "(for the SessionEnd hook; silent when nothing is running)"))
+    af.add_argument("--headline", default="",
+                    help=t("one-line summary of the whole mission"))
+    add_project_arg(af)
+    af.set_defaults(func=cmd_autofinish)
 
     lg = sub.add_parser("log", help=t("add one line of commentary"))
     lg.add_argument("--who", default=t("Command"))
