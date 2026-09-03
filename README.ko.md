@@ -238,7 +238,7 @@ npm 도 `vsce` 도 필요 없습니다. `.vsix` 를 Python 표준 라이브러�
 | Subagent Dashboard: 서버 정지 | 이 확장이 시작한 서버를 멈춘다 |
 | Subagent Dashboard: 본체 배치／갱신 | 함께 들어 있는 본체를 배치처에 둔다 |
 | Subagent Dashboard: 초기 설정 실행 | 초기 설정(`install.py`)을 확인한 뒤 실행한다 |
-| Subagent Dashboard: 초기 설정 플래그 초기화 | 「이미 끝났다」는 기록을 지워, 다음에 다시 확인이 나오게 한다 |
+| Subagent Dashboard: 초기 설정 플래그 초기화 | 「이미 끝났다」는 기록을 지워, 다음에 다시 실행되게 한다 |
 | Subagent Dashboard: 로그 표시 | 시작 경과와 Python 쪽 출력을 본다 |
 
 서버가 돌고 있지 않으면 확장이 시작합니다. 이미 돌고 있으면 그것을 그대로 쓰므로 프로세스가 늘어나는 일은 없습니다. 포트가 차 있으면 다음 번호로 올려서, 그 번호로 화면을 엽니다.

@@ -262,7 +262,7 @@ dash.cmd ext install
 | Subagent Dashboard: 停止服务器 | 停止这个扩展启动的服务器 |
 | Subagent Dashboard: 放置／更新本体 | 把随附的本体放到目标位置 |
 | Subagent Dashboard: 执行初始设置 | 确认之后执行初始设置（`install.py`） |
-| Subagent Dashboard: 重置初始设置的标志 | 清除「已经做完了」的记录，下次再次弹出确认 |
+| Subagent Dashboard: 重置初始设置的标志 | 清除「已经做完了」的记录，下次再次执行 |
 | Subagent Dashboard: 显示日志 | 查看启动的经过和 Python 一侧的输出 |
 
 服务器没在运行时，扩展会把它启动起来。已经在运行时会直接复用，因此进程不会越积越多。端口被占用时会顺延到下一个号码，并用那个号码打开画面。

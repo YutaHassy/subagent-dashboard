@@ -316,7 +316,7 @@
       導入は <strong>vsix ファイルを1つ入れるだけ</strong>。コマンドを打つ必要はありません。
     </p>
     <div class="chips">
-      <span class="chip on">版 0.8.0</span>
+      <span class="chip on">版 0.9.0</span>
       <span class="chip">所要 3分</span>
       <span class="chip">インターネット接続 不要</span>
       <span class="chip">Windows / macOS / Linux</span>
@@ -336,7 +336,7 @@
       <li><a href="#can">どんなことができるか</a></li>
       <li><a href="#need">必要なもの</a></li>
       <li><a href="#install">導入手順（vsix を入れる）</a></li>
-      <li><a href="#first">初回起動 — 確認は2つ</a></li>
+      <li><a href="#first">初回起動 — 押すだけ</a></li>
       <li><a href="#use">これで完了。使いはじめる</a></li>
       <li><a href="#trouble">うまく動かないとき</a></li>
       <li><a href="#remove">やめたいとき</a></li>
@@ -525,14 +525,14 @@
     <div class="step-body">
       <h3>受け取った vsix ファイルを選ぶ</h3>
       <p>
-        ファイル選択のダイアログが開くので、<code>agent-dashboard-0.8.0.vsix</code> を選びます。
+        ファイル選択のダイアログが開くので、<code>agent-dashboard-0.9.0.vsix</code> を選びます。
         「…が正常にインストールされました」と出たら成功です。
       </p>
       <div class="note warn">
         <span class="note-t">ファイル名が違う形で届いた場合</span>
         <code>.vsix</code> は中身が ZIP なので、社内のメール関門で拡張子を変えられて届くことがあります
         （例: <code>.txt</code> や <code>.zip</code>）。その場合は
-        <strong>ファイル名を <code>agent-dashboard-0.8.0.vsix</code> に戻してから</strong>選んでください。
+        <strong>ファイル名を <code>agent-dashboard-0.9.0.vsix</code> に戻してから</strong>選んでください。
       </div>
     </div>
   </div>
@@ -548,21 +548,19 @@
       </p>
       <p class="mute small">
         コマンドラインが使える環境なら、上の3ステップの代わりに
-        <code>code --install-extension "agent-dashboard-0.8.0.vsix"</code> の1行でも入ります。
+        <code>code --install-extension "agent-dashboard-0.9.0.vsix"</code> の1行でも入ります。
       </p>
     </div>
   </div>
 
   <!-- ============ 5 ============ -->
-  <h2 id="first"><span class="num">05</span>初回起動 — 確認は2つ</h2>
-  <p class="sub">左端に増えたロボットのアイコンを押すところから始まります。</p>
+  <h2 id="first"><span class="num">05</span>初回起動 — 押すだけ</h2>
+  <p class="sub">左端に増えたロボットのアイコンを押すと、あとは自動で整います。</p>
 
   <div class="flow">
     <span class="n">ロボットのアイコンを押す</span>
     <span class="arrow">→</span>
-    <span class="n">❶ 本体の配置</span>
-    <span class="arrow">→</span>
-    <span class="n">❷ 初期設定</span>
+    <span class="n">本体の配置と初期設定（自動）</span>
     <span class="arrow">→</span>
     <span class="n">画面が出る</span>
   </div>
@@ -574,8 +572,13 @@
     </figure>
     <div>
       <div class="note">
-        <span class="note-t">❶ 「本体をこの場所に置きます」</span>
-        <p><strong>「配置する」を押してください。</strong>拡張機能に同梱されている本体を、下の場所にコピーします。</p>
+        <span class="note-t">「するかどうか」は訊かれません</span>
+        <p><strong>拡張機能を入れた＝使う、という前提です。</strong>アイコンを押すと、次の2つが続けて走ります。
+          進捗の表示と、終わったことを知らせる通知が出るので、走ったことは画面で分かります。</p>
+        <ul class="small">
+          <li><b>本体の配置</b> — 拡張機能に同梱されている本体を、下の場所にコピーします</li>
+          <li><b>初期設定</b> — AI に使い方を教える設定と、キーバインドを書き込みます</li>
+        </ul>
         <p class="small mono mute">
           Windows: C:\Users\&lt;あなたの名前&gt;\.claude\agent-dashboard<br>
           macOS / Linux: ~/.claude/agent-dashboard
@@ -586,25 +589,25 @@
         </p>
       </div>
       <div class="note">
-        <span class="note-t">❷ 「初期設定を行います。よろしいですか？」</span>
-        <p><strong>「設定する」を押してください。</strong>書き込まれるのは次の2つです。</p>
+        <span class="note-t">書き込まれるのは、あなたのホーム配下の2か所だけ</span>
         <ul class="small">
           <li>AI に Subagent Dashboard の使い方を教える設定ファイル（<code>CLAUDE.md</code> など）</li>
           <li>VSCode のキーバインド（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> で開けるようにする）</li>
         </ul>
         <p class="small">
-          いずれも<strong>目印で囲んだ範囲だけ</strong>を書き換えるので、
-          すでに書かれている内容は消えません。ダイアログには実際のファイルのパスが表示されます。
+          いずれも<strong>目印で囲んだ範囲だけ</strong>を書き換えるので、すでに書かれている内容は消えません。
+          <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> が既に他の機能に使われている場合も、そのままにします。
         </p>
       </div>
     </div>
   </div>
 
   <div class="note ok">
-    <span class="note-t">❷ を見送っても画面は使えます</span>
-    ただし、<strong>❷ を実行しないと AI 側がダッシュボードの使い方を知らないので、
-    サブエージェントを起動しても何も映りません。</strong>あとから実行したくなったら、
-    <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> →「Subagent Dashboard: 初期設定を実行」を選んでください。
+    <span class="note-t">自動で走らせたくないとき・元に戻したいとき</span>
+    書き込んだものは <code>python "install.py" --uninstall</code> で戻せます。自分のタイミングで実行したい場合は、
+    設定 <code>agentDashboard.runSetupOnFirstRun</code> を切ってください（切ると初期設定は走らないので、
+    <strong>AI 側がダッシュボードの使い方を知らないままになり、サブエージェントを起動しても何も映りません</strong>）。
+    あとから実行するときは <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> →「Subagent Dashboard: 初期設定を実行」です。
   </div>
 
   <!-- ============ 6 ============ -->
@@ -614,7 +617,7 @@
   <div class="ways">
     <div class="way"><b>左端のロボットアイコン</b><span>アクティビティバーから1クリック</span></div>
     <div class="way"><b>画面下のステータスバー</b><span>🤖 Subagent Dashboard（動作中はポート番号も出ます）</span></div>
-    <div class="way"><b><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></b><span>初期設定 ❷ を実行した場合のみ</span></div>
+    <div class="way"><b><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></b><span>初期設定が済んでいれば使えます</span></div>
     <div class="way"><b>コマンドパレット</b><span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> →「Subagent Dashboard」</span></div>
   </div>
 
@@ -638,7 +641,7 @@
         <tr><td>サーバーを再起動</td><td>この拡張が起動したサーバーを止めて立て直す</td></tr>
         <tr><td>サーバーを停止</td><td>この拡張が起動したサーバーを止める</td></tr>
         <tr><td>本体を配置／更新</td><td>同梱している本体を配置先へ置き直す</td></tr>
-        <tr><td>初期設定を実行</td><td>初期設定（❷）を確認のうえ実行する</td></tr>
+        <tr><td>初期設定を実行</td><td>初期設定を、何が書かれるかを確認のうえ実行し直す</td></tr>
         <tr><td>ログを表示</td><td>起動の経過と Python 側の出力を日本語で見る</td></tr>
       </tbody>
     </table>
@@ -676,7 +679,7 @@
         </tr>
         <tr>
           <td>サブエージェントを起動しても何も映らない</td>
-          <td>初期設定（❷）が未実行の可能性があります。「Subagent Dashboard: 初期設定を実行」を選んでください。</td>
+          <td>初期設定が済んでいない可能性があります。「Subagent Dashboard: 初期設定を実行」を選んでください。</td>
         </tr>
         <tr>
           <td>ポート番号が変わる</td>
@@ -713,7 +716,7 @@
   </div>
 
   <footer>
-    <span>Subagent Dashboard 導入手順書 &nbsp;/&nbsp; 対象バージョン 0.8.0</span>
+    <span>Subagent Dashboard 導入手順書 &nbsp;/&nbsp; 対象バージョン 0.9.0</span>
     <span>詳しい使い方は、画面右上の「?」ボタンから開く取扱説明書へ</span>
   </footer>
 
