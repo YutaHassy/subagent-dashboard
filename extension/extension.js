@@ -50,9 +50,36 @@ const PANEL_TYPE = 'agentDashboard.panel';
  * ワークスペースを移っても・拡張を入れ直しても「もう済んでいる」ことを覚えている。
  */
 const SETUP_DONE_KEY = 'initialSetupDone';      // 一度でも成功したら true
-const SETUP_SKIP_KEY = 'initialSetupSkipped';   // 「今後たずねない」が選ばれたら true
+// 「今後たずねない」の記録（initialSetupSkipped）は廃止した。**尋ねなくなったので、
+// 断る手段も無くなった**——拡張を入れた＝使う、という前提に変えたため。
+// 古い版で立てた値が globalState に残っていても、もう誰も読まない。
+// 自動で走らせたくない環境は、設定 agentDashboard.runSetupOnFirstRun を切る。
 const SETUP_TIMEOUT_MS = 180000;                // install.py の実行にかける上限
 const MACHINE_KEY_STORED = 'lastMachineKey';    // 前回起動したマシンのキーを保存
+
+/**
+ * 変更履歴トラッキングの初期設定（changelog_setup.py）の実行記録。
+ *
+ * **マシン単位の SETUP_DONE_KEY とは別軸。** 1台のマシンで複数の
+ * リポジトリを開く利用者がほとんどなので、ワークスペース（＝プロジェクト）ごとに
+ * 判定しないと2つ目以降のリポジトリで一切設定されない。キーはワークスペースの絶対パスを
+ * ハッシュ化した値を末尾に付けて作る（例: `changelogSetupDone:<hash>`）。
+ */
+const CHANGELOG_SETUP_DONE_PREFIX = 'changelogSetupDone:';
+const CHANGELOG_SETUP_SKIP_PREFIX = 'changelogSetupSkipped:';
+/**
+ * 「今後どのワークスペースでもたずねない」。**ハッシュを付けない、全体に効く1本の鍵。**
+ *
+ * ワークスペース単位の SKIP しか無いと、リポジトリを開くたびに1枚ずつモーダルが出て、
+ * 全部まとめて断る手段が設定のトグルだけになる。ここを立てたら、以後どのワークスペースでも
+ * 自動では持ちかけない（コマンドからの手動実行は今まで通り通る）。
+ *
+ * **マシン単位の初期設定にはこれに当たるものが無い。** あちらは確認そのものを廃止した
+ * （拡張を入れた＝使う）。こちらが残っているのは、書き込む先が利用者のリポジトリの中で、
+ * 断られたら1バイトも書かない、が守るべき順序だから。
+ */
+const CHANGELOG_SETUP_SKIP_ALL_KEY = 'changelogSetupSkippedEverywhere';
+const CHANGELOG_SETUP_TIMEOUT_MS = 180000;      // changelog_setup.py の実行にかける上限（install.py と同じ目安）
 
 /**
  * 本体を置く場所。ここは拡張の更新に巻き込まれないので、記録が消えない。
@@ -123,6 +150,12 @@ let setupInFlight = false;
 /** 初期設定の確認も1セッションに1回だけ。断られたあと何度も出さない。 */
 let setupPrompted = false;
 
+/** changelog_setup.py が走っている最中は true。二重実行を防ぐ（マシン単位の setupInFlight とは別）。 */
+let changelogSetupInFlight = false;
+
+/** ワークスペース単位の初期設定の確認も1セッションに1回だけ。 */
+let changelogSetupPrompted = false;
+
 // ---------------------------------------------------------------- 小道具
 
 function log(message) {
@@ -149,6 +182,23 @@ function samePath(a, b) {
 
 function urlFor(port) {
   return `http://127.0.0.1:${port}/`;
+}
+
+/**
+ * 今のウィンドウで開いているワークスペースの、最初のフォルダの絶対パス。
+ * 開いていなければ null。マルチルートでも最初の1つだけを見る
+ * （どのフォルダが「今の」ワークスペースかを自動で決め打ちしない設計は
+ * changelog 初期設定フローと揃えてある。詳細はそちらのコメントを参照）。
+ */
+function currentWorkspacePath() {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || !folders.length) return null;
+  const uri = folders[0].uri;
+  // 仮想ワークスペース（vscode-vfs:// 等）の fsPath は `\github\owner\repo` のような
+  // 「ローカルには存在しないのにローカルパスに見える」文字列。画面へ渡しても
+  // 一致するプロジェクトは無いので、渡さない（先頭のプロジェクトに落ちる）。
+  if (!uri || uri.scheme !== 'file') return null;
+  return uri.fsPath;
 }
 
 /** エラーを出しつつ、ログを見る導線を必ず添える。 */
@@ -283,7 +333,8 @@ async function offerUpdate(context, home) {
  * 失敗には reason を必ず付ける。失敗の紙のボタンは reason で決めており、
  * 文面の文字言い回しに依存させると、文章を直した拍子にボタンが変わってしまう。
  *
- * @param {boolean} interactive 配置してよいか尋ねてよければ true
+ * @param {boolean} interactive 未配置なら、その場で配置してよければ true
+ *   （false は「押した覚えのない操作を勝手に始めない」ための道。タブの復元がそれ）
  * @returns {Promise<{ home: string } | { error: string, reason: string }>}
  */
 async function ensureHome(context, interactive) {
@@ -339,19 +390,12 @@ async function ensureHome(context, interactive) {
     };
   }
 
-  const deploy = t('Deploy');
-  const pick = await vscode.window.showInformationMessage(
-    t('The Subagent Dashboard tool will be placed here:') + `\n${DEPLOY_DIR}\n\n` +
-    t('(The files bundled with the extension are copied. Your records will collect here from now on.)'),
-    { modal: true },
-    deploy
-  );
-  if (pick !== deploy) {
-    return {
-      reason: 'declined',
-      error: t('It was not deployed, so it cannot be opened. You can run it later from "Deploy or update the tool".'),
-    };
-  }
+  // **置いてよいかは訊かない。** 拡張を入れた＝使う、という前提。ここで断られた画面は
+  // 「道具が無いので開けません」としか言えず、入れた人が次に何をすればよいのかも分からない。
+  // 置くのは利用者のホーム配下の1か所で、同梱の荷物をそのまま複製するだけ。
+  // どこへ置いたかはログに残る。
+  log(t('The Subagent Dashboard tool will be placed here:') + ' ' + DEPLOY_DIR + '\n'
+    + t('(The files bundled with the extension are copied. Your records will collect here from now on.)'));
   const placed = deployBundle(context);
   if ('error' in placed) return { reason: 'deployFailed', error: placed.error };
   // 置けたら初期設定を持ちかける。待たない — ここで待つと画面が出るのが遅くなるし、
@@ -684,12 +728,10 @@ async function runSetupSteps(context, home, manualIn) {
     // ---- 環境変数トリガー: AGENT_DASHBOARD_RESET_SETUP または CLAUDE_CODE_RESET_ONBOARDING が '1' ならリセット
     if (process.env.AGENT_DASHBOARD_RESET_SETUP === '1' || process.env.CLAUDE_CODE_RESET_ONBOARDING === '1') {
       await store.update(SETUP_DONE_KEY, false);
-      await store.update(SETUP_SKIP_KEY, false);
       log(t('An environment variable triggered a setup reset.'));
     }
 
     if (store.get(SETUP_DONE_KEY)) { log(t('First-time setup has already run (globalState).')); return; }
-    if (store.get(SETUP_SKIP_KEY)) { log(t('First-time setup is set to "Do not ask again".')); return; }
     setupPrompted = true;
   }
 
@@ -717,36 +759,42 @@ async function runSetupSteps(context, home, manualIn) {
       return;
     }
 
-    // ---- 要件4: 何をするかを見せて、確認を取る
+    // ---- 何をするかを見せる。**「するかどうか」は訊かない。**
+    // 拡張を入れた＝使う、という前提に変えた。初期設定をしないまま入れておく状態は、
+    // 「Ctrl+Shift+D が効かない」「Claude Code が使い方を知らない」という、
+    // 壊れているのと見分けが付かない画面にしかならないため。
+    // 書き込むのは利用者のホーム配下の2か所だけで、CLAUDE.md は目印で囲んだ区画しか
+    // 書き換えないし、--uninstall で戻せる。走ったことは進捗表示と完了通知で分かる。
+    //
+    // 確認を出すのは、利用者が自分でコマンド「初期設定を実行」を呼んだときだけ。
+    // そこは何が書かれるかを読める唯一の場所で、押した本人が閉じれば止められる。
+    // 失敗して「もう一度試す」で戻ってきたときは出さない（manualIn で見るのはそのため。
+    // 押し直しのたびに同じモーダルを出しても、読む内容は増えない）。
     const claudeMd = path.join(claudeConfigDir(), 'CLAUDE.md');
     const keybindings = vscodeKeybindingsPath();
-    const yes = manual ? t('Run') : t('Set up');
-    const notAgain = t('Do not ask again');
-    const buttons = manual ? [yes] : [yes, notAgain];
-
-    const pick = await vscode.window.showInformationMessage(
-      t('The first-time setup for Subagent Dashboard will run. Is that OK?'),
-      {
-        modal: true,
-        detail:
-          t('Settings will be written into these two files.') + '\n\n' +
-          `1. ${claudeMd}\n` +
-          t('   Text that teaches Claude Code how to use Subagent Dashboard. Only the block between\n   the markers is rewritten, so nothing else already written there is lost.') + '\n\n' +
-          `2. ${keybindings}\n` +
-          t('   Makes Ctrl+Shift+D open Subagent Dashboard. If that key is already taken, it is left alone.') + '\n\n' +
-          t('To undo it: python "{path}" --uninstall', { path: installer }),
-      },
-      ...buttons
-    );
-
-    if (pick === notAgain) {
-      if (store) await store.update(SETUP_SKIP_KEY, true);
-      log(t('First-time setup: "Do not ask again" was chosen. You can still run it any time from the command "Run initial setup".'));
-      return;
-    }
-    if (pick !== yes) {
-      log(t('First-time setup was skipped. You can run it any time from the command "Run initial setup".'));
-      return;
+    if (manualIn && attempt === 1) {
+      const yes = t('Run');
+      const pick = await vscode.window.showInformationMessage(
+        t('The first-time setup for Subagent Dashboard will run. Is that OK?'),
+        {
+          modal: true,
+          detail:
+            t('Settings will be written into these two files.') + '\n\n' +
+            `1. ${claudeMd}\n` +
+            t('   Text that teaches Claude Code how to use Subagent Dashboard. Only the block between\n   the markers is rewritten, so nothing else already written there is lost.') + '\n\n' +
+            `2. ${keybindings}\n` +
+            t('   Makes Ctrl+Shift+D open Subagent Dashboard. If that key is already taken, it is left alone.') + '\n\n' +
+            t('To undo it: python "{path}" --uninstall', { path: installer }),
+        },
+        yes
+      );
+      if (pick !== yes) {
+        log(t('First-time setup was skipped. You can run it any time from the command "Run initial setup".'));
+        return;
+      }
+    } else if (!manualIn && attempt === 1) {
+      log(t('Running the first-time setup without asking (installing the extension is taken to mean it will be used). Files: {a} / {b}',
+        { a: claudeMd, b: keybindings }));
     }
 
     const python = await resolvePython();
@@ -771,10 +819,7 @@ async function runSetupSteps(context, home, manualIn) {
 
     // ---- 要件3: 成功と失敗で出し分ける
     if (r.kind === 'ok') {
-      if (store) {
-        await store.update(SETUP_DONE_KEY, true);
-        await store.update(SETUP_SKIP_KEY, false);
-      }
+      if (store) await store.update(SETUP_DONE_KEY, true);
       log(t('First-time setup finished.'));
       const openIt = t('Open Subagent Dashboard');
       const viewLog1 = t('View log');
@@ -835,6 +880,493 @@ function scheduleSetup(context, home) {
 async function getMachineKey() {
   const machineId = vscode.env?.machineId || os.hostname();
   return `setup_done_${machineId}`;
+}
+
+// ---------------------------------------------------------------- 初期設定（changelog_setup.py、ワークスペース単位）
+//
+// ここから下は「変更履歴トラッキング」機能のための初回設定フロー。上の install.py 系とは
+// 完全に別軸で判定する（マシンにつき1回 ではなく ワークスペースにつき1回）。
+// changelog_setup.py 自体は agent-dashboard 本体（home）に同梱される想定で、まだ存在しない
+// 環境でも例外にはならず、単に「見つからなかった」ログを出して終わる（fs.existsSync で先に確認する）。
+
+/**
+ * ワークスペースのフォルダパスを globalState のキーに使えるハッシュへ変える。
+ *
+ * **samePath() の正規化ロジックとは独立させてある。** あちらは既にたくさんの呼び手が
+ * 依存している既存資産なので、ここで正規化の中身を変えたくなっても samePath 側には触れない
+ * （そちらを変えると起動時のポート再利用判定など、無関係な場所まで巻き添えにする）。
+ * Windows では大小・区切りの違いを無視する（同じフォルダを別ワークスペースとして扱わないため）。
+ */
+function workspaceFolderHash(folderPath) {
+  let s = path.resolve(String(folderPath));
+  if (process.platform === 'win32') s = s.replace(/\\/g, '/').toLowerCase();
+  s = s.replace(/\/+$/, '');
+  return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+}
+
+function changelogSetupDoneKey(hash) { return `${CHANGELOG_SETUP_DONE_PREFIX}${hash}`; }
+function changelogSetupSkipKey(hash) { return `${CHANGELOG_SETUP_SKIP_PREFIX}${hash}`; }
+
+/**
+ * changelog_setup.py が書き込む先の一覧。preflightChangelogSetup() と試験の両方から使う。
+ * install.py 側の setupTargets() と同じ役割だが、対象はワークスペース内の2箇所だけ。
+ * @returns {[string, string][]} [表示名, ディレクトリ]
+ */
+function changelogSetupTargets(workspaceRoot) {
+  return [
+    [t('Workspace folder'), workspaceRoot],
+    [t('.claude folder'), path.join(workspaceRoot, '.claude')],
+  ];
+}
+
+/**
+ * changelog_setup.py が触る先に書けるかを、実行前にまとめて確かめる。
+ * install.py 側の preflightSetup() と同じ型（1ファイル書いて消す実測、checkWritable() を共用）を、
+ * ワークスペース内の書き込み先に適用したもの。
+ * @returns {string[]} 書けなかった場所の説明。空なら問題なし。
+ */
+function preflightChangelogSetup(workspaceRoot) {
+  const blocked = [];
+  // 同じディレクトリを2回叩かない。`.claude` がまだ無いワークスペースでは
+  // existingAncestor() が親（＝ワークスペース直下）に落ちるので、素直に回すと
+  // 同じ場所へプローブファイルを2回書いて2回消すことになる（利用者のリポジトリを
+  // 監視しているビルドツールから見れば、無意味な変更が2回起きる）。
+  const seen = new Set();
+  for (const [label, dir] of changelogSetupTargets(workspaceRoot)) {
+    const probeDir = existingAncestor(dir);
+    const key = process.platform === 'win32' ? probeDir.toLowerCase() : probeDir;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const r = checkWritable(dir);
+    if (!r.ok) blocked.push(t('{label}: {reason}', { label, reason: r.reason }));
+  }
+  return blocked;
+}
+
+/**
+ * .gitignore の扱いを選ばせる QuickPick。EXTENSION_PLAN.md「4.6 .gitignore の扱い」節の
+ * (A)/(B)/(C) をそのまま choices にしている。既定は (A)。
+ * @returns {Promise<'A' | 'B' | 'C' | undefined>} Esc でキャンセルしたら undefined
+ */
+async function pickGitignoreMode() {
+  const items = [
+    {
+      mode: 'A',
+      label: `$(check) ${t('Ignore only the raw log (recommended)')}`,
+      detail: t('log/ is ignored. sessions/, index.json and CHANGELOG.md stay tracked in Git, so the history lives in the repository.'),
+    },
+    {
+      mode: 'B',
+      label: `$(circle-large-outline) ${t('Ignore nothing')}`,
+      detail: t('Everything under .claude/changelog/, including the raw log, is tracked as a full audit trail. Careful: the raw log keeps the first 10 lines of every Bash command and the tail of its output, so anything sensitive you typed on a command line gets committed to the repository.'),
+    },
+    {
+      mode: 'C',
+      label: `$(eye-closed) ${t('Ignore all of .claude/changelog/')}`,
+      detail: t('Nothing under it is tracked in Git. Fully local to this machine.'),
+    },
+  ];
+  const pick = await vscode.window.showQuickPick(items, {
+    title: t('Subagent Dashboard: How should .claude/changelog/ be treated in .gitignore?'),
+    placeHolder: t('Pick one (Escape cancels the setup)'),
+    ignoreFocusOut: true,
+  });
+  return pick ? pick.mode : undefined;
+}
+
+/**
+ * changelog_setup.py を1回実行する。**runInstaller と同じ型（進捗・タイムアウト・キャンセル）を
+ * 踏襲**しつつ、任意の引数配列を渡せるようにしたきょうだい関数。
+ *
+ * install.py 側の runInstaller() 自体には触れていない（マシン単位フローのロジックを変えない、
+ * という今回の制約のため）。中身がほぼ同じなのは承知のうえで、あえて共通化していない。
+ *
+ * @returns {Promise<{ kind: 'ok' | 'exit' | 'spawn' | 'timeout' | 'cancel',
+ *                     code: number | null, stdout: string, stderr: string, detail?: string }>}
+ */
+function runChangelogSetupScript(python, scriptPath, args, cwd, progress, token) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let stdout = '';
+    let stderr = '';
+    let timer = null;
+    /** @type {import('child_process').ChildProcess | null} */
+    let proc = null;
+
+    const done = (kind, code, detail) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({ kind, code: typeof code === 'number' ? code : null, stdout, stderr, detail });
+    };
+    const kill = () => { try { if (proc) proc.kill(); } catch (e) { /* もう死んでいる */ } };
+
+    try {
+      proc = cp.spawn(python, [scriptPath, ...args], {
+        cwd,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        // install.py と同じ理由。罫線や絵文字を出されても cp932 で落ちないように
+        env: Object.assign({}, process.env, { PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' }),
+      });
+    } catch (e) {
+      return done('spawn', null, (e && e.message) || String(e));
+    }
+
+    const attach = (stream, tag, onChunk) => {
+      if (!stream) return;
+      stream.setEncoding('utf8');
+      let rest = '';
+      stream.on('data', (chunk) => {
+        onChunk(chunk);
+        rest += chunk;
+        const lines = rest.split(/\r?\n/);
+        rest = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          log(`${tag} ${line}`);
+          // changelog_setup.py が install.py と同じ「ステップ N/M: …」見出しを出す前提で
+          // 拾っている。出さない実装でも例外にはならず、進捗の増分が出ないだけで動作は止まらない。
+          const m = STEP_RE.exec(line);
+          if (m && progress) {
+            const total = Number(m[2]) || 4;
+            progress.report({ message: `${m[1]}/${m[2]} ${m[3].trim()}`, increment: 100 / total });
+          }
+        }
+      });
+    };
+    attach(proc.stdout, t('changelog setup |'), (c) => { stdout += c; });
+    attach(proc.stderr, t('changelog setup !'), (c) => { stderr += c; });
+
+    proc.on('error', (err) => done('spawn', null, (err && err.message) || String(err)));
+    proc.on('close', (code) => done(code === 0 ? 'ok' : 'exit', code));
+
+    timer = setTimeout(() => { kill(); done('timeout', null); }, CHANGELOG_SETUP_TIMEOUT_MS);
+
+    if (token && typeof token.onCancellationRequested === 'function') {
+      token.onCancellationRequested(() => { kill(); done('cancel', null); });
+    }
+  });
+}
+
+/**
+ * ワークスペース単位の初期設定を実行する。**確認を取ってからしか走らせない。**
+ * runSetup()（マシン単位）と同じ排他の型を踏襲した、独立した排他フラグを持つきょうだい関数。
+ *
+ * @param {vscode.ExtensionContext} context
+ * @param {string} home ダッシュボード本体の場所（changelog_setup.py もここに居る想定）
+ * @param {{ manual?: boolean, folder?: vscode.WorkspaceFolder }} [opts]
+ *   manual=true ならコマンドから明示的に呼ばれた（初回判定を無視する）。
+ *   folder を渡すと、対象フォルダを vscode.workspace.workspaceFolders[0] の決め打ちではなく
+ *   明示的に指定できる（コマンドパレットからの手動実行で、利用者が選んだフォルダを使うため）。
+ */
+async function runWorkspaceChangelogSetup(context, home, opts) {
+  const manual = !!(opts && opts.manual);
+
+  if (changelogSetupInFlight) {
+    const msg = t('The changelog setup is already running. Wait for it to finish, then try again.');
+    log(t('{message} (ignored a duplicate run)', { message: msg }));
+    if (manual) vscode.window.showWarningMessage(t('Subagent Dashboard: {message}', { message: msg }));
+    return;
+  }
+  // runSetup() と同じ理由: check-then-act にしない。フラグは最初の await より前で立てる。
+  changelogSetupInFlight = true;
+  try {
+    await runWorkspaceChangelogSetupSteps(context, home, manual, opts && opts.folder);
+  } finally {
+    changelogSetupInFlight = false;
+  }
+}
+
+/**
+ * runWorkspaceChangelogSetup の中身。排他フラグは呼び手が持っているので、ここでは触らない。
+ * runSetupSteps() と同じ「失敗時はループで再試行」の型。
+ *
+ * @param {vscode.ExtensionContext} context
+ * @param {string} home
+ * @param {boolean} manualIn
+ * @param {vscode.WorkspaceFolder} [forcedFolder] 指定があればこちらを優先する
+ */
+async function runWorkspaceChangelogSetupSteps(context, home, manualIn, forcedFolder) {
+  let manual = manualIn;
+  const store = memento(context);
+
+  // ---- 対象フォルダの決定。
+  // **マルチルートワークスペースでも、自動判定は最初のフォルダだけを見る。** 他のフォルダへ
+  // 自動で書き込むのは事故のもと（意図しないリポジトリに hooks や .gitignore が増える）。
+  // 他のフォルダに設定したい場合は、コマンドパレットから手動で（forcedFolder を渡して）実行する。
+  const folders = vscode.workspace.workspaceFolders;
+  const folder = forcedFolder || (folders && folders.length ? folders[0] : undefined);
+  if (!folder) {
+    if (manual) {
+      vscode.window.showInformationMessage(t('Subagent Dashboard: No folder is open, so there is nothing to set up.'));
+    } else {
+      log(t('No workspace folder is open. The changelog setup is skipped.'));
+    }
+    return;
+  }
+  // ---- **ローカルのファイルシステムでなければ、ここで降りる。**
+  //
+  // package.json は virtualWorkspaces: true を宣言しているので、Remote Repositories
+  // などで開いた `vscode-vfs://github/owner/repo` でもこの拡張は動く。そのとき
+  // uri.fsPath は `\github\owner\repo` という「ローカルには無いのにローカルパスに見える」
+  // 文字列になる。checkWritable() は existingAncestor() でドライブルートまで遡るので
+  // 「書けます」と通ってしまい、確認モーダルにはもっともらしいパスが出て、
+  // changelog_setup.py が C:\github\owner\repo\.claude\ という**利用者が開いてもいない
+  // 場所**に本物のフォルダを作る。scheme を見ること以外にこれを防ぐ手段は無い。
+  //
+  // uri そのものが無い（試験のダミー等）ときも 'file' ではないほうへ倒す。ここで
+  // 間違える向きは「余計に書き込む」ではなく「何もしない」でなければならない。
+  const scheme = folder.uri ? String(folder.uri.scheme || '') : '';
+  if (scheme !== 'file') {
+    const msg = t('This folder is not on the local file system (scheme: {scheme}), so changelog tracking cannot be set up here. The hooks run Python against local files.',
+      { scheme: scheme || t('unknown') });
+    // 自動の道では黙って降りる（利用者は何も頼んでいない）。手動で呼ばれたときだけ理由を出す。
+    if (manual) {
+      log(msg);
+      vscode.window.showInformationMessage(t('Subagent Dashboard: {message}', { message: msg }));
+    } else {
+      log(t('The changelog setup is skipped: the workspace is not on the local file system (scheme: {scheme}).', { scheme: scheme || t('unknown') }));
+    }
+    return;
+  }
+
+  const workspaceRoot = folder.uri.fsPath;
+  const hash = workspaceFolderHash(workspaceRoot);
+  const doneKey = changelogSetupDoneKey(hash);
+  const skipKey = changelogSetupSkipKey(hash);
+
+  if (!manual) {
+    if (!cfg().get('runChangelogSetupOnFirstRun')) return;
+    if (changelogSetupPrompted) return;
+    // ---- **信頼していないワークスペースには、自分から持ちかけない。**
+    // untrustedWorkspaces.supported: true なので、この拡張は信頼していないフォルダでも
+    // 動く。しかしここで持ちかけているのは「全ツール呼び出しでこのマシンの Python を
+    // 起動する hook を、そのフォルダに書き込んでよいか」であって、Workspace Trust が
+    // 止めようとしていることそのもの。信頼していない間は、コマンドから明示的に
+    // 呼ばれた場合（manual）だけに限る。
+    // isTrusted が無い版の VSCode では undefined になるので、=== false で見る
+    // （「分からない」を「信頼していない」に読み替えて黙らせない）。
+    if (vscode.workspace.isTrusted === false) {
+      log(t('The workspace is not trusted, so the changelog setup is not offered. You can still run it from the command "Set up changelog tracking".'));
+      return;
+    }
+    if (!store) { log(t('globalState is unavailable, so the changelog setup prompt is skipped.')); return; }
+
+    // ---- 環境変数トリガー。マシン単位フロー（runSetupSteps）と同じ2つの変数を見る。
+    // あちらだけがリセットされて、こちらに前の判断が残るという食い違いを作らない。
+    if (process.env.AGENT_DASHBOARD_RESET_SETUP === '1' || process.env.CLAUDE_CODE_RESET_ONBOARDING === '1') {
+      const n = await resetChangelogSetupFlags(store);
+      log(t('An environment variable triggered a setup reset ({n} changelog records cleared).', { n }));
+    }
+
+    if (store.get(CHANGELOG_SETUP_SKIP_ALL_KEY)) { log(t('The changelog setup is set to "Do not ask again in any workspace".')); return; }
+    if (store.get(doneKey)) { log(t('The changelog setup has already run for this workspace (globalState).')); return; }
+    if (store.get(skipKey)) { log(t('The changelog setup is set to "Do not ask again" for this workspace.')); return; }
+    changelogSetupPrompted = true;
+  }
+
+  for (let attempt = 1; ; attempt++) {
+    const scriptPath = path.join(home, 'changelog_setup.py');
+    if (!fs.existsSync(scriptPath)) {
+      const msg = t('The changelog setup script was not found: {path}', { path: scriptPath });
+      log(msg);
+      if (manual) await fail(msg);
+      return;
+    }
+
+    // ---- 何をするかを見せて、確認を取る（runSetupSteps の確認モーダルと同じ型）
+    //
+    // **書けるかどうかの実測（preflight）は、この確認より後ろに置く。** あちらは
+    // 対象ディレクトリに実際にファイルを1つ書いて消す。同意を取る前にそれをやると、
+    // 利用者のリポジトリ直下に `.agent-dashboard-probe-<pid>` が一瞬現れて消え、
+    // vite / nodemon / jest --watch / tsc -w が動いていれば再ビルドや再テストが走る。
+    // 断られたら1バイトも書かない、が正しい順序（install.py 側はホーム配下しか
+    // 触らないので、あちらの順序をそのまま真似てはいけなかった）。
+    const settingsLocal = path.join(workspaceRoot, '.claude', 'settings.local.json');
+    const gitignore = path.join(workspaceRoot, '.gitignore');
+    const yes = manual ? t('Run') : t('Set up');
+    const notAgain = t('Do not ask again for this workspace');
+    const notAgainAnywhere = t('Do not ask again in any workspace');
+    const buttons = manual ? [yes] : [yes, notAgain, notAgainAnywhere];
+
+    const pick = await vscode.window.showInformationMessage(
+      t('Subagent Dashboard: Set up changelog tracking for this workspace?'),
+      {
+        modal: true,
+        detail:
+          t('Workspace: {path}', { path: workspaceRoot }) + '\n\n' +
+          t('This records what Claude Code changes in this project as it works. Settings will be written into these files.') + '\n\n' +
+          `1. ${settingsLocal}\n` +
+          t('   Adds hooks that call changelog_cli.py so edits are logged automatically. This file is meant to stay untracked (personal, machine-specific), so it never leaves this machine on its own.') + '\n\n' +
+          `2. ${gitignore}\n` +
+          t('   How much of .claude/changelog/ ends up tracked in Git is chosen on the next screen.') + '\n\n' +
+          t('This is independent from the machine-wide setup: it is asked once per workspace, not once per machine.') +
+          (manual ? '' : '\n\n' + t('Nothing is written until you choose "Set up". Closing this dialog (Esc) also stops the question for this workspace; the command "Set up changelog tracking" runs it later.')),
+      },
+      ...buttons
+    );
+
+    if (pick === notAgainAnywhere) {
+      if (store) await store.update(CHANGELOG_SETUP_SKIP_ALL_KEY, true);
+      log(t('The changelog setup: "Do not ask again in any workspace" was chosen. You can still run it per workspace from the command "Set up changelog tracking".'));
+      return;
+    }
+    if (pick === notAgain) {
+      if (store) await store.update(skipKey, true);
+      log(t('The changelog setup: "Do not ask again" was chosen for this workspace. You can still run it later from the command "Set up changelog tracking".'));
+      return;
+    }
+    if (pick !== yes) {
+      // **Esc / キャンセルも、このワークスペースでは記録して二度と自動では出さない。**
+      // 何も記録しないと、同じリポジトリを開き直すたびに同じモーダルが出る（ワークスペース
+      // 単位のフローなので、断る回数がリポジトリの数だけ増える）。上のモーダルに
+      // 「閉じてもこのワークスペースでは尋ねません」と先に書いてあるので、黙って
+      // 決めているわけではない。手動（manual）の道では何も記録しない——自分で
+      // 呼び出したものを閉じただけで、次から出なくなるのは筋が通らない。
+      if (!manual && store) await store.update(skipKey, true);
+      log(manual
+        ? t('The changelog setup was cancelled. You can run it any time from the command "Set up changelog tracking".')
+        : t('The changelog setup was skipped for this workspace. You can run it any time from the command "Set up changelog tracking".'));
+      return;
+    }
+
+    // ---- 同意を得たので、ここで初めてワークスペースに触れる。書けるかどうかを実測する
+    //      （install.py 側の preflightSetup と同じ規律。順序だけが違う理由は上のコメント）
+    const blocked = preflightChangelogSetup(workspaceRoot);
+    if (blocked.length) {
+      log(t('The changelog setup was stopped (some locations are not writable):') + '\n  ' + blocked.join('\n  '));
+      const viewLog0 = t('View log');
+      const pick0 = await vscode.window.showErrorMessage(
+        t('Subagent Dashboard: The locations needed for the changelog setup are not writable.') + '\n' + blocked.join('\n'),
+        viewLog0
+      );
+      if (pick0 === viewLog0) out.show(true);
+      return;
+    }
+
+    const mode = await pickGitignoreMode();
+    if (!mode) {
+      log(t('The changelog setup was cancelled (no .gitignore mode was chosen).'));
+      return;
+    }
+
+    const python = await resolvePython();
+    if (!python) {
+      await fail(
+        t('Python was not found, so the changelog setup cannot run. Put the path to the executable in the setting agentDashboard.pythonPath, or run this yourself:') +
+        `\npython "${scriptPath}" --project-root "${workspaceRoot}" --gitignore-mode ${mode}`
+      );
+      return;
+    }
+
+    log(t('Running the changelog setup: {python} "{path}" --project-root "{root}" --gitignore-mode {mode}',
+      { python, path: scriptPath, root: workspaceRoot, mode }));
+    const r = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: t('Setting up changelog tracking for this workspace…'),
+        cancellable: true,
+      },
+      (progress, token) => runChangelogSetupScript(
+        python, scriptPath, ['--project-root', workspaceRoot, '--gitignore-mode', mode], home, progress, token
+      )
+    );
+
+    // ---- 成功と失敗で出し分ける
+    if (r.kind === 'ok') {
+      if (store) {
+        await store.update(doneKey, true);
+        await store.update(skipKey, false);
+      }
+      log(t('The changelog setup finished for {path}.', { path: workspaceRoot }));
+      vscode.window.showInformationMessage(
+        t('Subagent Dashboard: Changelog tracking is set up for this workspace.')
+      );
+      return;
+    }
+
+    if (r.kind === 'cancel') {
+      log(t('The changelog setup was cancelled. It may have been written partway through.'));
+      vscode.window.showWarningMessage(
+        t('Subagent Dashboard: The changelog setup was cancelled. You can start over from the command "Set up changelog tracking".')
+      );
+      return;
+    }
+
+    const detail =
+      r.kind === 'spawn' ? t('Python could not be started: {err}', { err: r.detail })
+        : r.kind === 'timeout' ? t('It did not finish within {sec} seconds.', { sec: CHANGELOG_SETUP_TIMEOUT_MS / 1000 })
+          : tailLines(r.stderr, 8) || tailLines(r.stdout, 8) || t('There was no output.');
+    const head =
+      r.kind === 'exit'
+        ? t('The changelog setup failed (exit code {code}).', { code: r.code })
+        : t('The changelog setup failed.');
+
+    log(t('Failed: {message}', { message: `${head}\n${detail}` }));
+    const tryAgain = t('Try again');
+    const viewLog2 = t('View log');
+    const retry = await vscode.window.showErrorMessage(
+      t('Subagent Dashboard: {message}', { message: head }) + `\n${detail}\n\n` +
+      t('Running it yourself shows more detail: python "{path}" --project-root "{root}" --gitignore-mode {mode}',
+        { path: scriptPath, root: workspaceRoot, mode }),
+      tryAgain, viewLog2
+    );
+    if (retry === viewLog2) { out.show(true); return; }
+    if (retry !== tryAgain) return;
+    // 押し直された道なので、以後は manual として扱う（初回判定で黙って飛ばさない）
+    manual = true;
+    log(t('Trying the changelog setup again (attempt {n}).', { n: attempt + 1 }));
+  }
+}
+
+/**
+ * ワークスペース単位（changelog）の記録を全部消す。「初期設定をやり直す」から呼ぶ。
+ *
+ * 鍵はワークスペースごとに増える（`changelogSetupDone:<hash>`）ので、1本ずつ名前を
+ * 知って消すことはできない。globalState.keys()（VSCode 1.69 以降）があれば接頭辞で
+ * 総なめし、無い版では**いま開いているフォルダぶんだけ**を確実に消す。
+ * どちらの道でも「消した数」を返し、呼び手が黙らずに済むようにする。
+ *
+ * @param {{ get: Function, update: Function, keys?: Function }} store
+ * @returns {Promise<number>} 消した記録の数
+ */
+async function resetChangelogSetupFlags(store) {
+  if (!store) return 0;
+  const targets = new Set([CHANGELOG_SETUP_SKIP_ALL_KEY]);
+
+  if (typeof store.keys === 'function') {
+    let keys = [];
+    try { keys = store.keys() || []; } catch (e) { keys = []; }
+    for (const k of keys) {
+      if (typeof k !== 'string') continue;
+      if (k.indexOf(CHANGELOG_SETUP_DONE_PREFIX) === 0 || k.indexOf(CHANGELOG_SETUP_SKIP_PREFIX) === 0) targets.add(k);
+    }
+  } else {
+    // keys() が無い版。開いているフォルダぶんだけでも消す（何も消えないよりはよい）
+    for (const f of vscode.workspace.workspaceFolders || []) {
+      if (!f.uri || f.uri.scheme !== 'file') continue;
+      const h = workspaceFolderHash(f.uri.fsPath);
+      targets.add(changelogSetupDoneKey(h));
+      targets.add(changelogSetupSkipKey(h));
+    }
+  }
+
+  let n = 0;
+  for (const k of targets) {
+    // undefined を入れると鍵ごと消える（false を書くと「断った」記録として残ってしまう）
+    if (store.get(k) === undefined) continue;
+    await store.update(k, undefined);
+    n++;
+  }
+  changelogSetupPrompted = false;
+  return n;
+}
+
+/** 起動直後に、ワークスペース単位の初期設定の確認を持ちかける（待たない）。 */
+function scheduleWorkspaceChangelogSetup(context, home) {
+  runWorkspaceChangelogSetup(context, home, { manual: false })
+    .catch((e) => log(t('Error while asking about the changelog setup (ignored, continuing): {err}', { err: e && e.message })));
 }
 
 // ---------------------------------------------------------------- 生存確認
@@ -1169,11 +1701,19 @@ function escapeHtml(s) {
  *   - allow-modals が無いとタブ削除の確認ダイアログ（window.confirm）が動かない
  * という制約がぶら下がる。付けない場合は既定で全部使えるので、許可漏れで機能が欠ける事故が起きない。
  * 中身は自分で立てたローカルサーバーなので、隔離して守る相手がいない。
+ *
+ * @param {number} port
+ * @param {string | null} [workspacePath] 今のワークスペースの絶対パス。渡すと iframe の src に
+ *   `?workspace=` クエリとして付ける。変更履歴画面（public/index.html の clWorkspaceParam）が
+ *   これを読んで、登録済みプロジェクトの中から今開いているワークスペースを自動で選ぶ。
+ *   渡さない・null のときは `${origin}/` のままで、画面は先頭のプロジェクトに落ちる。
  */
-function panelHtml(port) {
+function panelHtml(port, workspacePath) {
   const origin = `http://127.0.0.1:${port}`;
   // <title> は HTML なのでエスケープを通す。訳文に & や < が入っても壊れないように
   const title = escapeHtml(t('Subagent Dashboard'));
+  // encodeURIComponent が " < > & も %XX に変換するので、そのまま属性値に埋めて安全
+  const src = workspacePath ? `${origin}/?workspace=${encodeURIComponent(workspacePath)}` : `${origin}/`;
   return `<!DOCTYPE html>
 <html lang="${htmlLang()}">
 <head>
@@ -1187,7 +1727,7 @@ function panelHtml(port) {
 </style>
 </head>
 <body>
-<iframe src="${origin}/" allow="clipboard-read; clipboard-write"></iframe>
+<iframe src="${src}" allow="clipboard-read; clipboard-write"></iframe>
 </body>
 </html>`;
 }
@@ -1480,7 +2020,7 @@ function paintPanel(p, port) {
   } catch (e) {
     log(t('Could not update the tab portMapping (the display continues): {err}', { err: e && e.message }));
   }
-  p.webview.html = panelHtml(port);
+  p.webview.html = panelHtml(port, currentWorkspacePath());
   if (panel === p) panelNotice = false;
 }
 
@@ -1694,7 +2234,7 @@ class DashboardView {
       localResourceRoots: [],
       portMapping: [{ webviewPort: r.port, extensionHostPort: r.port }],
     };
-    view.webview.html = panelHtml(r.port);
+    view.webview.html = panelHtml(r.port, currentWorkspacePath());
     log(t('Showed {url} in the sidebar.', { url: urlFor(r.port) }));
   }
 
@@ -1922,6 +2462,33 @@ async function cmdRunSetup(context) {
   await runSetup(context, resolved.home, { manual: true });
 }
 
+/**
+ * コマンド「変更履歴トラッキングの初期設定を実行」。ワークスペース単位のフローを、
+ * 自動プロンプトで断られたあと・スキップされたあとでも手動でやり直せる導線。
+ *
+ * マルチルートで2つ以上フォルダが開いていれば、対象をピッカーで選ばせる
+ * （自動判定は最初のフォルダだけを見るが、手動実行はそちらに限らない）。
+ */
+async function cmdRunChangelogSetup(context) {
+  const resolved = await ensureHome(context, true);
+  if ('error' in resolved) { await fail(resolved.error); return; }
+
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || !folders.length) {
+    vscode.window.showInformationMessage(t('Subagent Dashboard: No folder is open, so there is nothing to set up.'));
+    return;
+  }
+  let folder = folders[0];
+  if (folders.length > 1 && typeof vscode.window.showWorkspaceFolderPick === 'function') {
+    const picked = await vscode.window.showWorkspaceFolderPick({
+      placeHolder: t('Which folder should changelog tracking be set up for?'),
+    });
+    if (!picked) return;
+    folder = picked;
+  }
+  await runWorkspaceChangelogSetup(context, resolved.home, { manual: true, folder });
+}
+
 // ---------------------------------------------------------------- ステータスバー
 
 function updateStatus() {
@@ -2005,8 +2572,7 @@ function activate(context) {
           log(t('The machine changed ({from} -> {to}). Resetting the first-time setup.',
             { from: lastMachineKey, to: currentMachineKey }));
           await store.update(SETUP_DONE_KEY, false);
-          await store.update(SETUP_SKIP_KEY, false);
-          setupPrompted = false;  // リセット時には再度確認を出す
+          setupPrompted = false;  // リセット時にはもう一度走らせる
         }
         // 初回やマシン変更後は現在のマシンキーを記録
         if (!lastMachineKey || lastMachineKey !== currentMachineKey) {
@@ -2021,7 +2587,20 @@ function activate(context) {
     // 場所の判定は currentHome() に任せる（AGENT_DASHBOARD_HOME を見落とすと、
     // 環境変数で本体を指している人には初期設定の案内が一度も出ない）
     const state = currentHome();
-    if (state.kind === 'ok') scheduleSetup(context, state.home);
+    if (state.kind === 'ok') {
+      // ワークスペース単位の changelog 初期設定も、同じ「本体がある」条件で持ちかける。
+      // changelog_setup.py は本体（home）に同梱される想定なので、本体そのものが無ければ
+      // 判定しようがない。
+      //
+      // **マシン単位の初期設定が片付くまで待ってから持ちかける。** 両方とも modal な
+      // 確認ダイアログを出しうる。並べて投げると、良くて初回起動時にモーダルが2枚続けて
+      // 出る（どちらの話をされているのか分からない）。VSCode が modal を直列化する前提に
+      // 寄りかかった書き方だったが、その前提は確かめていない。await すれば、順番は
+      // こちらの都合ではなく事実として決まる。
+      await runSetup(context, state.home, { manual: false })
+        .catch((e) => log(t('Error while asking about first-time setup (ignored, continuing): {err}', { err: e && e.message })));
+      scheduleWorkspaceChangelogSetup(context, state.home);
+    }
   })();
 
   context.subscriptions.push(
@@ -2031,6 +2610,7 @@ function activate(context) {
     vscode.commands.registerCommand('agentDashboard.stopServer', () => cmdStop()),
     vscode.commands.registerCommand('agentDashboard.deploy', () => cmdDeploy(context)),
     vscode.commands.registerCommand('agentDashboard.runSetup', () => cmdRunSetup(context)),
+    vscode.commands.registerCommand('agentDashboard.runChangelogSetup', () => cmdRunChangelogSetup(context)),
     vscode.commands.registerCommand('agentDashboard.resetOnboarding', async () => {
       const reset = t('Reset');
       const pick = await vscode.window.showInformationMessage(
@@ -2049,11 +2629,16 @@ function activate(context) {
           return;
         }
         await store.update(SETUP_DONE_KEY, false);
-        await store.update(SETUP_SKIP_KEY, false);
         const currentMachineKey = await getMachineKey();
         await store.update(MACHINE_KEY_STORED, currentMachineKey);
         setupPrompted = false;
-        log(t('The first-time setup flags were reset.'));
+        // ---- ワークスペース単位（changelog）の記録も一緒に消す。
+        // ここで消し忘れると「初期設定をやり直す」と言いながら変更履歴側だけ
+        // 前の判断が残り、--reset でも戻せない状態になる。鍵はワークスペースごとに
+        // 増えるので、接頭辞で総なめする（keys() が無い版の VSCode では、いま開いて
+        // いるフォルダぶんだけでも確実に消す）。
+        const cleared = await resetChangelogSetupFlags(store);
+        log(t('The first-time setup flags were reset (including {n} changelog records).', { n: cleared }));
         await vscode.window.showInformationMessage(
           t('Subagent Dashboard: Reset complete. Reload the window (Command Palette > Developer: Reload Window) to apply it.')
         );
@@ -2133,6 +2718,11 @@ const __test = {
   setupTargets,
   getOwned: () => owned,
   getPanel: () => panel,
+  workspaceFolderHash,
+  changelogSetupDoneKey,
+  changelogSetupSkipKey,
+  changelogSetupTargets,
+  panelHtml,
 };
 
 module.exports = { activate, deactivate, __test };

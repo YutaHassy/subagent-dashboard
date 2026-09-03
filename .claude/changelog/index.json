@@ -1,0 +1,68 @@
+{
+  "updatedAt": "2026-09-04T01:43:31+09:00",
+  "sessions": [
+    {
+      "sessionId": "0fb816ec-833d-4da2-9290-0db5570290db",
+      "startedAt": "2026-09-03T21:16:26+09:00",
+      "endedAt": "2026-09-04T01:43:31+09:00",
+      "headline": "最終読み合わせで3件の食い違いを発見。エージェントが読む注入文面だけ demo が抜けていた",
+      "auto": false,
+      "fileCount": 75,
+      "toolCallCount": 1089
+    },
+    {
+      "sessionId": "6debbcfa-f32d-4ad8-b45c-6a75a49ddfa4",
+      "startedAt": "2026-09-03T20:38:12+09:00",
+      "endedAt": "2026-09-03T23:57:22+09:00",
+      "headline": "水色ブランチをいつでも合流できる状態に整えた（重複ファイルの片付けとマージ可否の確認）",
+      "auto": false,
+      "fileCount": 40,
+      "toolCallCount": 363
+    },
+    {
+      "sessionId": "59c4ecd3-5a3b-4f80-a9c9-bedcc94a6f69",
+      "startedAt": "2026-09-03T20:24:10+09:00",
+      "endedAt": "2026-09-03T20:29:17+09:00",
+      "headline": "現在の状態(0.9.1)をVSCode拡張とグローバル設定にインストール",
+      "auto": false,
+      "fileCount": 1,
+      "toolCallCount": 29
+    },
+    {
+      "sessionId": "27924d22-96c0-4fce-82eb-1e18f69decb3",
+      "startedAt": "2026-09-03T20:18:33+09:00",
+      "endedAt": "2026-09-03T20:23:20+09:00",
+      "headline": "origin/main を43コミット分 pull した。追跡化された .claude/changelog/ と競合したローカル未コミット記録は退避して残した",
+      "auto": false,
+      "fileCount": 0,
+      "toolCallCount": 15
+    },
+    {
+      "sessionId": "763d583d-1d1d-41fb-bbd9-29c6f216b9f2",
+      "startedAt": null,
+      "endedAt": "2026-09-03T17:28:44+09:00",
+      "headline": "機体色変更計画の md と html をリポジトリ直下に保存（git に上げるため）",
+      "auto": false,
+      "fileCount": 0,
+      "toolCallCount": 0
+    },
+    {
+      "sessionId": "82c684a9-727d-4a7e-a09b-daf186db21cd",
+      "startedAt": null,
+      "endedAt": "2026-09-02T16:53:39+09:00",
+      "headline": "実物で見つけた2件（指令塔への誤った実測表示／孤児の沈黙）を d1929b3 にコミットした。版は上げていない",
+      "auto": false,
+      "fileCount": 0,
+      "toolCallCount": 0
+    },
+    {
+      "sessionId": "5f9681c8-2e83-49f0-9529-003290cc08a8",
+      "startedAt": null,
+      "endedAt": "2026-09-01T08:56:03+09:00",
+      "headline": "サブエージェントの稼働をリアルタイムに映す機能の調査と計画策定（コード変更なし）",
+      "auto": false,
+      "fileCount": 0,
+      "toolCallCount": 0
+    }
+  ]
+}

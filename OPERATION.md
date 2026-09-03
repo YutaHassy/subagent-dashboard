@@ -17,8 +17,10 @@ python <this directory>/dash.py add ...          # the launcher's body directly
 python <this directory>/update_state.py add      # the CLI directly
 ```
 
-**The command examples with the full path — the ones to use at run time — are written into Claude's global config `CLAUDE.md`.**
-Use those as they are (`dash install` generates them to match this environment).
+**The command examples with the full path — the ones to use at run time — are written into whichever AI coding CLI
+you have installed, in that CLI's own instructions file** (Claude Code's `CLAUDE.md`, Codex CLI's `AGENTS.md`, and
+so on — the full list and the mechanism are in "9. Files and environment").
+Use those as they are (`dash install` generates them to match this environment, for every CLI it finds).
 The actual location of this directory is also printed at the top of `dash projects` output.
 
 ## The target project is decided automatically
@@ -157,7 +159,7 @@ When `install.py` runs, it detects and records the path to agent-dashboard in th
 
 1. **The environment variable `AGENT_DASHBOARD_HOME`** is already set → use that path
 2. **Not set in the environment** → detect the directory `install.py` was run from
-3. **Embedded in `CLAUDE.md`** → the full path is included in the commands Claude runs automatically
+3. **Embedded in the operating rules** → the full path is included in the commands written into each CLI's instructions file, so the agent runs them automatically
 
 #### Starting the server
 
@@ -248,12 +250,26 @@ If moving the record aside fails, `start` does not stop (it prints a warning and
 unable to start while a record exists is the worse outcome.
 
 ```bash
-dash start --title "refactor impact survey"
+dash start --title "refactor impact survey" --model claude-sonnet-5
 ```
 
-**When you run a second mission at the same time in the same directory, split the record destination with
-`--project`.** Running `start` as-is pushes the first mission out while it is still running, and from then on
-its record cannot be kept. → "6.1. Running two or more missions at the same time in the same directory"
+Pass `--model` with your own model ID here too. The command post no longer defaults to a fixed model: leave it
+out and the model column shows "unknown" instead of a guess (→ "3. When a completion report arrives" for the
+same principle applied to `done`).
+
+**When you run a second mission at the same time in the same directory, splitting the record destination in
+advance with `--project` keeps the collision from happening at all.** Even if you forget to split it, the tool
+now refuses and stops when a session tries to push another session's running record out (the rejection prints
+`--project` guidance you can paste as-is). The one place this protection does not reach is an environment with
+no ownership mark, where a push-out still happens as before — there, splitting in advance remains the only
+countermeasure. → "6.1. Running two or more missions at the same time in the same directory"
+
+> **Installed a new AI coding CLI after running setup?** Setup only writes operating rules into the CLIs that
+> exist at that moment — this is the one trap in the design. Install another CLI afterwards and it has none, so
+> subagents launched from it silently show up nowhere on the dashboard. The fix is one line: run
+> `python install.py` again. The tool now watches for exactly this: the warning appears when a mission's `start`
+> runs (right here), when the server starts, and `python diagnose.py` fails, instead of passing, while any
+> installed CLI is still unwritten.
 
 ---
 
@@ -277,10 +293,19 @@ dash add --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "list e
 
 **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you
 write it and shown on the screen exactly as recorded — nothing is translated afterwards. Follow the language of this
-manual, not the language of the conversation. To change which language that is, run `dash lang <en|ja|zh|ko>` and then
-`python install.py` to rewrite the block in `CLAUDE.md`; records that already exist are left as they were written.
+manual, not the language of the conversation. To change which language that is, run `dash lang <en|ja|zh|ko>`: **the
+block in your instructions file is rewritten in the new language on the spot**, so the language that is set is the
+language teams are formed in (it applies from the next session — the file is read at startup). Records that already
+exist are left as written.
 
-The generation (which column it sits in) is computed automatically from `--parent`, so do not specify it.
+**A session that is already running cannot be told by this file that the language changed.** So `start` prints the
+language to write in every single time, and `start` / `add` / `done` / `finish` warn you when what you passed does not
+look like that language. **Trust the command output over this file** — the output is produced right now, while this
+file was written the last time the language was set. A warning never blocks the write. To correct a `--name`,
+`--mission` or `--headline`, run the same command again with the same `--id` and the corrected text (the measured
+values are kept). A mission title cannot be corrected afterwards.
+
+The generation is computed automatically from `--parent`, so do not specify it.
 **"awaiting report" is also derived automatically from `--parent`**, so there is no need to declare that the
 command post has started waiting (specifying `--parent` correctly is exactly what makes "awaiting report" accurate).
 
@@ -307,7 +332,8 @@ dash done --id SCOUT-A --sec 42 --tokens 18400 --tools 11 --headline "identified
 **A number that was not included in the completion report must be omitted, not estimated.** Omitting it puts
 `null` in, and the screen shows "—". That is the correct state, not a gap to be filled in.
 Writing `--tokens 20000` because "it was probably around 20k tokens" destroys the purpose of this dashboard
-(seeing what actually happened), so never do it.
+(seeing what actually happened), so never do it. The same principle applies to the command post's own `--model`
+on `start`: leave it out rather than guess, and the model column shows "unknown" instead of a fixed default.
 
 ---
 
@@ -321,6 +347,8 @@ dash finish --headline "impact scoped; the change set is settled at 12 files"
 - The unit count, total tokens and elapsed time are totalled by the CLI (you do not need to pass anything other than `--headline`)
 - The total token count is the sum over the units you passed `--tokens` for. If no unit has a figure, it shows "—"
 - A unit still sitting in `standby` is treated as finished, as "ended without ever deploying"
+- **Before** it marks the mission finished, it freezes whatever units are running right now with no
+  record into `state.json` (see "Freezing units with no record into the close" below)
 
 ### The watch for a forgotten close
 
@@ -351,9 +379,78 @@ would mean the conditions could never all hold and the warning would never appea
 
 If you `start` the next one while units have not returned, that is not a "forgotten close" but an
 **abandonment mid-flight**, so `start` words it differently: `⚠️ …ended while still running (there are units
-that never returned)`. This also happens without fail when you try to run two missions in parallel in the same
-directory, so in that case it goes on to give the countermeasure (splitting the record destination with
-`--project`). → "6.1. Running two or more missions at the same time in the same directory"
+that never returned)`. This warning appears on **a restart from the same session** (your own forgotten close),
+on **pushing out another session's record with `--force`**, or on pushing out a record that carries no
+ownership mark. Trying to push out a record with a different owner without `--force` is stopped by a rejection
+before you ever reach this warning. → "6.1. Running two or more missions at the same time in the same directory"
+
+### Closing automatically from a SessionEnd hook
+
+Every row in the table above only tells you — none of them fixes anything. **`autofinish` closes that gap by
+automating the close instead of nagging about it.** A nag never reaches someone who has already walked away, so
+this is tied to the end of the session rather than to a person noticing.
+
+```bash
+dash autofinish                      # same as python update_state.py autofinish
+dash autofinish --project <name>
+dash autofinish --headline "..."
+```
+
+- **With no mission running, it prints nothing and exits.** SessionEnd fires every time a session ends, so this
+  keeps output from mixing in on the runs where no mission is open.
+- **Without `--project`, it closes every mission running in that directory** — including one split off in
+  parallel with `--project <name>`. Closing only the single mission the current directory resolves to would
+  leave a split-off one running forever. **It never touches a mission in a different folder** (it only looks at
+  projects whose `project.path` matches the current directory).
+- Pass `--project <name>` explicitly and it looks at only that one mission (the caller has already decided the
+  target, so the ownership check below does not apply).
+- **It never closes a mission opened by a different session (when `--project` is omitted).** Running two Claude
+  Code sessions in the same folder is ordinary, and in practice one session ending closed a mission another
+  session was still actively working on (hit for real on 2026-09-03). A mechanism built to catch a forgotten
+  close is not license to close someone else's record. `start` records the session that opened the mission
+  (`mission.sessionId`, taken from the `CLAUDE_CODE_SESSION_ID` environment variable), and `autofinish` compares
+  that against its own session ID, silently skipping any mission it does not own. **Where a session ID cannot be
+  read, it closes the mission anyway, as before** — refusing to close on "unknown" would let this whole
+  mechanism fail silently, and closing too eagerly can be redone with the next `start` while a forgotten close
+  cannot be fixed at all. This same rule also appears in the opposite direction — the side that writes when it
+  doesn't know — in `start` / `add` / `done` / `finish` / `log` / `demo`. → "6.1. Running two or more missions
+  at the same time in the same directory"
+- Omit `--headline` and it fills in "closed automatically when the session ended".
+- It takes the lock one mission at a time (taking them all at once would make a hook mid-close wait on another).
+
+**Note**: `/clear` also raises SessionEnd, so a mission can get closed mid-task. Closing too eagerly can be
+redone with the next `start`; a forgotten close cannot be fixed at all — that trade-off is why it works this way.
+
+Example configuration (`.claude/settings.local.json`):
+
+```json
+"SessionEnd": [
+  {
+    "matcher": "",
+    "hooks": [
+      { "type": "command", "command": "python 'C:\\path\\to\\update_state.py' autofinish; exit 0" }
+    ]
+  }
+]
+```
+
+### Freezing units with no record into the close
+
+`finish` and `autofinish` both freeze, into `state.json`'s `orphans`, whatever units are running right now but
+have no record — **before** the mission is marked finished. Only a running mission has its live state read, so
+without this, a unit like that would vanish from both the screen and history the instant you close it — there
+would be no trace it was ever there.
+
+What gets frozen stays exactly where it was when you closed. Since it is no longer running, it is shown **as
+finished** — showing it with a live face would be a lie. Whatever elapsed time, tokens and tool calls had
+already been measured by the time you closed stay on the card. It is never counted toward the unit total
+(counting it would throw off whether "every unit is back"), and it is never rebuilt after the close (that would
+pull in a different mission's units caught inside the same time window, which is not the same thing as what was
+actually measured at close time). `finish` / `autofinish` print one extra line for it:
+
+```
+Units with no record    2 (frozen into the record as they were)
+```
 
 ---
 
@@ -452,19 +549,86 @@ In other words you can also create missions unrelated to any directory, such as 
 
 ---
 
-## 6.1. Running two or more missions at the same time in the same directory (required)
+## 6.1. Running two or more missions at the same time in the same directory
 
-There is only **one record destination per project (= per working directory)**.
-Run a second `start` in the same directory and the first one is **pushed out into history while still running**.
-A record that has been pushed out can no longer be written to, so the first mission's `done` is rejected with
-"not there", and nothing more is recorded for it. **There is also no way to mark it finished afterwards**
-(by design, values that were not measured are never written). Splitting the record destination in advance is
-the only countermeasure.
+There is only **one record destination per project (= per working directory)**. On 2026-09-03, two Claude Code
+sessions were running in the same directory in practice, and the one that started later took over the earlier
+one's record without anyone noticing. What follows describes the protection that was added after that.
+
+**`start` / `add` / `done` / `finish` / `log` / `demo` now compare the owner of the record they are about to
+write to (`mission.sessionId` — the `CLAUDE_CODE_SESSION_ID` of the session that ran `start`) against the
+caller's own session ID.** Only once it is confirmed that they differ does it refuse to write, **rejecting with
+exit code 1**.
+
+```
+Error: another session is currently using this project's record.
+      Target: <project>
+      The record here is "<current record's title>" (started <elapsed> ago).
+      Running start here would push that running record out into history,
+      and it could not be marked finished afterward.
+      Nothing was started.
+      Set up a dedicated record for your own work. Put the same --project on all four of these:
+        start --project "<unique name>" --title "<task name>" --model <your model ID>
+      To go ahead anyway, add --force.
+```
+
+`add` / `done` / `finish` / `log` are rejected in the same shape; only the "would push out…" part changes to
+"would mix the records together". **The tool builds and prints the `<unique name>` for you** (it is derived
+from the caller's session ID, so calling it repeatedly from the same session always yields the same name). You
+never have to invent a unique name yourself or keep it consistent across all four commands by hand — just paste
+the line the error prints, four times.
+
+- **To push through anyway, add `--force`.** On `start` and `demo`, it pushes the other record out into history while
+  still running, exactly as before. On `add` / `done` / `finish` / `log`, it writes anyway, exactly as before.
+- **A pushed-out record keeps a trace of what pushed it out and when** (`mission.interruptedBy`). You can read
+  it by hovering over the "Unfinished" badge that appears when you open that record from history. **This mark
+  is not limited to when `--force` was used.** It is written the same way for your own forgotten close (running
+  the next `start` from the same session without closing the previous mission first) — it exists to let you
+  trace the reason for "Unfinished" after the fact, not only to flag a push-out by another session.
+- **Subagents never trip this rejection.** They inherit the parent's `CLAUDE_CODE_SESSION_ID` as-is, so a
+  subagent running `add` / `done` / `finish` / `log` against a mission the command post opened with `start`
+  still counts as "the same session", exactly as before.
+- **`demo` always archives first, even when it is not rejected.** It is the command that inserts a display-test
+  dummy, and against someone else's record it is stopped by the same rejection as above. On top of that, **even
+  against a record from your own session, it always archives it into history before overwriting** (the `by` in
+  `interruptedBy` reads `demo`) — inserting a dummy is not license to erase whatever record came before it.
+  Previously there was neither an ownership check nor an archive step here, and a running record could vanish
+  without even being kept in history.
+
+### When the protection does not apply
+
+**Ownership can only be told apart when both the pushing side and the pushed-out side have `mission.sessionId`
+set.** If either of the following holds, the tool cannot tell whether it is a different session, and it
+**lets the write through unguarded, exactly as before** (choosing "stop when unsure" instead would make the
+tool itself unusable in an environment with no ownership mark, so it deliberately errs on the side of letting
+it through).
+
+- The record has no `mission.sessionId` (a record whose `start` ran before 0.9.1)
+- This machine was never given a `CLAUDE_CODE_SESSION_ID` (the hook is not wired up, or a person is typing
+  commands by hand from a separate terminal, etc.)
+
+If a push-out happens under these conditions, you are told about it in two places. **Both only tell you;
+neither fixes it**, and there is no way to mark it finished afterward.
+
+| Where | What you get |
+| --- | --- |
+| `start` | `⚠️ The archived "…" ended while still running`, followed by the procedure for splitting with `--project` |
+| `done` | "not in the current mission '…' / the same ID is in the recent history '…'" plus a warning that running `add` here would mix the records together |
+
+The guidance from `done` **words it differently depending on whether you "have not run add yet" or "were pushed
+out"**. If the same ID is in the last 5 history entries, it is treated as a push-out
+(`update_state.find_in_history`). If it did not distinguish and only said "run add first", the person who was
+pushed out would do exactly that and **mix the first mission's unit into the team that pushed them out**. That
+is why it is worded differently. **This same path is also taken for your own forgotten close** (a write from
+the same session was never subject to the rejection in the first place) — do not confuse it with a rejection
+over a different owner.
+
+### Should you split with `--project` in advance?
 
 ```bash
 # When running in parallel in the same directory, give start a unique name with --project to split them
 # (pass a name that does not exist and a new project is created under that name)
-dash start --project PAVS_ER-issue51 --title "issue51 impact survey"
+dash start --project PAVS_ER-issue51 --title "issue51 impact survey" --model claude-opus-5
 
 # Put the same --project on that mission's add / done / finish as well — all of them
 dash add --project PAVS_ER-issue51 --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "..."
@@ -472,23 +636,31 @@ dash done --project PAVS_ER-issue51 --id SCOUT-A --headline "..."
 dash finish --project PAVS_ER-issue51 --headline "..."
 ```
 
-- **Put `--project` on all four commands.** Forget it on even one and that command alone writes to the record on
-  the current-directory side — the other team — and the two records get mixed together.
-- Missions running in different directories already have different record destinations, so `--project` is not needed.
-- Each split is treated as an independent project. Two tabs line up on the screen, and running teams are shown at the same time.
+Before this protection existed, this document called it **required**. The reasoning was: "unless you split it
+in advance, the moment a different session starts in the same directory later, the record breaks with no way
+to fix it." But that instruction did not hold up. **The side that started first has no way to predict that a
+different session will start later.** Telling people to guard in advance against something unpredictable was
+the actual reason the real accident happened.
+
+Now, forgetting to split it does not break anything. **A write that collides with another session is simply
+rejected, and the record survives intact.** Whoever was rejected can just read the `--project` guidance the
+tool prints — it pastes as-is — and try again. **That is why this is no longer "required".** Splitting in
+advance still has value, though: it keeps the collision from happening at all, saving you the extra step of
+being rejected and retrying. **Do it in advance when you can — the tool stops you even if you forget.**
+
+The one exception is an environment matching "When the protection does not apply" above; there, splitting in
+advance remains the only countermeasure, exactly as before.
+
+- **Put `--project` on all four commands.** Forget it on even one and that command alone writes to the record
+  on the current-directory side — the other team — and the two records get mixed together.
+- Missions running in different directories already have different record destinations, so `--project` is not
+  needed.
+- Each split is treated as an independent project. Two tabs line up on the screen, and running teams are shown
+  at the same time.
 - It can also be given with the environment variable `AGENT_DASHBOARD_PROJECT` (`--project` takes priority).
-
-When a push-out does happen, you are told in two places. **Both only tell you; neither fixes it.**
-
-| Where | What you get |
-| --- | --- |
-| `start` | `⚠️ The archived "…" ended while still running`, followed by the procedure for splitting with `--project` |
-| `done` | "not in the current mission '…' / the same ID is in the recent history '…'" plus a warning that running `add` here would mix the records together |
-
-The guidance from `done` **words it differently depending on whether you "have not run add yet" or "were pushed out"**.
-If the same ID is in the last 5 history entries, it is treated as a push-out (`update_state.find_in_history`).
-If it did not distinguish and only said "run add first", the person who was pushed out would do exactly that and
-**mix the first mission's unit into the team that pushed them out**. That is why it is worded differently.
+- **`autofinish` can close both of these in one call.** Run it without `--project` and it closes **every
+  mission running in the current directory** — split-off ones included. One call from a SessionEnd hook is
+  enough.
 
 ---
 
@@ -557,7 +729,8 @@ A grandchild's card gets a "self-reported" badge.
 | Deciding which team is shown | Decided on the server side alone. The browser remembers nothing, so the same team appears on whichever machine you open it |
 | Parallel operation | Every running team is stacked vertically and shown at the same time. The order is newest start first |
 | Number of record destinations | Exactly one per project (= per working directory). Run a second `start` in the same directory and the first is pushed out into history while still running, and can no longer be written to. To run in parallel, split with `--project` (→ 6.1) |
-| Versions of the tool and of the operating rules | They go stale separately. Updating the tool leaves the operating rules in `CLAUDE.md` stale until you run `install.py` again. If they diverge, you are told at `start` and at server startup (you can also check it with "operating rules version" in `diagnose.py`) |
+| Versions of the tool and of the operating rules | They go stale separately. Updating the tool leaves the operating rules stale in each CLI's instructions file until you run `install.py` again. If they diverge, you are told at `start` and at server startup (you can also check it with "operating rules version" in `diagnose.py`) |
+| A CLI installed after setup ran | Has no operating rules of its own until you run `install.py` again — subagents launched from it show up nowhere, silently. `start`, the server, and `diagnose.py` all watch for it and tell you |
 | Teams being swapped out | A team that has disappeared from `teams` in `/api/state` has its shell cleaned up on the spot |
 | Running start again in the same folder | The slug does not change, so it watches for a change in `mission.startedAt` and throws away the previous mission's log |
 | When the connection drops | It keeps the last display and the connection indicator at the top right turns red |
@@ -575,7 +748,7 @@ The contents of this directory. Every path is resolved at run time, so it works 
 ├─ dash.py            unified entry point
 ├─ server.py          serving server (shared by all projects; start only one)
 ├─ update_state.py    state update CLI (the only way in to the state)
-├─ install.py         first-time setup (writes into CLAUDE.md)
+├─ install.py         first-time setup (writes the operating rules into each installed CLI)
 ├─ dashlib.py         shared logic (path resolution, project identification, merging, formatting)
 ├─ build_vsix.py      builds and installs the VSCode extension (dash ext ...)
 ├─ test_tabs.py       checks the tab list behaviour. Runs with python test_tabs.py (touches no records)
@@ -596,6 +769,52 @@ The contents of this directory. Every path is resolved at run time, so it works 
 └─ trash/             where deleted projects go. To restore one, move the folder back into missions/
 ```
 
+### Which CLI the operating rules go into
+
+`install.py` finds every AI coding CLI installed on the machine and writes the identical body of rules into each
+one's own instructions file — only the location differs.
+
+| CLI | File written |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` |
+| opencode | `~/.config/opencode/AGENTS.md` |
+| Amp | `~/.config/amp/AGENTS.md` |
+| Cline | `~/Documents/Cline/Rules/subagent-dashboard.md` |
+| Roo Code | `~/.roo/rules/subagent-dashboard.md` |
+| Windsurf | `~/.codeium/windsurf/memories/global_rules.md` |
+| Qwen Code | `~/.qwen/QWEN.md` |
+
+**A CLI missing from this table is not unsupported.** The table is a shortcut for the common ones, not the
+boundary of what the tool can reach. Cline and Roo Code read a whole folder of rule files rather than a single
+one, so instead of editing the user's own rules the tool drops one dedicated file into that folder. Cursor and
+Aider are left out on purpose: neither reads a user-level instructions file automatically — Cursor only reads a
+per-repository `AGENTS.md`, and Aider needs the file named explicitly in its config — so for those, as for
+anything else not listed, a per-repository file is pointed at with `--agent-file` instead.
+
+```
+python install.py --list-agents          show every known CLI, where it will be
+                                         written, and whether it has been written yet
+python install.py                        write to every CLI found on this machine
+python install.py --agent codex          write to one named CLI only
+python install.py --agent all            write to every known CLI, installed or not
+python install.py --agent-file <path>    also write to this exact file, for a CLI
+                                         that is not in the table
+```
+
+`--agent-file` is the one that matters: it registers that file permanently in `agents.json` (kept next to the
+mission records — see `AGENT_DASHBOARD_AGENTS_FILE` below), so from then on it appears in `--list-agents`, gets
+refreshed on the next `install.py`, and is cleaned up by `--uninstall`. That is how a brand-new CLI, or an
+in-house one, gets supported without waiting for a new version of this tool.
+
+`agents.json` can also be edited by hand. An entry there whose `key` matches a built-in one **overrides** the
+built-in one — so if a CLI changes where it keeps its instructions, you can correct it locally instead of
+waiting for an update. Each entry has five fields: `key` (the short id used with `--agent`), `label` (the
+display name), `home_env` (an environment variable that relocates the folder, may be empty), `home` (the folder,
+may start with `~`), and `file` (the file name, which may include a subfolder).
+
 ### Environment variables
 
 | Variable | Effect |
@@ -603,7 +822,12 @@ The contents of this directory. Every path is resolved at run time, so it works 
 | `AGENT_DASHBOARD_HOME` | Changes where records are stored (default is this directory; if it is not writable, the OS's user data area) |
 | `AGENT_DASHBOARD_PROJECT` | Fixes the target project (`--project` takes priority) |
 | `PORT` | The server's default port (`--port` takes priority) |
-| `CLAUDE_CONFIG_DIR` | Where `install.py` writes `CLAUDE.md` |
+| `CLAUDE_CONFIG_DIR` | Where Claude Code's `CLAUDE.md` lives |
+| `CODEX_HOME` | Where Codex CLI's `AGENTS.md` lives |
+| `GEMINI_CLI_HOME` | Where Gemini CLI's `GEMINI.md` lives |
+| `COPILOT_HOME` | Where GitHub Copilot CLI's instructions live |
+| `OPENCODE_CONFIG_DIR` | Where opencode's `AGENTS.md` lives |
+| `AGENT_DASHBOARD_AGENTS_FILE` | Where the list of CLIs you added yourself is kept (default: `agents.json` beside the mission records) |
 | `AGENT_DASHBOARD_LANG` | The language of the output (`en` / `ja` / `zh` / `ko`). Takes priority over the saved setting |
 
 ### Display language

@@ -44,6 +44,7 @@ server.py と update_state.py が共有する。プロジェクトの識別・�
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -51,6 +52,7 @@ import re
 import shutil
 import sys
 import threading
+import time
 import unicodedata
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -127,31 +129,244 @@ def doc_path(stem: str) -> Path:
     return localized if localized.exists() else TOOL_ROOT / f"{stem}.md"
 
 
-def claude_config_dir() -> Path:
-    """Claude の設定ディレクトリ（CLAUDE_CONFIG_DIR があればそれを尊重する）。"""
-    env = os.environ.get("CLAUDE_CONFIG_DIR")
+# ------------------------------------------------------- 運用ルールの書き先（CLI ごと）
+#
+# 運用ルールの**本文はどの CLI でも同じ**（呼ぶのは同じ update_state.py で、
+# update_state.py はモデル ID を見ていない）。違うのは「その CLI が起動時に必ず読む
+# ファイルはどれか」だけ。Claude Code は ~/.claude/CLAUDE.md、Codex CLI は
+# ~/.codex/AGENTS.md を読む。
+#
+# 対応表をここ1箇所に置いているのは、書く側（install.py）と読む側（diagnose.py /
+# auto_setup.py / 下の版チェック）がファイルを跨いでいるため。片方にだけ CLI を足すと
+# 「書き込んだのに未設定と言われる」噛み合わせ事故になり、症状から原因に辿り着けない。
+#
+# **組み込みの表は「よく使われる CLI の近道」であって、対応できる範囲ではない。**
+# 知らない CLI や、これから出てくる CLI にも書けなければ意味が無いので、表は
+#
+#   1. ここの組み込み
+#   2. 利用者が足した分（AGENTS_FILE の JSON。同じ鍵なら利用者側が勝つ）
+#
+# を重ねたものとして扱う。install.py --agent-file <パス> は 2 に1件足してから書く。
+# 新しい CLI が出ても、このファイルを配り直さずに追随できる形にしてある。
+#
+#   key      : 鍵。コマンドライン（--agent）と JSON で指す名前
+#   label    : 画面に出す名前。**訳さない**（製品名なので、どの言語でも同じ綴り）
+#   home_env : 設定フォルダの場所を変える環境変数。無ければ ""
+#   home     : 既定の設定フォルダ。"~" から書く
+#   file     : その CLI が起動時に読むファイルの名前
+# file にフォルダを含めてよい（"rules/subagent-dashboard.md"）。1つのファイルではなく
+# **ルール置き場のフォルダを丸ごと読む** CLI が実際にあり、そこには専用の1枚を置くのが
+# 一番行儀がよい（既存のルールに追記すると、その CLI の作法と喧嘩する）。
+#
+# ここに無い CLI は install.py --agent-file で足せる。**表に載っていないことは
+# 「対応していない」を意味しない。** 表は近道であって、境界ではない。
+#
+# 印の意味:
+#   [確認済] 公式ドキュメント/リポジトリで場所を確かめたもの
+#   [未確認] 二次情報しか取れなかったもの。設定フォルダが実在するときだけ書くので
+#            外していても実害は小さいが、直す価値はある
+BUILTIN_AGENT_TARGETS: tuple[dict, ...] = (
+    # [確認済]
+    {"key": "claude", "label": "Claude Code", "home_env": "CLAUDE_CONFIG_DIR",
+     "home": "~/.claude", "file": "CLAUDE.md"},
+    {"key": "codex", "label": "Codex CLI", "home_env": "CODEX_HOME",
+     "home": "~/.codex", "file": "AGENTS.md"},
+    {"key": "gemini", "label": "Gemini CLI", "home_env": "GEMINI_CLI_HOME",
+     "home": "~/.gemini", "file": "GEMINI.md"},
+    {"key": "copilot", "label": "GitHub Copilot CLI", "home_env": "COPILOT_HOME",
+     "home": "~/.copilot", "file": "copilot-instructions.md"},
+    {"key": "opencode", "label": "opencode", "home_env": "OPENCODE_CONFIG_DIR",
+     "home": "~/.config/opencode", "file": "AGENTS.md"},
+    # Amp は ~/.config/AGENTS.md も読むが、そちらは狙わない。~/.config は Amp を
+    # 入れていなくても大抵あるので、自動判定が誰の環境にも書き込んでしまう。
+    {"key": "amp", "label": "Amp", "home_env": "",
+     "home": "~/.config/amp", "file": "AGENTS.md"},
+    # ルール置き場が「フォルダ」の CLI。専用の1枚を置く。
+    {"key": "cline", "label": "Cline", "home_env": "",
+     "home": "~/Documents/Cline/Rules", "file": "subagent-dashboard.md"},
+    {"key": "roo", "label": "Roo Code", "home_env": "",
+     "home": "~/.roo", "file": "rules/subagent-dashboard.md"},
+    # [未確認]
+    {"key": "windsurf", "label": "Windsurf", "home_env": "",
+     "home": "~/.codeium/windsurf/memories", "file": "global_rules.md"},
+    {"key": "qwen", "label": "Qwen Code", "home_env": "",
+     "home": "~/.qwen", "file": "QWEN.md"},
+)
+
+# 載せていない CLI と、その理由（消さないこと。次に調べ直す人が同じ道を辿らないように）:
+#   Cursor  — 利用者ごとのルールファイルが無い。読むのはリポジトリ内の AGENTS.md だけ
+#   Aider   — 起動時に必ず読む指示ファイルという仕組みが無い（設定で明示的に指すやり方）
+# どちらも、リポジトリ内のファイルを --agent-file で指せば同じことができる。
+
+#: 利用者が足した CLI を置く JSON。場所は環境変数で変えられる（試験用）。
+ENV_AGENTS_FILE = "AGENT_DASHBOARD_AGENTS_FILE"
+
+AGENT_ENTRY_KEYS = ("key", "label", "home_env", "home", "file")
+
+
+def agents_file() -> Path:
+    """利用者が足した CLI の一覧（JSON）の場所。
+
+    AGENTS_FILE を直に読まずこの関数を通すのは、環境変数での差し替えを
+    **呼ばれた時点で**効かせるため（取り込み時に固めると試験で差し替えられない）。
+    """
+    env = os.environ.get(ENV_AGENTS_FILE)
+    if env and env.strip():
+        return Path(env).expanduser()
+    return AGENTS_FILE
+
+
+def _clean_entry(raw: object) -> dict | None:
+    """JSON の1件を表の形に整える。使えないものは None（**捨てるが落とさない**）。
+
+    ここで例外にすると、書き損じた JSON が1つあるだけで update_state.py 全体が
+    動かなくなる。運用ルールを書く道具が、設定ファイルの誤字で本業を止めてよい
+    理由が無い。使える行だけ拾って進む。
+    """
+    if not isinstance(raw, dict):
+        return None
+    key = str(raw.get("key", "")).strip().lower()
+    name = str(raw.get("file", "")).strip()
+    home = str(raw.get("home", "")).strip()
+    if not key or not name or not home:
+        return None
+    # パス区切りや空白を含む鍵は、--agent の値としても JSON の見出しとしても
+    # 扱いにくいので受け付けない（フォルダ名に化ける場所がある）。
+    if any(ch in key for ch in "/\\ \t"):
+        return None
+    return {
+        "key": key,
+        "label": str(raw.get("label", "")).strip() or key,
+        "home_env": str(raw.get("home_env", "")).strip(),
+        "home": home,
+        "file": name,
+    }
+
+
+def load_user_agents() -> list[dict]:
+    """利用者が足した CLI。ファイルが無い・壊れているときは空リスト。"""
+    path = agents_file()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    # {"agents": [...]} でも [...] でも受ける。手で書く人が迷わないように。
+    if isinstance(raw, dict):
+        raw = raw.get("agents")
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in raw:
+        entry = _clean_entry(item)
+        if entry and entry["key"] not in seen:
+            seen.add(entry["key"])
+            out.append(entry)
+    return out
+
+
+def add_user_agent(entry: dict) -> None:
+    """利用者の一覧に1件足す（同じ鍵があれば置き換える）。
+
+    書けなければ OSError をそのまま投げる。ここを握り潰すと「登録したのに
+    次回いなくなっている」になり、利用者は原因を追えない。
+    """
+    cleaned = _clean_entry(entry)
+    if cleaned is None:
+        raise ValueError("invalid agent entry: %r" % (entry,))
+    others = [e for e in load_user_agents() if e["key"] != cleaned["key"]]
+    path = agents_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"agents": others + [cleaned]}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def agent_targets() -> list[dict]:
+    """組み込みと利用者定義を重ねた、いま有効な CLI の一覧。
+
+    同じ鍵があれば**利用者側が勝つ**。組み込みの想定が古くなった（CLI 側が読む
+    ファイルを変えた）ときに、配り直しを待たずに手元で直せるようにするため。
+    """
+    merged = {e["key"]: dict(e) for e in BUILTIN_AGENT_TARGETS}
+    for entry in load_user_agents():
+        merged[entry["key"]] = entry
+    return list(merged.values())
+
+
+def agent_keys() -> tuple[str, ...]:
+    return tuple(e["key"] for e in agent_targets())
+
+
+def _agent_entry(key: str) -> dict:
+    for entry in agent_targets():
+        if entry["key"] == key:
+            return entry
+    raise KeyError(key)
+
+
+def agent_label(key: str) -> str:
+    """画面に出す CLI の名前。**訳さない**（製品名なので、どの言語でも同じ綴り）。"""
+    return _agent_entry(key)["label"]
+
+
+def agent_config_dir(key: str) -> Path:
+    """その CLI の設定ディレクトリ（場所を変える環境変数があればそれを尊重する）。"""
+    entry = _agent_entry(key)
+    env_name = entry.get("home_env") or ""
+    env = os.environ.get(env_name) if env_name else None
     if env and env.strip():
         return Path(env).expanduser().resolve()
-    return (Path.home() / ".claude").resolve()
+    return Path(entry["home"]).expanduser().resolve()
 
 
-# ------------------------------------------------- CLAUDE.md に書いた運用ルールの版
+def instruction_file(key: str) -> Path:
+    """その CLI が起動時に読む、運用ルールを書き込むファイル。"""
+    return agent_config_dir(key) / _agent_entry(key)["file"]
+
+
+def claude_config_dir() -> Path:
+    """Claude の設定ディレクトリ（CLAUDE_CONFIG_DIR があればそれを尊重する）。"""
+    return agent_config_dir("claude")
+
+
+def present_agents() -> list[str]:
+    """設定フォルダが実在する CLI。**入っていない CLI に書き込まないため**の判定。
+
+    フォルダの有無だけを見る。CLI 本体を PATH から探しにいかないのは、拡張や
+    パッケージ管理ごとに置き場所が違って当てにならないうえ、置き場所が分からない
+    だけで「未対応」と表示してしまうため。設定フォルダは必ずホーム直下にできる。
+    """
+    out = []
+    for key in agent_keys():
+        try:
+            if agent_config_dir(key).is_dir():
+                out.append(key)
+        except OSError:  # 壊れたパスを書かれても、他の CLI の判定は続ける
+            continue
+    return out
+
+
+# ------------------------------------------- 運用ルールに書いた版（CLI ごとに古くなる）
 #
-# 本体（コード）と CLAUDE.md の運用ルールは**別々に古くなる**。本体は拡張の更新や
-# 上書きコピーで新しくなるが、CLAUDE.md は誰かが install.py を実行し直すまで古いまま
-# 残る（初期設定は一度成功すると自動では二度と走らない）。運用ルールが増えた版では、
-# 増えたぶんが Claude に届かないまま次の作業が始まってしまう。
+# 本体（コード）と運用ルールは**別々に古くなる**。本体は拡張の更新や上書きコピーで
+# 新しくなるが、運用ルールは誰かが install.py を実行し直すまで古いまま残る（初期設定は
+# 一度成功すると自動では二度と走らない）。運用ルールが増えた版では、増えたぶんが
+# エージェントに届かないまま次の作業が始まってしまう。
 #
 # **判定をここに置いているのは、dashlib が必ず配られるため。** 同じことを auto_setup.py に
 # 書くと、開発ディレクトリでは動くのに配布物では動かない（auto_setup.py は .vsix に
 # 同梱しない＝ build_vsix.PAYLOAD_SKIP）。書く側（install.py）もここの定数を使う。
 
-CLAUDE_BLOCK_BEGIN = "<!-- agent-dashboard:begin -->"
-CLAUDE_BLOCK_END = "<!-- agent-dashboard:end -->"
+# しるしの**中身**は CLI が増えても変えない。CLAUDE.md と AGENTS.md で別のしるしに
+# すると、片方しか外せない --uninstall ができあがる。
+BLOCK_BEGIN = "<!-- agent-dashboard:begin -->"
+BLOCK_END = "<!-- agent-dashboard:end -->"
 
 # 版のしるしは囲みの**内側**に置く。BEGIN / END は決して変えない。変えると、それ以前に
 # 書き込んだブロックを見つけられなくなり、差し替えのつもりが二重書き込みになる。
-CLAUDE_BLOCK_VERSION_MARK = "<!-- agent-dashboard:version "
+BLOCK_VERSION_MARK = "<!-- agent-dashboard:version "
 
 
 def tool_version() -> str:
@@ -162,9 +377,9 @@ def tool_version() -> str:
         return ""
 
 
-def claude_md_text() -> str | None:
-    """CLAUDE.md の中身。読めなければ None。"""
-    target = claude_config_dir() / "CLAUDE.md"
+def instruction_text(key: str) -> str | None:
+    """その CLI の運用ルールファイルの中身。読めなければ None。"""
+    target = instruction_file(key)
     if not target.is_file():
         return None
     try:
@@ -173,45 +388,94 @@ def claude_md_text() -> str | None:
         return None
 
 
-def claude_block_installed() -> bool:
-    """CLAUDE.md に、いま動いているこの本体の運用ルールが書かれているか。
+def block_installed(key: str) -> bool:
+    """その CLI の運用ルールファイルに、いま動いているこの本体の運用ルールがあるか。
 
-    マーカーだけでなくパスも見る。同じツールのコピーが複数あるとき、CLAUDE.md が別の
+    マーカーだけでなくパスも見る。同じツールのコピーが複数あるとき、運用ルールが別の
     コピーを指していれば、ここは False でなければならない（記録の書き込み先が分かれる）。
     """
-    text = claude_md_text()
+    text = instruction_text(key)
     if text is None:
         return False
-    if CLAUDE_BLOCK_BEGIN not in text or CLAUDE_BLOCK_END not in text:
+    if BLOCK_BEGIN not in text or BLOCK_END not in text:
         return False
     us = str(TOOL_ROOT / "update_state.py")
     return us in text or us.replace("\\", "/") in text
 
 
-def claude_block_version() -> str | None:
-    """CLAUDE.md に書かれているブロックの版。しるしが無ければ None。
+def installed_agents() -> list[str]:
+    """運用ルールが書き込まれている CLI。1つも無ければ空リスト（＝未設定）。"""
+    return [key for key in agent_keys() if block_installed(key)]
+
+
+def block_version(key: str) -> str | None:
+    """その CLI に書かれているブロックの版。しるしが無ければ None。
 
     0.4.1 までのブロックにはしるしが無いので、そこから更新すると必ず None になる
     ＝「古い」と判定される。実際に古いので、これが正しい。
     """
-    text = claude_md_text()
+    text = instruction_text(key)
     if text is None:
         return None
-    start = text.find(CLAUDE_BLOCK_BEGIN)
+    start = text.find(BLOCK_BEGIN)
     if start == -1:
         return None
-    stop = text.find(CLAUDE_BLOCK_END, start)
+    stop = text.find(BLOCK_END, start)
     if stop == -1:
         return None
 
     block = text[start:stop]
-    i = block.find(CLAUDE_BLOCK_VERSION_MARK)
+    i = block.find(BLOCK_VERSION_MARK)
     if i == -1:
         return None
     j = block.find("-->", i)
     if j == -1:
         return None
-    return block[i + len(CLAUDE_BLOCK_VERSION_MARK):j].strip() or None
+    return block[i + len(BLOCK_VERSION_MARK):j].strip() or None
+
+
+def unwired_agents() -> list[str]:
+    """入っているのに運用ルールが書かれていない CLI。
+
+    **セットアップのあとに CLI を入れた人が必ず落ちる穴。** 初期設定は「そのとき
+    入っていた CLI」にしか書かない（入れていない CLI のフォルダを勝手に作らない
+    ため）。あとから別の CLI を入れると、そちらには何も書かれていないまま、
+    画面には何も出ない状態が続く。
+
+    1つでも書けていれば設定済みと見なす判定だけだと、この状態が「緑」に見える。
+    見えるようにするための判定をここに1つ置き、update_state / server / diagnose /
+    auto_setup の4か所が同じ規則を使う。
+    """
+    written = set(installed_agents())
+    return [key for key in present_agents() if key not in written]
+
+
+def unwired_agent_notice() -> str | None:
+    """後から入れた CLI に運用ルールが届いていなければ、知らせる文面を返す。
+
+    まだ1つも書いていない人には返さない（その人向けの案内は初回セットアップ側が
+    持っていて、ここで重ねると初回の画面が警告だらけになる）。stale_block_notice と
+    同じ考え方で、文面を返すだけで印字はしない。
+    """
+    if not installed_agents():
+        return None
+    pending = unwired_agents()
+    if not pending:
+        return None
+
+    names = ", ".join(agent_label(key) for key in pending)
+    return (
+        t("  ⚠️  {names} is installed, but the operating rules have not been "
+          "written for it.").format(names=names)
+        + "\n"
+        + t("      It was probably installed after the setup ran. "
+            "Until you write them,")
+        + "\n"
+        + t("      subagents started from it will not show up on the screen. Please run:")
+        + "\n"
+        + f"        python {TOOL_ROOT / 'install.py'}\n"
+        + t("      (Only the marked block is written. Nothing else is touched.)")
+    )
 
 
 def stale_block_notice() -> str | None:
@@ -222,28 +486,156 @@ def stale_block_notice() -> str | None:
 
     まだ設定していない人には None を返す。その人向けの案内は初回セットアップ側が
     持っていて、ここで重ねると初回の画面が警告だらけになって肝心の手順が埋もれる。
-    """
-    if not claude_block_installed():
-        return None
 
+    書き込み先が複数あるときは**古いものだけ**を挙げる。両方に書いてあって片方だけ
+    古い（CLI を後から足した直後がこれ）ときに、全部を挙げると直す先が分からない。
+    """
+    stale: list[str] = []
     current = tool_version()
     if not current:  # 自分の版が分からないときは黙る。比較の根拠が無い
         return None
 
-    installed = claude_block_version()
-    if installed == current:
+    for key in installed_agents():
+        installed = block_version(key)
+        if installed == current:
+            continue
+        where = (t("no version recorded") if installed is None
+                 else t("version {v}").format(v=installed))
+        stale.append(t("{name} ({where})").format(
+            name=instruction_file(key).name, where=where))
+
+    if not stale:
         return None
 
-    where = t("no version recorded") if installed is None else t("version {v}").format(v=installed)
     return (
-        t("  ⚠️  The operating rules in CLAUDE.md are older than the tool "
-          "({where} / tool version {current}).").format(where=where, current=current)
+        t("  ⚠️  The operating rules are older than the tool "
+          "({stale} / tool version {current}).").format(
+              stale=" / ".join(stale), current=current)
         + "\n"
         + t("      Updating the tool does not update the rules. Please run:")
         + "\n"
         + f"        python {TOOL_ROOT / 'install.py'}\n"
         + t("      (Only the marked block is replaced. Nothing else is touched.)")
     )
+
+
+# ------------------------------------- 自由記述の言語（走っているセッションへ届ける）
+#
+# 自由記述（`--title` / `--name` / `--mission` / `--headline`）を何語で書くかは、
+# エージェントが**セッション開始時に読んだ運用ルール**で決まる。`dash lang` で設定を
+# 変えて運用ルールを書き直しても、**すでに走っているセッションには届かない**
+# （運用ルールは起動時に一度読まれるだけ）。その結果、ツールが書く既定ラベル
+# （`t()` を通る「指令塔」など）は新しい言語なのに、エージェントが書いた行は古い言語の
+# まま、という混在が起きる。**実際に起きた**（指令塔だけ日本語で、第1世代は英語）。
+#
+# **走っているセッションへ届く経路は、エージェントが必ず読むコマンドの出力しかない。**
+# だから start では毎回「この言語で書く」と1行出し、受け取った自由記述が明らかに違う
+# 言語のときは警告する。判定をここに置くのは、書く側（update_state）と読む側
+# （将来 server や diagnose が同じ判断をしたくなったとき）が同じ規則を見るため。
+#
+# **警告に留め、決して書き込みを拒否しない。** 判定は文字種を見るだけの当て推量で、
+# 固有名詞やコールサインを英語で書く運用は正しくありうる。当て推量で人の手を止めるのは
+# `--tokens` を推測で埋めないのと同じ理由で、このツールの方針に反する。
+
+#: 期待する言語ごとの「その言語で書いたなら必ず現れる文字」。
+#: 日本語と中国語は漢字を共有しているので、**互いの取り違えは検出できない**。
+#: そこまで当てようとすると誤検出のほうが増える（英語混在との区別が付かない）。
+_LANG_SCRIPTS = {
+    # かな + 漢字（かなが1文字でもあれば日本語と分かる）
+    "ja": "[぀-ヿ㐀-䶿一-鿿豈-﫿]",
+    # 漢字
+    "zh": "[㐀-䶿一-鿿豈-﫿]",
+    # ハングル（音節 + 字母）
+    "ko": "[가-힣ᄀ-ᇿ㄰-㆏]",
+}
+_CJK_ANY = re.compile("|".join(_LANG_SCRIPTS.values()))
+
+#: 英語で書かれていそうか。2文字以上の英単語を要求するので、記号や数字だけでは真にならない。
+_ASCII_WORD = re.compile(r"[A-Za-z]{2,}")
+
+#: ID・パス・版番号のような識別子。`SCOUT-A` や `src/api.py` を英語と見なさないため。
+_IDENTIFIER_LIKE = re.compile(r"^[A-Za-z0-9._/\\:-]+$")
+
+#: これより短い記述は判定しない。`42` や `---` を言語で語るのは無理がある。
+MIN_LANG_CHECK_CHARS = 6
+
+
+def free_text_lang_mismatch(text, lang: str | None = None) -> bool:
+    """その自由記述が、設定された言語で書かれていない**ように見える**か。
+
+    見えるだけで、断定はしない（呼び手は警告に使い、書き込みは止めない）。
+    誤検出を避けるため、次は最初から対象外にする。
+      - 短すぎるもの（`MIN_LANG_CHECK_CHARS` 未満）
+      - 識別子の形をしたもの（`SCOUT-A` / `src/api.py` / `v0.5.1`）
+      - 期待する言語の文字が1文字でも入っているもの（日本語の文に `API` が混ざるのは正常）
+      - 対応表に無い言語（判定の根拠が無いので黙る）
+    """
+    s = as_str(text).strip()
+    if len(s) < MIN_LANG_CHECK_CHARS:
+        return False
+    if _IDENTIFIER_LIKE.match(s):
+        return False
+    want = lang or i18n.get_lang()
+    if want == "en":
+        # 英語設定に CJK が混ざるのは稀なので、1文字でも入っていれば知らせる。
+        return bool(_CJK_ANY.search(s))
+    pattern = _LANG_SCRIPTS.get(want)
+    if pattern is None:
+        return False
+    if re.search(pattern, s):
+        return False
+    return bool(_ASCII_WORD.search(s))
+
+
+def expected_lang_notice() -> str:
+    """「自由記述はこの言語で書く」の1行。**常に返す**（警告ではなく指示）。
+
+    start の出力に無条件で出すためのもの。stale_block_notice() のように
+    「問題があるときだけ」にしてはいけない——設定を変えた直後は何も問題が起きて
+    いないのに、エージェントの手元にある運用ルールだけが古い、という状況だから。
+    """
+    lang = i18n.get_lang()
+    return t("  Write the free text (--title / --name / --mission / --headline) "
+             "in this language: {label} ({code}).").format(
+                 label=i18n.label(lang), code=lang)
+
+
+def free_text_lang_notice(mismatches, *, fixable: bool) -> str | None:
+    """食い違っていた自由記述を知らせる文面。1件も無ければ None。
+
+    文面を返すだけで印字はしない（stale_block_notice() と同じ約束）。
+
+    :param mismatches: [(オプション名, 渡された値), ...]
+    :param fixable: あとから直せるか。`add` / `done` / `finish` は同じ `--id` で
+        打ち直せば直る（実測値は保たれる）。`start` の `--title` は**直す手段が無い**
+        ので、直せると言ってはいけない。言えば、次の start で全員を履歴へ流す。
+    """
+    if not mismatches:
+        return None
+    lang = i18n.get_lang()
+    fields = " / ".join(
+        t('{flag} "{value}"').format(flag=flag, value=clip(as_str(value), 40))
+        for flag, value in mismatches
+    )
+    lines = [
+        t("  ⚠️  The language is set to {label} ({code}), but this does not look like "
+          "it: {fields}").format(label=i18n.label(lang), code=lang, fields=fields),
+    ]
+    if fixable:
+        lines.append(
+            t("      If that was not deliberate, run the same command again with the same\n"
+              "      --id and the corrected text. The value is replaced, and the measured\n"
+              "      values are kept (the event log keeps the line it already wrote).")
+        )
+    else:
+        lines.append(
+            t("      A mission title cannot be corrected afterwards. Only a new start can\n"
+              "      change it, and that archives the current mission while it is running.")
+        )
+    lines.append(
+        t("      If it was deliberate (a proper noun, a call sign), ignore this.")
+    )
+    return "\n".join(lines)
 
 
 def os_data_home() -> Path:
@@ -293,6 +685,13 @@ def resolve_data_home() -> Path:
 
 DATA_HOME = resolve_data_home()
 MISSIONS_DIR = DATA_HOME / "missions"
+#: state.json の錠置き場。**missions/ の中に置いてはいけない**（理由は state_lock）。
+LOCKS_DIR = DATA_HOME / "locks"
+
+#: 利用者が足した CLI の一覧。記録と同じ場所に置く（本体を入れ替えても残るように）。
+#: 差し替えるときは agents_file() 経由で読むこと。定義がここなのは DATA_HOME より
+#: 前には決まらないため。
+AGENTS_FILE = DATA_HOME / "agents.json"
 # 削除したプロジェクトの置き場。missions/ の外に置く。
 # 中に作ると list_slugs() がゴミ箱自身を1つのプロジェクトとして拾ってしまう。
 TRASH_DIR = DATA_HOME / "trash"
@@ -342,6 +741,34 @@ def write_lang_setting(lang: str) -> str:
 _saved_lang = read_lang_setting()
 if _saved_lang:
     i18n.set_lang(_saved_lang)
+
+#: 最後に読み込んだ設定ファイルの更新時刻。refresh_lang() が読み直すかの判断に使う。
+_lang_mtime: float | None = None
+
+
+def refresh_lang() -> str:
+    """保存された言語設定が変わっていたら読み直す。いまの言語コードを返す。
+
+    **立ち上げっぱなしのプロセス（server.py）のために要る。** 起動時に1回決めるだけだと、
+    `dash lang` で切り替えても再起動するまで古い言語のまま出し続ける。CLI は1コマンドで
+    終わるので関係ないが、サーバーは何時間も同じプロセスのまま動く。
+
+    毎リクエストで呼ばれても軽いように、**更新時刻が変わったときだけ**読む
+    （画面は1秒ごとに取りに来るので、毎回ファイルを読み解くのは無駄）。
+    読めなければ何もしない（設定ファイルが無いのは正常な状態）。
+    """
+    global _lang_mtime
+    try:
+        mtime = LANG_FILE.stat().st_mtime
+    except OSError:
+        return i18n.get_lang()
+    if mtime == _lang_mtime:
+        return i18n.get_lang()
+    _lang_mtime = mtime
+    hit = read_lang_setting()
+    if hit:
+        i18n.set_lang(hit)
+    return i18n.get_lang()
 
 
 def use_utf8_stdio() -> None:
@@ -1090,6 +1517,45 @@ def _move_current_to_history(slug: str) -> str:
     return dest.name
 
 
+def _stamp_interrupted(slug: str, run_id: str, note: dict) -> None:
+    """押し出された記録に「なぜ稼働中のまま終わったか」を書き添える。
+
+    **移したあとに書く。** 移す前に書くと、移動が落ちたときに「押し出された」と
+    書かれた記録が現役のまま残る。移したあとの history/<runId>/state.json を
+    書いているのは、この時点ではもう誰も居ない。
+
+    **書くのは観測できた事実だけ。** phase も finishedAt も触らない——そのミッションが
+    「終わった」時刻は誰も測っていない。実測でない値を書かないというこの道具の約束
+    （cmd_start の「見るだけで直さない」）は、ここでも同じである。
+
+    **締まっている記録には何も足さない。** 完了した記録が退避されるのは正常な流れで、
+    そこに「打ち切られた」と書けば嘘になる。
+
+    失敗しても黙って戻る。start は既に成立していて、これはその付随物である。
+    ここで例外を上げると、記録を残せたのに start が落ちる。
+    """
+    path = run_state_file(slug, run_id)
+    ok, value, _err = read_json_safe(path)
+    if not ok or not isinstance(value, dict):
+        return
+    mission = value.get("mission")
+    if not isinstance(mission, dict) or mission.get("phase") != "running":
+        return
+    mission["interruptedBy"] = note
+    tmp = path.with_name(path.name + ".%d.tmp" % os.getpid())
+    try:
+        tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+                       encoding="utf-8")
+        _replace_with_retry(tmp, path)
+    except OSError:
+        pass
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
 def prune_history(slug: str, keep: int | None = None) -> list[str]:
     """history/ が保持件数を超えていたら古い順に trash/ へ移す。
 
@@ -1138,13 +1604,17 @@ def is_unstarted_state(state) -> bool:
     return not state.get("agents")
 
 
-def archive_current_run(slug: str) -> dict:
+def archive_current_run(slug: str, interrupted_by: dict | None = None) -> dict:
     """いまの state.json と agents/ を history/ へ退避する。start の write_state() 直前に呼ぶ。
 
     返り値: {"runId": 退避した runId or None, "pruned": trash へ移した runId の一覧}
 
     例外は投げない（set_current と同じ方針）。記録が残っているのに start が落ちるのが
     一番困るので、失敗しても警告だけ出して呼び出し側を進ませる。
+
+    interrupted_by を渡すと、退避した記録が**稼働中のままだったときに限り**
+    mission.interruptedBy として書き添える。既定は None＝何も足さない
+    （引数を足しただけで、渡さない呼び出しの挙動は1バイトも変わらない）。
     """
     result: dict = {"runId": None, "pruned": []}
 
@@ -1173,6 +1643,9 @@ def archive_current_run(slug: str) -> dict:
             t("this start will overwrite the previous record (the mission still begins)"),
         )
         return result
+
+    if interrupted_by:
+        _stamp_interrupted(slug, result["runId"], interrupted_by)
 
     try:
         result["pruned"] = prune_history(slug)
@@ -1448,8 +1921,12 @@ def resolve_project(explicit: str | None = None) -> dict:
                 t("the project hint \"{hint}\" matches {n} projects: {list}")
                 .format(hint=hint, n=len(matches), list=", ".join(matches))
             )
-        # 既存に無い場合は名前指定として新規作成する
-        return {"slug": sanitize_name(hint), "name": hint, "path": ""}
+        # 既存に無い場合は名前指定として新規作成する。
+        # path には、名前で分けていても「実際にどこで動いているか」は事実なので
+        # カレントディレクトリを記録する。ここを空にすると、あとから補う手段が無く
+        # （read_state は欠けている項目しか埋めない）、実際の作業場所を知る必要がある
+        # 機能——稼働中の実測の読み取りなど——がそのミッションで永久に動かなくなる。
+        return {"slug": sanitize_name(hint), "name": hint, "path": str(Path.cwd().resolve())}
 
     cwd = Path.cwd().resolve()
     return {"slug": slug_for_path(cwd), "name": cwd.name, "path": str(cwd)}
@@ -1475,15 +1952,117 @@ def empty_state(project: dict | None = None) -> dict:
     }
 
 
+#: 差し替えが弾かれたときに、あきらめるまでの回数と待ち（秒）。
+#: Windows では、他のプロセスがそのファイルを開いている一瞬だけ os.replace が
+#: PermissionError になる（画面のサーバーが読んでいる、ウイルス対策が触っている等）。
+#: そこで例外を上げると、**その1件の記録が黙って消える**——このツールがいちばん
+#: 避けたい壊れ方なので、短く数回だけ待ち直してから諦める。
+REPLACE_TRIES = 12
+REPLACE_WAIT_SEC = 0.05
+
+
+def _replace_with_retry(tmp, target) -> None:
+    for i in range(REPLACE_TRIES):
+        try:
+            os.replace(tmp, target)
+            return
+        except PermissionError:
+            if i == REPLACE_TRIES - 1:
+                raise
+            time.sleep(REPLACE_WAIT_SEC)
+
+
 def write_state(slug: str, state: dict) -> None:
-    """一時ファイルに書いてから差し替える。読み込み側が書きかけのJSONを読むことがない。"""
+    """一時ファイルに書いてから差し替える。読み込み側が書きかけのJSONを読むことがない。
+
+    一時ファイルの名前にプロセスIDを入れてあるのは、**同時に2つが書くとき**のため。
+    名前が固定だと、片方が書いている最中にもう片方が同じ名前を truncate して開き、
+    混ざった中身が os.replace で本番へ入る。差し替えそのものが不可分でも、
+    差し替える中身が壊れていたら意味がない。
+    """
     state["updatedAt"] = now_iso()
     state["log"] = state["log"][-MAX_LOG:]
     mission_dir(slug).mkdir(parents=True, exist_ok=True)
     target = state_file(slug)
-    tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, target)
+    tmp = target.with_name(target.name + ".%d.tmp" % os.getpid())
+    try:
+        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _replace_with_retry(tmp, target)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+#: state.json の錠を待つ上限と、置き去りの錠を壊すまでの時間（秒）。
+#: 待ちは短くてよい。ここで待たされるのは hook で、その先にあるのは
+#: 「サブエージェントが起動するかどうか」だからである。
+STATE_LOCK_WAIT_SEC = 5.0
+STATE_LOCK_STALE_SEC = 30.0
+
+
+@contextlib.contextmanager
+def state_lock(slug: str):
+    """state.json の「読んで・直して・書く」を、プロセスをまたいで直列化する。
+
+    **これが無いと記録が黙って消える。** 1回のメッセージで6体まとめて起動すると
+    hook が6プロセス同時にここへ来る。錠が無ければ、あとから書いたほうが
+    「自分が読んだ時点の state」で上書きするので、先に書かれた5体が消える。
+    os.replace が守ってくれるのは1回の書き込みだけで、読んでから書くまでの間は
+    守らない。
+
+    **取れなくても最後には進む。** 記録が1つ競り負けるのは困るが、hook が固まって
+    Agent の起動そのものが止まるほうがずっと悪い。上限まで待ったら錠を無視して
+    進む（置き去りの錠なら壊す）。
+    """
+    # **錠を missions/<slug>/ の中に置かない。** そこへ作ると、まだ存在しない
+    # プロジェクトのディレクトリが錠のために先にでき、list_slugs() は missions/ 直下の
+    # ディレクトリ名をそのまま数えるので、それを「もうあるプロジェクト」と見る。
+    # すると start --project <新しい名前> の resolve_project が既存扱いに倒れ、
+    # **作業場所（path）が空のまま記録される**（実測で踏んだ）。path が空だと、
+    # そのミッションは稼働中の実測を一生読めない（あとから補う手段も無い）。
+    try:
+        LOCKS_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        yield        # 錠を置けない。掛けずに進む（止めるよりまし）
+        return
+    path = LOCKS_DIR / (slug + ".lock")
+    fd = None
+    deadline = time.time() + STATE_LOCK_WAIT_SEC
+    while True:
+        try:
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            # 前の持ち主が落ちて残った錠は、古くなった時点で壊してよい。
+            try:
+                if (time.time() - path.stat().st_mtime) > STATE_LOCK_STALE_SEC:
+                    path.unlink()
+                    continue
+            except OSError:
+                pass
+            if time.time() >= deadline:
+                break   # 待ち切った。錠なしで進む（止めるよりまし）
+            time.sleep(0.02)
+        except OSError:
+            # 読み取り専用の置き場なら何度やっても作れないが、ウイルス対策などが
+            # 一瞬掴んでいるだけのこともある。上限まで待ち直してから諦める。
+            if time.time() >= deadline:
+                break   # 錠なしで進む（止めるよりまし）
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------- 正規化とマージ
@@ -1532,10 +2111,15 @@ def normalize_agent(a, source: str):
         "mission": as_str(a.get("mission")),
         "status": status,
         "waiting": False,  # 下の assign_waiting で必ず上書きする（読み取り側の導出）
+        "live": None,      # 下の assign_live で上書きする（稼働中で、実機が特定できたときだけ）
         "startedAt": as_str(a.get("startedAt")) or None,
         "finishedAt": as_str(a.get("finishedAt")) or None,
         "result": result,
         "source": source,  # 'main' = state.json / 'self' = 孫の自己申告
+        # この機体を起動した Agent 呼び出しのID。hook が自動で登録したときだけ入る。
+        # 実機の meta.json の toolUseId と突き合わせれば、名前も時刻も見ずに
+        # 対応づけが決まる（livefeed.assign_live の規則0）。
+        "toolUseId": as_str(a.get("toolUseId")) or None,
     }
 
 
@@ -1553,13 +2137,13 @@ def normalize_log_entry(e, fallback_who: str = ""):
 
 
 def assign_generations(agents: list[dict]) -> None:
-    """世代（何列目か）を parentId から実測で算出する。
+    """世代を parentId から実測で算出する。
 
     自己申告ファイルが generation を間違えて書いても画面は壊れない。
     """
     by_id = {a["id"]: a for a in agents}
     for a in agents:
-        # 親IDが指定されているのに実体が居ない「孤児」は、指令塔直下（1列目）として扱う
+        # 親IDが指定されているのに実体が居ない「孤児」は、指令塔直下として扱う
         if a["parentId"] and a["parentId"] not in by_id:
             a["generation"] = 1
             continue
@@ -1602,6 +2186,55 @@ def assign_waiting(agents: list[dict]) -> None:
         a["waiting"] = a["status"] == "running" and a["id"] in has_running_child
 
 
+def assign_live_safely(agents: list[dict], project_path: str, mission: dict, slug: str) -> list:
+    """稼働中の機体に、Claude Code の記録から読んだ実測値を載せる。
+
+    載るのは実測値だけで、推定はしない（トークン・ツール回数・経過秒は、そのエージェントの
+    JSONL から数えた実数）。どの実機がどのカードかを確信できないときは何も載せない——
+    別の機体の数字をカードに出すのが最悪の結果なので、「分からない」を優先する。
+
+    livefeed は読むだけのモジュールだが、ここで例外を漏らすと /api/state が毎秒 500 を
+    返し、稼働中のチームまで画面から消える。だから何が起きても黙って諦める。
+    live が出ないことは、画面が壊れることより、はるかに軽い。
+
+    返り値は「記録に無いのに動いている機体」の一覧。系統樹には入れず別枠で出す
+    （親を推測して系統樹を描くと、それは実測ではなくなる）。
+    """
+    try:
+        import livefeed
+        return livefeed.assign_live(agents, project_path, mission, slug)
+    except Exception:
+        for a in agents:
+            a["live"] = None
+        return []
+
+
+def frozen_orphans(base: dict) -> list:
+    """締めたときに焼き付けた「記録に無かった機体」。
+
+    assign_live は稼働中のミッションしか見ない。だから締めた瞬間に、記録に無いまま
+    動いていた機体は画面から消える——**いたこと自体が残らない**。実測した当時の姿を
+    finish が state.json に焼き付けてあるので、稼働が終わった記録ではそれを出す。
+
+    ここで作り直さないのは、元にした実機のログが残っていても、締めたあとの再計算は
+    そのときの実測とは別物になるため（沈黙が延びる・別のミッションの機体が窓に入る）。
+    焼き付けたものをそのまま出すのが、いちばん嘘が少ない。
+
+    frozen を立てて渡すのは、画面がこれを「もう動いていないもの」として描けるように
+    するため。完了した記録の中で稼働中の顔をしていたら、それは実測の表示ではない。
+    """
+    raw = base.get("orphans")
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for o in raw:
+        if isinstance(o, dict) and as_str(o.get("agentId")):
+            got = dict(o)
+            got["frozen"] = True
+            out.append(got)
+    return out
+
+
 def extract_from_self_report(value) -> tuple[list, list]:
     """孫の自己申告1ファイル分を読む。単体 dict・リスト・{agents,log} の3形式を受け付ける。"""
     agents: list = []
@@ -1628,12 +2261,31 @@ def _log_sort_key(e: dict):
         return (1, 0.0)
 
 
-def _build_state(slug: str, state_path: Path, agents_path: Path) -> dict:
+def _interrupted_note(v) -> dict | None:
+    """押し出された理由のうち、**画面に出す2つだけ**を渡す形にする。無ければ None。
+
+    sessionId は渡さない。人が読めない値で、画面に出す用途が無いうえ、ここを通った
+    ものはブラウザから見えるところへ出ていく（サーバーがユーザー名を伏せているのと
+    同じ考え方）。sameSession も渡さない——出し分ける文言を持たないので、渡せば
+    「読まれない項目」が1つ増えるだけになる。
+    """
+    if not isinstance(v, dict):
+        return None
+    at = as_str(v.get("at")) or None
+    title = as_str(v.get("title")) or None
+    return {"at": at, "title": title} if (at or title) else None
+
+
+def _build_state(slug: str, state_path: Path, agents_path: Path, *, live: bool = False) -> dict:
     """state.json と agents/*.json をマージして1つの状態にする（置き場所は引数で受ける）。
 
     現在のミッション（missions/<slug>/）と過去の記録（history/<runId>/）を
     まったく同じ形に組み立てるため、実体はここ1つにしてある。画面は同じ描画機構で
     どちらも描く。
+
+    live=True のときだけ、稼働中の機体に実測の稼働状況を載せる（assign_live）。
+    既定を False にしてあるのは、履歴が誤って live 判定されないようにするため。
+    過去の記録は凍結されていなければならない。
     """
     warnings: list[str] = []
 
@@ -1686,14 +2338,23 @@ def _build_state(slug: str, state_path: Path, agents_path: Path) -> dict:
             if e:
                 logs.append(e)
 
-    agents = list(merged.values())
-    assign_generations(agents)
-    assign_waiting(agents)   # 孫の取り込み後に走らせる。孫だけが動いている親を取りこぼさないため
-    logs.sort(key=_log_sort_key)
-
+    # mission / summary / project は assign_live に渡すので、agents より先に組み立てる。
+    # （summary は mission から取るので3行セットで動かすこと）
     mission = base.get("mission") if isinstance(base.get("mission"), dict) else empty_state()["mission"]
     summary = mission.get("summary")
     project = base.get("project") if isinstance(base.get("project"), dict) else {}
+
+    agents = list(merged.values())
+    assign_generations(agents)
+    assign_waiting(agents)   # 孫の取り込み後に走らせる。孫だけが動いている親を取りこぼさないため
+    live_orphans: list = []
+    if live:
+        live_orphans = assign_live_safely(agents, as_str(project.get("path")), mission, slug)
+    if not live_orphans:
+        # 締めるときに焼き付けたぶん。稼働中は上の実測が勝つので、ここが効くのは
+        # 「終わった記録を見ているとき」だけ（履歴も、締めたあとの現在のミッションも）。
+        live_orphans = frozen_orphans(base)
+    logs.sort(key=_log_sort_key)
 
     return {
         "version": 2,
@@ -1709,6 +2370,7 @@ def _build_state(slug: str, state_path: Path, agents_path: Path) -> dict:
             "title": as_str(mission.get("title")) or t("(untitled mission)"),
             "startedAt": as_str(mission.get("startedAt")) or None,
             "finishedAt": as_str(mission.get("finishedAt")) or None,
+            "interruptedBy": _interrupted_note(mission.get("interruptedBy")),
             "summary": {
                 "agentCount": as_num(summary.get("agentCount")),
                 "totalTokens": as_num(summary.get("totalTokens")),
@@ -1724,13 +2386,17 @@ def _build_state(slug: str, state_path: Path, agents_path: Path) -> dict:
             "main": ok,
             "selfReports": len(self_files),
             "warnings": warnings,
+            # 記録に無いのに動いている機体。トップレベルではなくここに置くのは、画面の
+            # 再描画の判定（sig）が sources を見ているため。トップレベルに置くと、孤児が
+            # 増えても減っても画面が描き直されない。
+            "liveOrphans": live_orphans,
         },
     }
 
 
 def build_state(slug: str) -> dict:
     """いま画面に映すミッションの状態。"""
-    return _build_state(slug, state_file(slug), agents_dir(slug))
+    return _build_state(slug, state_file(slug), agents_dir(slug), live=True)
 
 
 def read_run(slug: str, run_id: str) -> dict:
@@ -1768,27 +2434,54 @@ def summarize_project(slug: str) -> dict:
     }
 
 
-#: ホームディレクトリを伏せるときの置き換え文字列。
+#: ユーザー名を伏せるときの置き換え文字列。
 #:
 #: **ここは訳さない。** この値は取扱説明書（manual.html）にも埋め込まれるが、
 #: 説明書の言語を決めているのは**ブラウザ側**（localStorage）で、こちらを訳すと
 #: サーバーの言語で決まってしまう。韓国語で読んでいる人の画面に日本語の
-#: 「(ご自身のユーザーフォルダ)」が1か所だけ混ざる、という食い違いが起きる。
-#: `<home>` なら、どの言語で読んでいても同じ意味に読めて、実際のパスとも
-#: 見分けが付く（コマンド例には使わないので、実行できる必要はない）。
-HOME_MASK = "<home>"
+#: 「(ご自身のユーザー名)」が1か所だけ混ざる、という食い違いが起きる。
+#: `<username>` なら、どの言語で読んでいても同じ意味に読めて、実際のパスとも
+#: 見分けが付く。
+USER_MASK = "<username>"
 
 
 def _display_path(path) -> str:
-    """説明書の「参考情報」欄に出すパス。ホームディレクトリ部分を `<home>` に
-    置き換えて、画面越しにユーザー名が見えてしまわないようにする。
-    コマンド例（コピペして実行する箇所）には使わない — 実行できなくなるため。
+    """説明書に出すパス。ホームディレクトリのうち**ユーザー名の1階層だけ**を
+    `<username>` に置き換えて、画面越しにユーザー名が見えてしまわないようにする。
+
+    ホームごと伏せずにユーザー名だけを伏せるのは、`C:/Users/<username>/.claude/…`（Windows の場合）
+    のようにパスの形が残り、自分のどこを指しているのか読み手が判断できるため。
+
+    コマンド例（コピペして実行する箇所）にもこれを使う。そのままでは実行できないが、
+    説明書は画面共有や配布資料に写ることがあり、そこにユーザー名を出さないほうを
+    優先する。読み手には `<username>` を自分のユーザー名に読み替えてもらう。
     """
     text = str(path)
     home = str(Path.home())
     if text == home or text.startswith(home + os.sep):
-        return HOME_MASK + text[len(home):]
+        return str(Path(home).parent / USER_MASK) + text[len(home):]
     return text
+
+
+def _paths_are_masked() -> bool:
+    """説明書に出るパスに `<username>` が現れるか。
+
+    ツール本体がホームの外（開発用のチェックアウトなど）にあるときは1つも
+    伏せられない。そのとき「`<username>` は読み替えてください」という注記だけが
+    残ると、画面に無いものの説明になってしまうので、出す／出さないをここで決める。
+    """
+    return _display_path(TOOL_ROOT) != str(TOOL_ROOT)
+
+
+def _instruction_paths_display() -> str:
+    """説明書に出す「運用ルールはここ」のパス。
+
+    実際に書き込まれている CLI のぶんだけを出す。未設定なら Claude Code のパスを
+    出す（これから設定する人にとっては、書き込まれる予定の場所が知りたい情報で、
+    対応 CLI を全部並べても選べない）。
+    """
+    keys = installed_agents() or ["claude"]
+    return " / ".join(_display_path(instruction_file(key)) for key in keys)
 
 
 def render_template(text: str) -> str:
@@ -1801,12 +2494,13 @@ def render_template(text: str) -> str:
         text.replace("{{TOOL_ROOT}}", _display_path(TOOL_ROOT))
         .replace("{{MISSIONS_DIR}}", _display_path(MISSIONS_DIR))
         .replace("{{DATA_HOME}}", _display_path(DATA_HOME))
-        .replace("{{CLAUDE_MD}}", _display_path(claude_config_dir() / "CLAUDE.md"))
-        .replace("{{SERVER_PY}}", str(TOOL_ROOT / "server.py"))
-        .replace("{{UPDATE_PY}}", str(TOOL_ROOT / "update_state.py"))
-        .replace("{{LAUNCHER_PATH}}", str(TOOL_ROOT / LAUNCHER.lstrip("./")))
+        .replace("{{INSTRUCTION_FILES}}", _instruction_paths_display())
+        .replace("{{SERVER_PY}}", _display_path(TOOL_ROOT / "server.py"))
+        .replace("{{UPDATE_PY}}", _display_path(TOOL_ROOT / "update_state.py"))
+        .replace("{{LAUNCHER_PATH}}", _display_path(TOOL_ROOT / LAUNCHER.lstrip("./")))
         .replace("{{PY}}", PY_CMD)
         .replace("{{LAUNCHER}}", LAUNCHER)
+        .replace("{{MASKED}}", "1" if _paths_are_masked() else "")
     )
 
 

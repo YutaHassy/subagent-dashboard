@@ -11,6 +11,7 @@
   "cmd.stopServer.title": "서버 정지",
   "cmd.deploy.title": "본체 배치／갱신",
   "cmd.runSetup.title": "초기 설정 실행",
+  "cmd.runChangelogSetup.title": "변경 이력 추적 초기 설정 실행",
   "cmd.resetOnboarding.title": "초기 설정 플래그 초기화",
   "cmd.showLog.title": "로그 표시",
   "config.title": "Subagent Dashboard",
@@ -27,6 +28,7 @@
   "config.autoStartServer.description": "화면을 열 때 서버가 돌고 있지 않으면 자동으로 시작한다.",
   "config.showStatusBar.description": "상태 표시줄에 Subagent Dashboard 버튼을 표시한다.",
   "config.stopServerOnExit.markdownDescription": "VSCode 를 닫을 때 **이 확장이 시작한** 서버를 멈춘다. 밖에서 시작된 서버는 건드리지 않는다.",
-  "config.runSetupOnFirstRun.markdownDescription": "처음 사용할 때 초기 설정(`install.py`)을 실행해도 될지 물어본다.\n\n실행하면 `~/.claude/CLAUDE.md` 에 Subagent Dashboard 사용법이 기록되어 `Ctrl+Shift+D` 로 열 수 있게 됩니다. **확인 없이 실행하는 일은 없습니다.** 한 번 성공하면 다시는 묻지 않습니다 (명령 「초기 설정 실행」으로 언제든 다시 실행할 수 있습니다).",
+  "config.runSetupOnFirstRun.markdownDescription": "처음 사용할 때 초기 설정(`install.py`)을 실행한다.\n\n확장을 설치했다＝사용한다는 전제이므로 **실행 여부를 묻지 않고 그대로 실행합니다**(진행 표시와 그 뒤의 알림으로 실행된 것을 알 수 있습니다). `~/.claude/CLAUDE.md` 에 Subagent Dashboard 사용법이 기록되고(표식으로 감싼 구획만), `Ctrl+Shift+D` 로 열 수 있게 됩니다. 홈 디렉터리 밖은 건드리지 않으며, `python \"install.py\" --uninstall` 로 되돌릴 수 있습니다. 한 번 성공하면 자동으로는 다시 실행되지 않습니다(명령 「초기 설정 실행」으로 언제든 실행할 수 있습니다). 직접 실행하고 싶다면 이 항목을 꺼 주세요.",
+  "config.runChangelogSetupOnFirstRun.markdownDescription": "워크스페이스(프로젝트 폴더)를 처음 열었을 때, 그 워크스페이스에 변경 이력 추적을 설정해도 될지 물어본다(`changelog_setup.py`).\n\n`agentDashboard.runSetupOnFirstRun` 과는 다른 축입니다. 한 대의 머신에서 여러 저장소를 여는 경우가 대부분이므로, 머신당 한 번이 아니라 워크스페이스당 한 번 물어봅니다. **확인 없이 실행하는 일은 없으며**, 멀티 루트 워크스페이스에서도 첫 번째 폴더에만 자동으로 물어봅니다. 한 번 성공(또는 거절)하면 그 워크스페이스에서는 다시는 묻지 않습니다 (명령 「변경 이력 추적 초기 설정 실행」으로 언제든 다시 실행할 수 있습니다).대화 상자에는 「어떤 작업 영역에서도 묻지 않기」도 있어서, 이것을 고르면 이후 어디에서도 자동으로 뜨지 않습니다. 로컬 파일 시스템에 없는 폴더(가상 워크스페이스)와 신뢰하지 않은 워크스페이스에는 애초에 물어보지 않습니다(신뢰하지 않은 워크스페이스에서도 명령 「변경 이력 추적 초기 설정 실행」으로는 실행할 수 있습니다).",
   "config.autoUpdateOnNewVersion.markdownDescription": "확장을 새로 갱신했을 때, 함께 들어 있는 본체로 `~/.claude/agent-dashboard` 를 갱신할지 물어본다. `missions/` 등의 기록에는 손대지 않습니다."
 }

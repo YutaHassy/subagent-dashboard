@@ -1,0 +1,16 @@
+{
+  "sessionId": "59c4ecd3-5a3b-4f80-a9c9-bedcc94a6f69",
+  "startedAt": "2026-09-03T20:24:10+09:00",
+  "endedAt": "2026-09-03T20:29:17+09:00",
+  "summarizedUpToSeq": 55,
+  "headline": "現在の状態(0.9.1)をVSCode拡張とグローバル設定にインストール",
+  "body": "build_vsix.py に未分類ファイル(機体色変更計画.md)をPAYLOAD_SKIPへ追加し、拡張ID大文字小文字比較のバグ(dash ext status が実際は入っているのに『入っていません』と誤表示)を修正。0.9.1のvsixを組み立ててVSCodeへインストールし、旧0.7.3の拡張フォルダを削除。~/.claude/agent-dashboard の本体を0.7.3→0.9.1へ上書き展開(missions/等は保持)し、install.pyでClaude Code/Codex CLI/Gemini CLI/GitHub Copilot CLIの運用ルールを0.9.1へ更新。diagnose.pyで全項目正常を確認。",
+  "auto": false,
+  "filesTouched": [
+    "c:\\Users\\yuta_\\OneDrive\\Python_files\\Subagent Dashboard\\build_vsix.py"
+  ],
+  "toolCallCounts": {
+    "Bash": 27,
+    "Edit": 2
+  }
+}

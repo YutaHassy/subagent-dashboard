@@ -57,6 +57,8 @@
     'm.s2.step3.p1':'From here just ask Claude for an investigation or a task as you normally would. When a subagent starts, a robot <strong>pops into view</strong> on the spot. The screen refreshes about once a second, so there is no need to reload.',
     'm.s2.note.b': 'When you just want to see it move',
     'm.s2.note.p': 'To check the display without waiting for real work, run the following in the folder of the project you want to look at. It fills in dummy data covering standby, running, awaiting report and done.',
+    'm.mask.b':    'The paths below hide your user name',
+    'm.mask.p':    'Where a path on this page runs through your home folder, the user-name part is shown as <code>&lt;username&gt;</code>, so a screenshot or a shared screen never carries it. Replace that part with your own user name before you run the command.',
 
     // --- 3
     'm.s3.title':  'The robots’ faces tell you the state',
@@ -81,53 +83,59 @@
     'm.s4.legend4':'<b>Awaiting-report badge</b> — given to units that have running underlings (see the box below)',
     'm.s4.legend5':'<b>Mission</b> — what it was asked to do (up to two lines)',
     'm.s4.legend6':'<b>Elapsed / Tokens / Tools</b> — while running, the elapsed time ticks every second. After completion these are measured values',
+    'm.s4.legend7':'<b>Body colour</b> — shows which model drove that unit (see the box below)',
     'm.s4.p1':     'On completion a <strong>one-line summary of the result</strong> is added below the card in green, and the whole card fades to grey. Things you no longer need to look at sink visually, so only what is still moving catches your eye.',
     'm.s4.note1.b':'“Awaiting report” is derived, not recorded',
     'm.s4.note1.p1':'A unit holding one or more running underlings gets “awaiting report”: its motion drops to breathing and it turns amber. If Command is in this state, the thing to look at is the children stretching off to the right.',
     'm.s4.note1.p2':'But this is not a fact written in <code>state.json</code> — it is <strong>derived from the parent-child relationships</strong>. “A child is running” is a fact; “the parent is waiting” is an inference, and it diverges from reality when the parent is doing its own work alongside its children. Keep in mind that it is handled differently from measured values such as token counts. There is no command for reporting it (writes still happen at exactly two moments: right after launch, and on the completion report).',
     'm.s4.note2.b':'There is no progress bar',
     'm.s4.note2.p1':'Subagents do not report “I am N% done” while they work. That means the measured percentage simply does not exist anywhere. There used to be a flowing stripe that only meant “this is moving”, but it read as if it showed progress, so it was removed. Whether something is running is clear from the robot’s motion and the card colour. The elapsed time is real.',
+    'm.s4.note3.b':'Which colour is which model',
+    'm.s4.note3.p1':'The colour of the egg-shaped body and arms shows which model drove that unit. Everything else on the robot — eyes, visor, antenna, chest light, mouth, and its state animation — is unchanged, so the two meanings never compete.',
+    'm.s4.note3.li1':'<b>Red</b> — Fable',
+    'm.s4.note3.li2':'<b>Orange</b> — Opus / Sol',
+    'm.s4.note3.li3':'<b>Pale green</b> — Haiku / Luna',
+    'm.s4.note3.li4':'<b>White</b> — Sonnet / Terra / Gemini, and any model name the tool does not recognise',
+    'm.s4.note3.p2':'An unrecognised model name is always left white, on purpose. Guessing and painting it some other colour would make the screen quietly lie about which model it was.',
 
     // --- 5
     'm.s5.title':  'Which teams appear on screen',
-    'm.s5.p1':     'The old mechanism — headings across the top of the screen that you clicked to switch projects — has been removed. You can no longer choose which team is shown. <strong>Every team currently running</strong>, plus the most recently <code>start</code>ed team (even if it has already finished), appear automatically.',
+    'm.s5.p1':     'Two things decide what you see. <strong>What you can pick from</strong> is the tab bar: every project’s mission in progress, and every past mission kept in <code>history/</code>, line up there — one tab per <code>start</code>. <strong>What is drawn</strong> is the tab you have selected; only one team is on screen at a time. When you open the screen a running team is picked for you, and if a new mission starts while you are reading an old record, the screen pulls you back to the live one.',
     'm.s5.th1':    'Situation',
     'm.s5.th2':    'Screen',
-    'm.s5.r1a':    'No records at all, or all of them are old',
+    'm.s5.r1a':    'No records at all',
     'm.s5.r1b':    'Standby screen',
     'm.s5.r2a':    'Team A is running',
-    'm.s5.r2b':    'Shows A',
+    'm.s5.r2b':    'A is picked and drawn',
     'm.s5.r3a':    'A ran <code>finish</code>',
     'm.s5.r3b':    'Still shows A (stays in the done state)',
     'm.s5.r4a':    'B then ran <code>start</code>',
-    'm.s5.r4b':    'B only (A leaves the screen)',
+    'm.s5.r4b':    'The screen moves to B. A stays in the tab bar and can be brought back',
     'm.s5.r5a':    'A and B are running at the same time',
-    'm.s5.r5b':    'A and B stacked vertically, both shown',
+    'm.s5.r5b':    'Both get a tab; the one you pick is drawn (one at a time)',
     'm.s5.diagram':
-      'Standby (no records, or all of them old)\n' +
+      'Standby (no records at all)\n' +
       '   │ start\n' +
       '   ▼\n' +
-      'A is running ─────────────────► screen: A\n' +
+      'A is running ────────────────► screen: A\n' +
       '   │ finish\n' +
       '   ▼\n' +
       'A is done (.current is still A)─► screen: A (stays visible in the done state)\n' +
       '   │ start in another folder\n' +
       '   ▼\n' +
-      'B is running (.current becomes B)► screen: B (swapped for the newer one; A exits)\n' +
+      'B is running (.current becomes B)► screen: B (A stays in the tab bar)\n' +
       '\n' +
-      'If A is still running when B starts, both are stacked and shown.\n' +
-      'The newer one comes on top.\n' +
-      '   ┌───────────────┐\n' +
-      '   │ B (the newer) │ ← top\n' +
-      '   ├───────────────┤\n' +
-      '   │ A             │\n' +
-      '   └───────────────┘',
+      'Everything running, and every past mission, lines up in the tab bar.\n' +
+      'The screen draws the one tab you picked — one at a time. The newest is leftmost.\n' +
+      '   ┌──────────┬──────────┬────────────────┐\n' +
+      '   │ B (live) │ A (done) │ A (past record)│ ← tab bar\n' +
+      '   └──────────┴──────────┴────────────────┘',
     'm.s5.note1.b':'When one of two parallel runs finishes first, its report does not vanish',
-    'm.s5.note1.p1':'Say you run A and B in parallel and A <code>finish</code>es first. At that point A is no longer “the most recently <code>start</code>ed team”, so left alone it would drop off the screen the instant it completed, and nobody could read what A achieved. To avoid that, <b>teams that finished after the currently running team began</b> are kept as well.',
+    'm.s5.note1.p1':'Say you run A and B in parallel and A <code>finish</code>es first. At that point A is no longer “the most recently <code>start</code>ed team”, so left alone it would stop being sent to the screen the instant it completed. To avoid that, <b>teams that finished after the currently running team began</b> keep being sent as live. Its record would still be reachable from the tab bar either way; this is so that a report you are reading does not go still under you the moment it lands.',
     'm.s5.note1.p2':'If you are simply working in sequence (you <code>start</code> the next team after the previous one ended), the previous team’s completion comes before the new start, so it leaves the screen as the table above says. The two cases are told apart automatically by comparing the finish time against the start time.',
-    'm.s5.note2.b':'You cannot choose which team is shown',
-    'm.s5.note2.p1':'The only commands that write the file <code>missions/.current</code> are <code>start</code> and <code>demo</code>. <code>add</code> / <code>done</code> / <code>finish</code> never move it, so a finished screen will not switch itself to some other project. There is no UI control for switching and no way to hide one, and query strings such as <code>?project=</code> are deliberately ignored. Which team is shown is the server’s decision, by design.',
-    'm.s5.p2':     'So that an old record left in <code>running</code> is not shown forever after updates stopped, there is a time window of <strong>3 hours</strong> by default. A <code>running</code> record whose <code>state.json</code> is older than that is treated as abandoned and does not appear. The window can be changed with the environment variable <code>AGENT_DASHBOARD_ACTIVE_WINDOW</code> (in seconds).',
+    'm.s5.note2.b':'Which teams are sent live is the server’s decision',
+    'm.s5.note2.p1':'The only commands that write the file <code>missions/.current</code> are <code>start</code> and <code>demo</code>. <code>add</code> / <code>done</code> / <code>finish</code> never move it, so a finished screen will not switch itself to some other project. Query strings such as <code>?project=</code> are deliberately ignored: which teams the server streams is its decision, by design. What <em>you</em> choose is which of them — and which past record — to look at, from the tab bar. That choice is remembered in your browser.',
+    'm.s5.p2':     'So that an old record left in <code>running</code> is not streamed forever after updates stopped, there is a time window of <strong>3 hours</strong> by default. A <code>running</code> record whose <code>state.json</code> is older than that is treated as abandoned and is no longer sent as a live team (the record itself stays, and stays selectable from the tab bar). The window can be changed with the environment variable <code>AGENT_DASHBOARD_ACTIVE_WINDOW</code> (in seconds).',
     'm.s5.p3':     'Which project you get is <strong>decided automatically by the folder you are working in</strong>. Folders with the same name in different places are told apart by full path, so they never mix (the name used to tell them apart appears only inside the record folder, never on screen).',
     'm.s5.note3.b':'Leaving the screen does not delete the record',
     'm.s5.note3.p1':'The records of a team that is no longer displayed remain in <code>missions/&lt;slug&gt;/</code>. Use the following commands to list, delete, or reset them.',
@@ -136,6 +144,13 @@
     'm.s5.c1':     'Lists the remaining records. <code>●</code> marks the team currently on screen',
     'm.s5.c2':     'Deletes a record. By default it only moves it to <code>trash/&lt;slug&gt;-&lt;timestamp&gt;/</code>, so putting the folder back restores it. Add <code>--yes --force</code> to delete it for good',
     'm.s5.c3':     'Returns that project’s record to standby (the folder itself stays)',
+    'm.s5.note4.b':'Guarding against two sessions fighting over the same record',
+    'm.s5.note4.p1':'Open the same folder in two Claude Code sessions — a second window, a second terminal, one left over from before a crash — and both talk to the same project record. Until recently, a <code>start</code> from the second one could silently push the first one’s still-running mission into history while nobody was watching, and a record pushed out that way can never be marked finished afterwards. Worse, the pushed-out session, not knowing it had lost the record, could keep calling <code>add</code> / <code>done</code> / <code>finish</code> successfully — into what was by then someone else’s mission, mixing the two together.',
+    'm.s5.note4.p2':'<code>start</code>, <code>add</code>, <code>done</code>, <code>finish</code>, <code>log</code> and <code>demo</code> now check who owns the record before writing (the session that ran <code>start</code>, stamped as <code>mission.sessionId</code>). If it is clearly a different session, the command is refused instead — nothing is written, nothing is pushed out — and it prints a ready-to-paste line with a <code>--project</code> name the tool has already generated for you, so your own work gets its own record instead of colliding with the one in progress. Paste that same <code>--project</code> on your <code>start</code> / <code>add</code> / <code>done</code> / <code>finish</code>.',
+    'm.s5.note4.p3':'To push through anyway — the old behaviour — add <code>--force</code>. If you do, the record you pushed out is not lost: open it from the tab bar and hover its status badge, and it tells you which mission interrupted it and when. What it cannot do is come back as finished; that limitation is unchanged, and is exactly what this guard exists to make you stop and think about before it happens by accident.',
+    'm.s5.note5.b':'Where this does not protect you',
+    'm.s5.note5.p1':'The check only fires when both sides carry a mark: the record has to know its owner, and your session has to be identifiable. A record started before this guard existed, or a terminal that never received <code>CLAUDE_CODE_SESSION_ID</code> (the hook not wired up, a command typed by hand), passes through exactly as before — the tool would rather stay usable than refuse on a guess it cannot back up.',
+    'm.s5.note5.p2':'A subagent inherits its parent’s session ID, so it can freely <code>add</code> / <code>done</code> into a mission its parent’s <code>start</code> began — this guard is about two independent sessions, not about a command post and the subagents it launched.',
 
     // --- 6
     'm.s6.title':  '“—” is not a malfunction',
@@ -175,12 +190,12 @@
     'm.s7.p7':     'The location actually in use right now is:',
     'm.s7.h6':     'Grandchild agents reporting themselves',
     'm.s7.p8':     'A subagent that cannot go through <code>update_state.py</code> (a grandchild, in effect) can register itself on screen by writing a file at <code>missions/&lt;slug&gt;/agents/&lt;ID&gt;.json</code>. The server merges that content with <code>state.json</code> when it reads, but <strong>if an ID collides, the <code>state.json</code> side wins</strong> (self-reports are strictly supplementary). Running <code>start</code> deletes every self-report file from the previous mission. This keeps a grandchild whose completion report never arrived from sitting on screen as “running” forever.',
-    'm.s7.h7':     'The server recomputes the generation (which column) every time',
-    'm.s7.p9':     'Which generation (column) a unit lands in on screen is not taken from the stored value — the server re-derives it every time by following <code>parentId</code>. So writing a wrong generation into a self-report file cannot break the display. A unit whose parent cannot be found is treated as sitting directly under Command, and a cycle in the parent-child relationships is detected and stops the traversal.',
+    'm.s7.h7':     'The server recomputes the generation every time',
+    'm.s7.p9':     'Which generation a unit lands in on screen is not taken from the stored value — the server re-derives it every time by following <code>parentId</code>. So writing a wrong generation into a self-report file cannot break the display. A unit whose parent cannot be found is treated as sitting directly under Command, and a cycle in the parent-child relationships is detected and stops the traversal.',
     'm.s7.h8':     'How the family tree is laid out',
-    'm.s7.p10':    'Units are arranged as a “tidy tree growing sideways”. A parent is placed at the centre of the vertical span its children occupy. Positions are settled from the deepest generation inward, and when things get tight, the unit and its whole subtree are pushed down together. Each unit’s position is given by its vertical coordinate (<code>top</code>) alone; the DOM order is never changed. Reordering elements makes the browser abort and restart every CSS animation beneath them — which would reset the breathing, blinking and expression changes of every robot already on screen each time a new unit appeared.',
+    'm.s7.p10':    'Units are arranged as a “tidy tree growing sideways”. A parent is placed at the centre of the vertical span its children occupy. Positions are settled from the deepest generation inward, and when things get tight, the unit and its whole subtree are pushed down together. Each unit’s position is given by its vertical coordinate (<code>top</code>) alone; the DOM order is never changed. Reordering elements makes the browser abort and restart every CSS animation beneath them — which would reset the breathing, blinking and expression changes of every robot already on screen each time a new unit appeared. When four or more units without children (leaves) sit under the same parent, they are folded into several columns instead of one tall column. How many columns a generation band spans is chosen fresh each time, so that the whole tree fits the screen as large as it can. If a parent-child line crossing that band would run through the folded units, that band alone drops back to a single column.',
     'm.s7.h9':     'The lines joining parent and child',
-    'm.s7.p11':    'The lines joining parent and child are drawn as curves between the measured positions of the cards and robots as actually rendered. Because it uses the drawn positions rather than the computed ones, the lines do not drift when the card height changes with text length or wrapping. When many units are running the dashed-line animation is stopped: a repaint would run every frame for each line, so stopping the motion keeps the load down.',
+    'm.s7.p11':    'The lines joining parent and child are drawn as curves between the measured positions of the cards and robots as actually rendered. Because it uses the drawn positions rather than the computed ones, the lines do not drift when the card height changes with text length or wrapping. When many units are running the dashed-line animation is stopped: a repaint would run every frame for each line, so stopping the motion keeps the load down. Units gathered into a folded block are not each given their own curve. One trunk runs from the parent to the block, and inside it a horizontal wire per row carries short vertical stubs down onto each robot’s head. Only those stubs carry the status colour: a single wire holds running and finished units at once, so colouring the wire itself would leave it unclear whose status it showed.',
     'm.s7.h10':    'How the screen updates',
     'm.s7.p12':    'The screen updates by fetching the latest state once a second. There is no always-on connection such as a WebSocket (that would add a dependency). A signature is built from the mission, units and log count in what came back, and nothing is redrawn if it matches the previous fetch. Only the elapsed time of running units ticks every second. Even if the server’s clock and the browser’s clock disagree, the server time included in each response corrects for it every time. If a stale response arrives late because of network delay, the stale one is discarded.',
     'm.s7.h11':    'The server',
@@ -188,9 +203,11 @@
     'm.s7.h12':    'The VSCode extension',
     'm.s7.p14':    'The VSCode extension merely starts the server and embeds <code>http://127.0.0.1:&lt;port&gt;/</code> inside a webview. The screen is exactly the same as viewing it in a browser directly. The liveness check looks for its own tool location (<code>toolRoot</code>) in the response, so it will never accidentally attach to a server someone else happened to start.',
     'm.s7.h13':    'Only measured values are shown',
-    'm.s7.p15':    'Of elapsed time, token count and tool-call count, any value that was not passed in is stored as “unknown” and displayed as <code>—</code>. It is never filled in with a plausible estimate. This policy is stated in several places in the code (documentation, command help, and runtime output). The purpose of this screen is to see what actually happened, and filling the gaps would destroy that purpose.',
+    'm.s7.p15':    'Of elapsed time, token count, tool-call count <strong>and the model name</strong>, any value that was not passed in is stored as “unknown” — the first three are displayed as <code>—</code>, the model name as “unknown”. It is never filled in with a plausible estimate. The command post’s own model follows the same rule: leave <code>--model</code> off <code>start</code> and it shows as unknown, rather than falling back to a fixed model ID. This policy is stated in several places in the code (documentation, command help, and runtime output). The purpose of this screen is to see what actually happened, and filling the gaps would destroy that purpose.',
     'm.s7.h14':    'Why the “?” button opens an overlay',
     'm.s7.p16':    'A VSCode webview does not permit the screen embedded inside it to open a new window (its <code>sandbox</code> attribute does not include <code>allow-popups</code>). That restriction propagates to nested frames, so while you are viewing this inside VSCode, trying to open the manual link in a new window is <strong>ignored without even raising an error</strong>. That is why this manual opens as an overlay within the screen rather than in a new window. When you are viewing it directly in a browser, “Open in a new window” is available too.',
+    'm.s7.h15':    'Fitting the zoom to the frame (auto-focus)',
+    'm.s7.p17':    'The ⛶ button at the top right toggles auto-focus. While it is on, the zoom percentage next to it is prefixed with “Auto”, and the tree is kept scaled to fit inside its frame automatically as units are born and finish — you never have to zoom by hand just to see the whole team. Typing a value, using the +/− buttons, or Ctrl+scrolling over the tree all count as a manual change, and <strong>a manual change always wins</strong>: it turns auto-focus off on the spot, leaving the zoom exactly where you set it, until you press ⛶ again. An earlier version of this could sometimes chase its own last move and zoom in and out forever without settling; that back-and-forth has since been fixed.',
 
     // --- 8
     'm.s8.title':  'Commands you run yourself',
@@ -202,7 +219,8 @@
     'm.s8.c3':     'Shows the contents of the current project as a table',
     'm.s8.c4':     'Fills in dummy data for checking the display',
     'm.s8.c5':     'Empties the current project (other projects are unaffected)',
-    'm.s8.c6':     'First-time setup after moving to another PC (writes the paths into Claude’s config file)',
+    'm.s8.c6':     'First-time setup after moving to another PC (writes the paths into the instructions file of every AI coding CLI on this machine)',
+    'm.s8.c7':     'Lists this project’s past missions (the ones kept in <code>history/</code>)',
     'm.s8.note.b': 'Where you run them',
     'm.s8.note.p': 'The target project is decided by <strong>the folder you run the command in</strong>. To act on a different project, add part of its name, as in <code>--project learning</code>.',
 
@@ -219,16 +237,20 @@
     'm.s9.q5':     'I want to delete a project I no longer need',
     'm.s9.a5':     'Running <code>{PY} {UPDATE_PY} remove</code> is the safe way. By default it only moves it to <code>trash/&lt;slug&gt;-&lt;timestamp&gt;/</code>, so putting the folder back recovers from a mistake. To delete by hand, remove the whole folder for that project from the directory below. It then disappears from the list (<code>{PY} {UPDATE_PY} projects</code>).',
     'm.s9.q6':     'How far back are past missions kept?',
-    'm.s9.a6':     '<strong>The most recent mission</strong> is kept per project. Starting a new mission overwrites that project’s previous one (other projects are unaffected). The event log keeps the most recent 300 lines.',
-    'm.s9.q7':     'Claude is not updating it',
-    'm.s9.a7a':    'The operating rules are written in the global configuration (<span class="path">{CLAUDE_MD}</span>), so it usually updates automatically. If it seems to have forgotten, just add “and update the dashboard too”.',
-    'm.s9.a7b':    'If the configuration is not there (right after copying to another PC, say), run <code>dash install</code> once. The correct paths for that PC get written in.',
+    'm.s9.a6':     '<strong>Up to 20 past missions</strong> are kept per project. Running <code>start</code> again does not overwrite the previous one: the whole record moves to <code>missions/&lt;project&gt;/history/&lt;start time&gt;/</code> and can be brought back up from the tab bar. Past the 20th, the oldest move to <code>trash/</code> (moving the folder back recovers it), and the number can be changed with the environment variable <code>AGENT_DASHBOARD_HISTORY_KEEP</code>. The event log keeps the most recent 300 lines.',
+    'm.s9.q7':     'The agent is not updating it',
+    'm.s9.a7a':    'The operating rules are written into the instructions file of every AI coding CLI installed on this machine (<span class="path">{INSTRUCTION_FILES}</span>), so it usually updates automatically. If it seems to have forgotten, just add “and update the dashboard too”.',
+    'm.s9.a7b':    'If those rules are not there (right after copying to another PC, say), run <code>dash install</code> once. The correct paths for that PC get written into every CLI it finds.',
     'm.s9.q8':     'I want to use it on another PC / move where it lives',
     'm.s9.a8a':    'Copy the whole folder, then run <code>dash install</code> once at the destination. Paths are resolved at run time, so it can live anywhere.',
     'm.s9.a8b':    'To change where records are stored, point the environment variable <code>AGENT_DASHBOARD_HOME</code> at a folder (useful for a shared drive or a different disk).',
     'm.s9.q9':     'The unit names are in a different language from the screen',
-    'm.s9.a9a':    'Names and mission text are <strong>never translated</strong>. They are free text Claude wrote when it registered the unit, and the screen shows them exactly as recorded — switching the language at the top right changes the headings and labels around them, not the records themselves.',
-    'm.s9.a9b':    'Which language Claude writes them in is decided separately, on the command side. Run <code>dash lang en</code> (or <code>ja</code> / <code>zh</code> / <code>ko</code>), then <code>dash install</code>, then restart Claude. Missions already recorded stay as they were written, because this screen is here to show what actually happened.',
+    'm.s9.a9a':    'Names and mission text are <strong>never translated</strong>. They are free text the agent wrote when it registered the unit, and the screen shows them exactly as recorded — switching the language at the top right changes the headings and labels around them, not the records themselves.',
+    'm.s9.a9b':    'Which language the agent writes them in is decided separately, on the command side. Run <code>dash lang en</code> (or <code>ja</code> / <code>zh</code> / <code>ko</code>), then restart your AI coding CLI’s session — that one command also rewrites the operating rules in the new language, so the language you set is the language teams are formed in. Missions already recorded stay as they were written, because this screen is here to show what actually happened.',
+
+    'm.s9.q10':    'Can it close a forgotten mission on its own?',
+    'm.s9.a10a':   'Yes — <code>autofinish</code> is a safety net wired to your AI coding CLI’s SessionEnd hook (see <code>OPERATION.md</code>), and it closes whatever mission is still running the moment your session ends, so a forgotten <code>finish</code> does not leave the record stuck open forever. With nothing running, it does nothing and prints nothing.',
+    'm.s9.a10b':   'It is not a substitute for calling <code>finish</code> yourself, though. An automatic close can only leave a mechanical one-line headline — “closed automatically when the session ended” — never an actual summary of what was done. Call <code>finish --headline "…"</code> yourself whenever you can; <code>autofinish</code> is only the net that catches what you didn’t get to.',
 
     // --- 10
     'm.s10.title': 'Where everything lives',
@@ -253,6 +275,18 @@
       '      └─ agents/            grandchild agents’ self-reports',
     'm.s10.p2':    'Records are stored here.',
     'm.s10.p3':    'No further installation is needed. It runs on Python’s standard features alone, using neither external libraries nor an internet connection. The screen is self-contained too. It behaves the same on Windows, macOS and Linux.',
+
+    // --- 11
+    'm.s11.title': 'The bay for units with no fixed place',
+    'm.s11.p1':    'A unit can be running right now and yet have no record at all — usually because <code>add</code> was never called for it. This screen does not hide that fact: it shows those units too, in a separate bay below the family tree, so a forgotten <code>add</code> is visible the moment it happens rather than only once someone notices the numbers don’t add up.',
+    'm.s11.p2':    'Some of those units can still be placed correctly, because their launch could be traced by measurement — typically a grandchild whose self-report names a <code>parentId</code> that resolves to a unit already on screen. Those go straight into the tree like any other unit and never appear in this bay. What is left here is only the ones whose origin genuinely could not be measured. Their parent is never guessed — the moment a line gets drawn from a guess, this screen stops being a tool that shows only what was measured.',
+    'm.s11.li1':   'The robots here are exactly half the size of the ones in the tree, and the cards half as wide — a visual reminder that these are a different kind of information, not part of the family tree',
+    'm.s11.li2':   'Elapsed time, tokens, tool count and the mission line are not shown — there is no record to report them from, and pretending otherwise would be worse than leaving them out',
+    'm.s11.li3':   'What a unit is doing right now — the tool it last called, how many calls, an estimate of tokens — is still shown, live, exactly as measured: having no record does not mean it cannot be measured while it runs',
+    'm.s11.li4':   'When the launching unit’s name alone could be recovered from a log (but not enough to place it in the tree), it is printed in small text under the card. Nothing is printed when even that could not be found',
+    'm.s11.note1.b':'Closing a mission does not clear this bay',
+    'm.s11.note1.p1':'<code>finish</code> and <code>autofinish</code> both freeze whatever is still sitting here into the record before marking the mission done, so a unit like this is never silently lost the moment you close — it stays visible here, in its last-seen state, even in the finished record. The bay itself can be folded away with the “Hide” toggle in its heading if you don’t need to look at it.',
+
     'm.footer1':   'Subagent Dashboard — Python 3.9+ / no external libraries / Windows, macOS and Linux',
     'm.footer2':   'The detailed operating guide for Claude is in <code>OPERATION.md</code> under <span class="path">{TOOL_ROOT}</span>.',
   };
@@ -289,6 +323,8 @@
     'm.s2.step3.p1':'あとは普段どおり Claude に調査や作業を頼むだけです。サブエージェントが起動されると、その場でロボットが<strong>ポンッと現れます</strong>。約1秒ごとに自動更新されるので、画面を再読み込みする必要はありません。',
     'm.s2.note.b': 'まず動きを見たいとき',
     'm.s2.note.p': '実際の作業を待たずに表示を確かめたい場合は、見たいプロジェクトのフォルダで次を実行してください。待機中・稼働中・報告待ち・完了が揃ったダミーデータが入ります。',
+    'm.mask.b':    'パスのユーザー名は伏せています',
+    'm.mask.p':    'このページのパスがホームフォルダを通るとき、ユーザー名の部分は <code>&lt;username&gt;</code> と表示されます——画面共有やスクリーンショットに写り込ませないためです。コマンドを実行するときは、その部分をご自身のユーザー名に読み替えてください。',
 
     'm.s3.title':  'ロボットの表情で状態が分かる',
     'm.s3.p1':     '状態は4つだけです。表情と動きが違うので、遠目でも判別できます。このうち「報告待ち」は作業中の一種で、<strong>稼働中の手下を抱えている機体</strong>に付きます。',
@@ -311,52 +347,58 @@
     'm.s4.legend4':'<b>報告待ちバッジ</b> — 稼働中の手下を抱えている機体に付く（下の囲みを参照）',
     'm.s4.legend5':'<b>任務内容</b> — 何をさせているか（2行まで）',
     'm.s4.legend6':'<b>経過／トークン／ツール</b> — 稼働中は経過時間が毎秒進む。完了後は実測値',
+    'm.s4.legend7':'<b>ボディの色</b> — その機体を動かしたモデルが分かる（下の囲みを参照）',
     'm.s4.p1':     '完了すると、カードの下に<strong>結果の一行要約</strong>が緑文字で追加され、カード全体が灰色に落ちます。「もう見なくていいもの」が視覚的に沈むので、いま動いているものだけが目に入ります。',
     'm.s4.note1.b':'「報告待ち」は導出です',
     'm.s4.note1.p1':'稼働中の手下を1体以上抱えている機体には「報告待ち」が付き、動きが呼吸に落ちて琥珀色になります。指令塔がここに入っていたら、見るべきは右へ伸びた子の方です。',
     'm.s4.note1.p2':'ただしこれは <code>state.json</code> に書かれている事実ではなく、<strong>親子関係からの導出</strong>です。「子が動いている」は事実ですが「親が待っている」は推測で、親が子と並行して自分の作業を進めているときは実態とズレます。トークン数のような実測値とは扱いが違う、と覚えておいてください。報告するためのコマンドはありません（書き込みは今も「起動直後」と「完了通知時」の2点だけです）。',
     'm.s4.note2.b':'進捗バーはありません',
     'm.s4.note2.p1':'サブエージェントは作業中に「いま何％」を報告してきません。つまり％の実測値はどこにも存在しません。以前は「動いている」ことだけを示す流れるストライプを置いていましたが、進み具合を表しているように読めてしまうので外しました。稼働中かどうかはロボの動きとカードの色で分かります。経過時間は本物です。',
+    'm.s4.note3.b':'ボディ色とモデルの対応',
+    'm.s4.note3.p1':'胴（卵形の本体）と腕の色は、その機体を動かしたモデルを表します。目・バイザー・アンテナ・胸のランプ・口、そして状態のアニメーション（待機／作業中／報告待ち／完了）はモデルによって変わりません。同じ場所に2つの意味を重ねて競わせないためです。',
+    'm.s4.note3.li1':'<b>赤</b> — Fable',
+    'm.s4.note3.li2':'<b>オレンジ</b> — Opus / Sol',
+    'm.s4.note3.li3':'<b>薄緑</b> — Haiku / Luna',
+    'm.s4.note3.li4':'<b>白</b> — Sonnet / Terra / Gemini、および道具が知らないモデル名すべて',
+    'm.s4.note3.p2':'知らないモデル名は、必ず白のままにしています。推測して別の色を塗ってしまうと、画面がどのモデルだったかについて黙って嘘をつくことになるためです。',
 
     'm.s5.title':  'どのチームが画面に映るか',
-    'm.s5.p1':     '以前あった「プロジェクトが増えると画面上部に切り替え用の見出しが並び、クリックで切り替える」という仕組みは撤去されました。いまは画面に映るチームをこちらで選ぶことはできません。<strong>いま動いているチーム全部</strong>と、直近に <code>start</code> されたチーム（すでに完了していても）だけが自動的に映ります。',
+    'm.s5.p1':     '画面に映るものは2つの要素で決まります。<strong>選べる範囲</strong>はタブ列です。稼働中の各プロジェクトのミッションと、<code>history/</code> に残っている過去のミッションが、<code>start</code> 1回につき1枚のタブとしてそこに並びます。<strong>実際に表示される</strong>のは選んだ1枚だけで、同時に画面に出るチームは常に1つです。画面を開くと稼働中のチームが自動で選ばれ、古い記録を読んでいる間に新しいミッションが始まると、画面はその稼働中のチームへ引き戻されます。',
     'm.s5.th1':    '状況',
     'm.s5.th2':    '画面',
-    'm.s5.r1a':    '記録が1つも無い、または全部古い',
+    'm.s5.r1a':    '記録が一つも無い',
     'm.s5.r1b':    '待機画面',
     'm.s5.r2a':    'チームAが稼働中',
-    'm.s5.r2b':    'Aを表示',
+    'm.s5.r2b':    'Aが選ばれて表示される',
     'm.s5.r3a':    'Aが <code>finish</code> した',
     'm.s5.r3b':    'Aのまま表示（完了状態で残る）',
     'm.s5.r4a':    '次にBが <code>start</code> した',
-    'm.s5.r4b':    'Bのみ（Aは画面から降りる）',
+    'm.s5.r4b':    '画面はBに移る。Aはタブ列に残り、呼び戻せる',
     'm.s5.r5a':    'AとBが同時に稼働中',
-    'm.s5.r5b':    'AとBを縦に積んで同時に表示',
+    'm.s5.r5b':    '両方にタブが付く。選んだ方だけが表示される（一度に1つ）',
     'm.s5.diagram':
-      '待機（記録が無い、または全部古い）\n' +
+      '待機（記録が一つも無い）\n' +
       '   │ start\n' +
       '   ▼\n' +
-      'Aが稼働中 ────────────────────► 画面: A\n' +
+      'Aが稼働中 ────────────────► 画面: A\n' +
       '   │ finish\n' +
       '   ▼\n' +
-      'Aが完了（.current は A のまま）──► 画面: A（完了状態のまま表示され続ける）\n' +
+      'Aが完了（.current は A のまま）─► 画面: A（完了状態のまま表示され続ける）\n' +
       '   │ 別フォルダで start\n' +
       '   ▼\n' +
-      'Bが稼働中（.current が B に変わる）─► 画面: B（新しい方に入れ替わり、Aは退場）\n' +
+      'Bが稼働中（.current が B に変わる）► 画面: B（Aはタブ列に残る）\n' +
       '\n' +
-      'Aがまだ稼働中のままBも稼働中になった場合は、両方が縦に積んで表示されます。\n' +
-      '新しく始まった方が上に来ます。\n' +
-      '   ┌───────────────┐\n' +
-      '   │ B（新しい方）   │ ← 上\n' +
-      '   ├───────────────┤\n' +
-      '   │ A              │\n' +
-      '   └───────────────┘',
+      '稼働中のものすべてと、過去のミッションすべてが、タブ列に並びます。\n' +
+      '画面は選んだ1枚のタブだけを表示します——一度に1つ。新しい方が左に来ます。\n' +
+      '   ┌─────────────┬───────────┬─────────────────┐\n' +
+      '   │ B（稼働中） │ A（完了） │ A（過去の記録） │ ← タブ列\n' +
+      '   └─────────────┴───────────┴─────────────────┘',
     'm.s5.note1.b':'並列で走らせた片方が先に終わっても、完了報告は消えません',
-    'm.s5.note1.p1':'AとBを並列で走らせていて、Aが先に <code>finish</code> したとします。このときAはもう「直近に <code>start</code> されたチーム」ではないので、そのままだと完了した瞬間に画面から消えて、Aの成果を誰も読めないまま終わってしまいます。そうならないよう、<b>いま動いているチームが始まったあとに完了したチーム</b>も残すようにしています。',
+    'm.s5.note1.p1':'AとBを並列で走らせていて、Aが先に <code>finish</code> したとします。この時点でAはもう「直近に <code>start</code> されたチーム」ではないため、そのままにしておくと完了した瞬間に画面へ送られなくなってしまいます。それを避けるため、<b>いま動いているチームが始まったあとに完了したチーム</b>は、引き続き稼働中として送られ続けます。Aの記録はどちらにしてもタブ列から見られますが、これは読んでいる最中の報告が、届いたその瞬間に止まってしまわないようにするためです。',
     'm.s5.note1.p2':'順番に作業しているだけの場合（前のチームが終わってから次を <code>start</code> した場合）は、前のチームの完了が次の開始より前になるので、上の表のとおり画面から降ります。この2つは完了した時刻と開始した時刻の前後で自動的に区別されます。',
-    'm.s5.note2.b':'どのチームを映すかはこちらでは選べません',
-    'm.s5.note2.p1':'<code>missions/.current</code> というファイルを書き換えるのは <code>start</code> と <code>demo</code> だけです。<code>add</code> / <code>done</code> / <code>finish</code> はこのファイルを動かさないので、完了した画面が勝手に別のプロジェクトへ切り替わることはありません。切り替えを選ぶ画面部品も、隠す操作もなく、URL に <code>?project=</code> のような指定を付けても意図的に受け付けません。どのチームを映すかはサーバー側が決める、という設計です。',
-    'm.s5.p2':     '<code>running</code>（稼働中）のまま更新が止まった古い記録を延々と映し続けないように、既定<strong>3時間</strong>の時間窓があります。<code>state.json</code> の更新がそれより古い <code>running</code> は「放置された」とみなされ、画面には出ません。この時間窓は環境変数 <code>AGENT_DASHBOARD_ACTIVE_WINDOW</code>（秒単位）で変更できます。',
+    'm.s5.note2.b':'どのチームを映すかはサーバー側の判断です',
+    'm.s5.note2.p1':'<code>missions/.current</code> というファイルを書き換えるのは <code>start</code> と <code>demo</code> だけです。<code>add</code> / <code>done</code> / <code>finish</code> はこのファイルを動かさないので、完了した画面が勝手に別のプロジェクトへ切り替わることはありません。URL に <code>?project=</code> のような指定を付けても意図的に受け付けません——どのチームをサーバーが送るかは、設計としてサーバー側が決めることだからです。<em>あなた</em>が選べるのは、その中のどれを——そしてどの過去の記録を——タブ列から見るか、という点です。その選択はブラウザに記憶されます。',
+    'm.s5.p2':     '<code>running</code>（稼働中）のまま更新が止まった古い記録を延々と映し続けないように、既定<strong>3時間</strong>の時間窓があります。<code>state.json</code> の更新がそれより古い <code>running</code> は「放置された」とみなされ、稼働中のチームとしては送られなくなります（記録自体は残り、タブ列から引き続き選べます）。この時間窓は環境変数 <code>AGENT_DASHBOARD_ACTIVE_WINDOW</code>（秒単位）で変更できます。',
     'm.s5.p3':     'どのプロジェクトになるかは<strong>作業しているフォルダで自動的に決まります</strong>。同じ名前のフォルダが別の場所にあっても、フルパスで区別されるので混ざりません（区別に使われる名前は記録フォルダの中だけに現れ、画面には出ません）。',
     'm.s5.note3.b':'画面から消えても記録は消えていません',
     'm.s5.note3.p1':'表示されなくなったチームの記録は <code>missions/&lt;スラッグ&gt;/</code> にそのまま残っています。一覧・削除・初期化には次のコマンドを使います。',
@@ -365,6 +407,13 @@
     'm.s5.c1':     '残っている記録の一覧。<code>●</code> がいま画面に映っているチーム',
     'm.s5.c2':     '記録を消す。既定では <code>trash/&lt;スラッグ&gt;-&lt;日時&gt;/</code> へ移すだけなので、フォルダを戻せば復旧できます。完全に消すには <code>--yes --force</code> を付けます',
     'm.s5.c3':     'そのプロジェクトの記録を待機中に戻します（フォルダ自体は残ります）',
+    'm.s5.note4.b':'同じ記録を2つのセッションが奪い合わないようにする仕組み',
+    'm.s5.note4.p1':'同じフォルダを2つの Claude Code セッションで開いてしまうこと——2つ目の窓、2つ目のターミナル、落ちる前に開いていたセッションの生き残り——は普通に起こります。どちらも同じプロジェクトの記録に書き込みに行くため、以前は、あとから <code>start</code> したほうが、先に動いていたほうの稼働中のミッションを、誰も気づかないまま履歴へ押し出せてしまいました。押し出された記録は、あとから完了に直すことができません。さらに悪いことに、押し出されたことに気づいていないセッションの <code>add</code> / <code>done</code> / <code>finish</code> はそのまま成功し続け、いつのまにか他人のミッションへ書き込んで、2つの記録を混ぜてしまうことがありました。',
+    'm.s5.note4.p2':'いまは <code>start</code> / <code>add</code> / <code>done</code> / <code>finish</code> / <code>log</code> / <code>demo</code> のすべてが、書き込む前に記録の持ち主（<code>start</code> が刻んだ <code>mission.sessionId</code>）を確かめます。呼んでいるセッションと確かに違うと分かった場合は、何も書き込まず・何も押し出さずに拒否され、道具がすでに作った <code>--project</code> 名付きの、そのまま貼れば通るコマンドが表示されます。自分の作業には自分の記録を——<code>start</code> / <code>add</code> / <code>done</code> / <code>finish</code> の4つに、その同じ <code>--project</code> を渡してください。',
+    'm.s5.note4.p3':'それでも押し通したいとき（以前どおりの挙動）は <code>--force</code> を付けてください。押し通しても、押し出された記録が消えるわけではありません——タブ列からその記録を開いて状態の札にカーソルを合わせると、どのミッションに・いつ押し出されたのかが出ます。ただし完了に直すことだけはできません。この制約自体は変わっておらず、この仕組みはまさに、それがうっかり起きる前に立ち止まってもらうために入っています。',
+    'm.s5.note5.b':'この仕組みが効かない場合',
+    'm.s5.note5.p1':'この照合は、双方に印があるときだけ働きます。記録側が持ち主を知っていること、呼んでいる側のセッションが特定できることの両方が必要です。この仕組みが入る前に <code>start</code> された記録や、<code>CLAUDE_CODE_SESSION_ID</code> が渡っていないターミナル（hook が配線されていない、手でコマンドを打っている）では、以前とまったく同じように素通りします。裏付けの無い当て推量で拒否するより、道具として使える状態を保つほうを選んでいます。',
+    'm.s5.note5.p2':'サブエージェントは親のセッションIDをそのまま受け継ぐので、親の <code>start</code> が始めたミッションへ自由に <code>add</code> / <code>done</code> できます。この仕組みが対象にしているのは独立した2つのセッションであって、指令塔とその配下のサブエージェントの関係ではありません。',
 
     'm.s6.title':  '「—」は故障ではありません',
     'm.s6.note.b': '重要',
@@ -402,12 +451,12 @@
     'm.s7.p7':     'いまの実際の保存先は次のとおりです。',
     'm.s7.h6':     '孫エージェントの自己申告',
     'm.s7.p8':     '<code>update_state.py</code> を経由できないサブエージェント（孫にあたる存在）は、<code>missions/&lt;スラッグ&gt;/agents/&lt;ID&gt;.json</code> というファイルに自分で書き込んで、画面に登録することもできます。サーバーは読み込み時にこの内容を <code>state.json</code> と混ぜますが、<strong>ID が重複した場合は <code>state.json</code> 側が勝ちます</strong>（自己申告はあくまで補助的な扱いです）。<code>start</code> を実行すると、前のミッションの自己申告ファイルはすべて削除されます。完了通知が来なかった孫が、いつまでも「稼働中」のまま画面に残り続けるのを防ぐためです。',
-    'm.s7.h7':     '世代（何列目か）はサーバーが毎回計算し直す',
-    'm.s7.p9':     '機体が画面上で何世代目（何列目）に来るかは、保存された値をそのまま使うのではなく、<code>parentId</code>（親のID）をたどってサーバーが毎回実測し直します。そのため、自己申告ファイルに世代の値を誤って書いても画面が壊れることはありません。親が見つからない機体は指令塔の直下として扱われ、親子関係が循環してしまっている場合も検出して処理を止めます。',
+    'm.s7.h7':     '世代はサーバーが毎回計算し直す',
+    'm.s7.p9':     '機体が画面上で何世代目に来るかは、保存された値をそのまま使うのではなく、<code>parentId</code>（親のID）をたどってサーバーが毎回実測し直します。そのため、自己申告ファイルに世代の値を誤って書いても画面が壊れることはありません。親が見つからない機体は指令塔の直下として扱われ、親子関係が循環してしまっている場合も検出して処理を止めます。',
     'm.s7.h8':     '系統樹の並べ方',
-    'm.s7.p10':    '機体は「横に伸びる整形木」という形で配置されます。親は、自分が生んだ子たちが占める縦の範囲の中央に来るように置かれます。深い世代から順に位置を確定していき、間隔が詰まってきたら、その機体と配下の部分木をまとめて下にずらします。それぞれの機体の位置は上下の座標（<code>top</code>）だけで指定していて、画面上の並び順そのものは変更しません。要素の並び順を変えると、ブラウザはその要素以下のCSSアニメーションを中断していちから作り直してしまうためです。機体が増えるたびに、すでに表示されている全ロボットの呼吸・瞬き・表情の変化がリセットされてしまうのを避けています。',
+    'm.s7.p10':    '機体は「横に伸びる整形木」という形で配置されます。親は、自分が生んだ子たちが占める縦の範囲の中央に来るように置かれます。深い世代から順に位置を確定していき、間隔が詰まってきたら、その機体と配下の部分木をまとめて下にずらします。それぞれの機体の位置は上下の座標（<code>top</code>）だけで指定していて、画面上の並び順そのものは変更しません。要素の並び順を変えると、ブラウザはその要素以下のCSSアニメーションを中断していちから作り直してしまうためです。機体が増えるたびに、すでに表示されている全ロボットの呼吸・瞬き・表情の変化がリセットされてしまうのを避けています。子を持たない機体（葉）が同じ親の下に4体以上並ぶと、縦1列ではなく複数の列に折り返してまとめます。世代の帯が何列ぶんの幅を持つかは、木全体が画面にいちばん大きく収まる形を毎回選んで決めています。ただし、その帯を横切る親子線が折り返した機体を貫いてしまう場合は、その帯だけ折り返しをやめて1列に戻します。',
     'm.s7.h9':     '親子をつなぐ線',
-    'm.s7.p11':    '親子をつなぐ線は、実際に描画されたカードとロボットの位置を測定して、そのつなぎ目に曲線を引いています。計算上の位置ではなく実際に描かれた位置を使っているので、文字数や折り返しでカードの高さが変わっても線がずれません。稼働中の機体が多いときは、線の破線アニメーションを止めます。機体の数だけ毎フレーム再描画が発生するため、動きを止めて負荷を抑えています。',
+    'm.s7.p11':    '親子をつなぐ線は、実際に描画されたカードとロボットの位置を測定して、そのつなぎ目に曲線を引いています。計算上の位置ではなく実際に描かれた位置を使っているので、文字数や折り返しでカードの高さが変わっても線がずれません。稼働中の機体が多いときは、線の破線アニメーションを止めます。機体の数だけ毎フレーム再描画が発生するため、動きを止めて負荷を抑えています。折り返してまとめられた機体には、1本ずつ曲線を引く代わりに、親から1本の幹線を枠へ引き、枠の中は行ごとの横線と、各ロボットの頭上へ落ちる短い縦線でつなぎます。状態の色を持つのはこの短い縦線だけです。1本の横線には稼働中と完了が混ざるので、横線を状態で塗ると、どの機体の状態なのかが決まらなくなるためです。',
     'm.s7.h10':    '画面の更新',
     'm.s7.p12':    '画面は1秒ごとに最新の状態を取りに行く方式で更新されます。WebSocket のような常時接続の仕組みは使っていません（依存を増やさないためです）。取得した内容からミッション・機体・ログ件数の特徴を作り、前回取得時と変わっていなければ描き直しません。稼働中の機体の経過時間だけは毎秒進みます。サーバーの時刻とブラウザの時刻がずれていても、応答に含まれるサーバー側の時刻で毎回補正されます。通信の遅れなどで古い応答が後から届いた場合は、その古い方は捨てられます。',
     'm.s7.h11':    'サーバー',
@@ -415,9 +464,11 @@
     'm.s7.h12':    'VSCode 拡張機能',
     'm.s7.p14':    'VSCode 拡張機能は、サーバーを起動して <code>http://127.0.0.1:&lt;ポート&gt;/</code> を webview の中に埋め込んで表示しているだけです。画面の中身はブラウザで直接見るときとまったく同じです。生存確認は、応答の中に自分自身のツールの場所（<code>toolRoot</code>）が含まれているかで判定しているので、たまたま他の人が別に立てたサーバーに繋いでしまうことはありません。',
     'm.s7.h13':    '実測値しか出さない',
-    'm.s7.p15':    '経過時間・トークン数・ツール使用回数のうち、渡されなかった値は「不明」として保存され、画面には <code>—</code> と表示されます。それらしい推定値で埋めることはしません。この方針はコードの複数箇所（説明文・コマンドのヘルプ・実行時の表示）に明記されています。この画面の目的は「実際に何が起きたか」を見ることなので、埋めてしまうとその目的が壊れてしまうからです。',
+    'm.s7.p15':    '経過時間・トークン数・ツール使用回数、そして<strong>モデル名</strong>のうち、渡されなかった値は「不明」として保存されます——最初の3つは画面に <code>—</code> と表示され、モデル名は「不明」と表示されます。それらしい推定値で埋めることは一切ありません。司令塔自身のモデルも同じ扱いです。<code>start</code> の <code>--model</code> を省略すると、決まったモデルIDにフォールバックするのではなく、不明として表示されます。この方針はコードの複数箇所(説明文・コマンドのヘルプ・実行時の表示)に明記されています。この画面の目的は「実際に何が起きたか」を見ることなので、埋めてしまうとその目的が壊れてしまうからです。',
     'm.s7.h14':    '「？」ボタンがオーバーレイで開く理由',
     'm.s7.p16':    'VSCode の webview は、中に埋め込んだ画面が新しいウィンドウを開くことを許可していません（<code>sandbox</code> 属性に <code>allow-popups</code> が含まれないためです）。この制約は入れ子になった画面にも及ぶので、VSCode に埋め込んで見ているときは、説明書へのリンクを新しいウィンドウで開こうとしても<strong>エラーも出ないまま無視されてしまいます</strong>。そのため、この説明書は新しいウィンドウではなく画面の中のオーバーレイとして開くようにしています。ブラウザで直接見ているときは「別ウィンドウで開く」も選べます。',
+    'm.s7.h15':    '枠に合わせる拡大率（自動フォーカス）',
+    'm.s7.p17':    '右上の ⛶ ボタンで自動フォーカスを入切します。入っている間は、隣の拡大率の表示に「自動」が付き、機体が増えたり完了したりするたびに、木全体が枠に収まる拡大率へ自動で合わせ直されます——全体を見るためにいちいち手で拡大率を変える必要がありません。数値入力・±ボタン・木の上での Ctrl+ホイールはどれも手動の操作にあたり、<strong>手動の操作は常に自動に勝ちます</strong>——その場で自動フォーカスが切れ、そのとき合わせた拡大率のまま止まります。もう一度入れるには、⛶ をもう一度押してください。以前は自分の直前の一手を追いかけて拡大と縮小を延々と繰り返し、止まらなくなることがありましたが、その往復は直っています。',
 
     'm.s8.title':  '自分で使うコマンド',
     'm.s8.p1':     '普段は Claude が自動で更新するので、あなたが使うのは実質これだけです。表では <code>{LAUNCHER_PATH}</code> を <code>dash</code> と省略しています。<code>{PY} {UPDATE_PY}</code> と書いても同じ動作です。',
@@ -428,7 +479,8 @@
     'm.s8.c3':     'いまのプロジェクトの中身を表で確認する',
     'm.s8.c4':     '表示確認用のダミーデータを入れる',
     'm.s8.c5':     'いまのプロジェクトを空にする（他のプロジェクトには影響しない）',
-    'm.s8.c6':     '別のPCに移したときの初期設定（Claude の設定ファイルにパスを書き込む）',
+    'm.s8.c6':     '別のPCに移したときの初期設定（このマシンにある各AIコーディングCLIの指示ファイルにパスを書き込みます）',
+    'm.s8.c7':     'このプロジェクトの過去のミッションを一覧表示します（<code>history/</code> に残っているもの）',
     'm.s8.note.b': '実行する場所',
     'm.s8.note.p': '対象プロジェクトは<strong>コマンドを実行したフォルダ</strong>で決まります。別のプロジェクトを操作したいときは <code>--project learning</code> のように名前の一部を付けてください。',
 
@@ -444,16 +496,20 @@
     'm.s9.q5':     '要らなくなったプロジェクトを消したい',
     'm.s9.a5':     '<code>{PY} {UPDATE_PY} remove</code> を実行するのが安全です。既定では <code>trash/&lt;スラッグ&gt;-&lt;日時&gt;/</code> へ移すだけなので、間違えてもフォルダを戻せば復旧できます。手作業で消したい場合は、下記フォルダの中から該当するプロジェクトのフォルダを丸ごと削除してください。一覧（<code>{PY} {UPDATE_PY} projects</code>）から消えます。',
     'm.s9.q6':     '過去のミッションはどこまで残る？',
-    'm.s9.a6':     'プロジェクトごとに<strong>最新のミッション1つ分</strong>が残ります。新しいミッションを開始すると、そのプロジェクトの前回分は上書きされます（他のプロジェクトは無関係です）。イベントログは直近300行まで保持されます。',
-    'm.s9.q7':     'Claude が更新してくれない',
-    'm.s9.a7a':    'グローバル設定（<span class="path">{CLAUDE_MD}</span>）に運用ルールを書いてあるので通常は自動で更新されます。忘れているようなら「ダッシュボードも更新して」と一言添えてください。',
-    'm.s9.a7b':    '設定が入っていない場合（別のPCにコピーした直後など）は、一度だけ <code>dash install</code> を実行してください。そのPCでの正しいパスが書き込まれます。',
+    'm.s9.a6':     '<strong>過去のミッションは最大20件</strong>がプロジェクトごとに保持されます。もう一度 <code>start</code> しても前回分は上書きされません——記録一式が <code>missions/&lt;project&gt;/history/&lt;start time&gt;/</code> に移動し、タブ列から呼び戻せます。20件を超えると、最も古いものから <code>trash/</code> に移動します（フォルダを戻せば復元できます）。この件数は環境変数 <code>AGENT_DASHBOARD_HISTORY_KEEP</code> で変更できます。イベントログは直近300行まで保持されます。',
+    'm.s9.q7':     'エージェントが更新してくれない',
+    'm.s9.a7a':    '運用ルールは、このマシンにインストールされている各AIコーディングCLIの指示ファイル(<span class="path">{INSTRUCTION_FILES}</span>)に書き込まれているので、通常は自動で更新されます。忘れているようなら「ダッシュボードも更新して」と一言添えてください。',
+    'm.s9.a7b':    'その設定が入っていない場合(別のPCにコピーした直後など)は、一度だけ <code>dash install</code> を実行してください。そのPCで見つかった各CLIに、正しいパスが書き込まれます。',
     'm.s9.q8':     '別のPCで使いたい / 場所を移したい',
     'm.s9.a8a':    'フォルダを丸ごとコピーして、コピー先で <code>dash install</code> を1回実行してください。パスは実行時に自動で解決されるので、置き場所はどこでも構いません。',
     'm.s9.a8b':    '記録の保存先を変えたい場合は、環境変数 <code>AGENT_DASHBOARD_HOME</code> にフォルダを指定してください（共有ドライブや別ドライブに置きたいときに使います）。',
     'm.s9.q9':     '名前や任務内容だけ、画面と違う言語で出ている',
-    'm.s9.a9a':    '名前と任務内容は<strong>翻訳されません</strong>。これらは Claude が部隊を登録したときに書いた自由記述で、画面は記録されたとおりに出しています——右上で言語を切り替えると、その周りの見出しやラベルは変わりますが、記録そのものは変わりません。',
-    'm.s9.a9b':    'Claude が何語で書くかは、コマンド側で別に決まっています。<code>dash lang ja</code>（または <code>en</code> / <code>zh</code> / <code>ko</code>）を実行し、続けて <code>dash install</code>、そのあと Claude を再起動してください。すでに記録されたミッションは書かれたときのままです。この画面は「実際に起きたこと」を映すためのものだからです。',
+    'm.s9.a9a':    '名前と任務内容は<strong>翻訳されません</strong>。これらはエージェントが部隊を登録したときに書いた自由記述で、画面は記録されたとおりに出します——右上で言語を切り替えると、その周りの見出しやラベルは変わりますが、記録そのものは変わりません。',
+    'm.s9.a9b':    'エージェントが何語で書くかは、コマンド側で別に決まっています。<code>dash lang ja</code>(または <code>en</code> / <code>zh</code> / <code>ko</code>)を実行して、使っているAIコーディングCLIのセッションを再起動してください——このコマンドが運用ルールも新しい言語に書き直すので、設定した言語がそのままチームを組む言語になります。すでに記録されたミッションは書かれたときのままです。この画面は「実際に起きたこと」を映すためのものだからです。',
+
+    'm.s9.q10':    '締め忘れたミッションを、道具が自動で締めてくれることはある？',
+    'm.s9.a10a':   'あります。<code>autofinish</code> は、使っているAIコーディングCLIの SessionEnd フック(詳しくは <code>OPERATION.md</code>)に配線しておく安全網で、セッションが終わった瞬間、そのとき稼働中のミッションを自動で締めます。締め忘れたまま記録が永久に「稼働中」で残るのを防ぐためのものです。稼働中のミッションが無ければ、何もせず何も出力しません。',
+    'm.s9.a10b':   'だからといって、自分で <code>finish</code> を打たなくてよいわけではありません。自動で締めたときの見出しは「セッション終了により自動で締めました」という機械的な一行にしかならず、実際に何をしたかの要約にはなりません。できる限り自分で <code>finish --headline "..."</code> を打ってください。<code>autofinish</code> はあくまで、それができなかったときの安全網です。',
 
     'm.s10.title': 'どこに何があるか',
     'm.s10.p1':    'このツールは次の場所にあります。',
@@ -477,6 +533,17 @@
       '      └─ agents/            孫エージェントの自己申告',
     'm.s10.p2':    '記録の保存先は次の場所です。',
     'm.s10.p3':    '追加のインストールは不要です。Python の標準機能だけで動いていて、外部ライブラリもインターネット接続も使いません。画面も1枚の HTML で完結しています。Windows / macOS / Linux のどれでも同じように動きます。',
+
+    'm.s11.title': '置き場所が決まらない機体の区画',
+    'm.s11.p1':    'いま動いているのに、記録が一つも無い機体がいます——たいていは、その機体ぶんの <code>add</code> を呼び忘れています。この画面はその事実を隠しません。系統樹の下に別の区画を設けて、そういう機体もそこに表示します。数が合わないことに誰かがあとで気づくのではなく、<code>add</code> の呼び忘れがその場で見える形にするためです。',
+    'm.s11.p2':    'このうち、実測で起動元を辿れた機体は系統樹の中に正しく置かれます——典型的には、孫が自分で書いた自己申告に、すでに画面にいる機体を指す <code>parentId</code> が書かれている場合です。そうした機体はほかの機体と同じように木の中に入り、この区画には出てきません。ここに残るのは、起動元が本当に実測で辿れなかった機体だけです。親を推測することは一切しません。推測から線を1本引いた瞬間、この画面は「実測しか出さない道具」ではなくなってしまうからです。',
+    'm.s11.li1':   'ここに並ぶロボは系統樹のものの<strong>ちょうど半分</strong>の大きさ、カードの幅も半分です。系統樹の一部ではなく、性質の違う情報だということが見た目でも分かるようにしています',
+    'm.s11.li2':   '所要時間・トークン・ツール回数・任務の行は出しません。それを報告できる記録が無いためで、無いものをあるかのように出すくらいなら、出さないほうを選んでいます',
+    'm.s11.li3':   'いま何をしているか（直近に使ったツール・その回数・トークンの概算）は、実測できる限りそのまま表示されます。記録が無いことと、稼働中の様子を実測できないことは別の話です',
+    'm.s11.li4':   '起動元の名前だけがログから分かった場合（木に置けるほどの手がかりでは無いが、名前は残っている場合）は、カードの下に小さく表示されます。それすら分からない機体には何も補いません',
+    'm.s11.note1.b':'締めても区画ごと消えるわけではありません',
+    'm.s11.note1.p1':'<code>finish</code> / <code>autofinish</code> は、ミッションを完了にする直前に、そのときこの区画に残っていた機体をそのまま記録へ焼き付けます。締めた瞬間に静かに消えてしまうことはなく、完了した記録の中でも、最後に見えていた姿のまま残ります。区画自体は、見出しの「隠す」で畳めます。',
+
     'm.footer1':   'Subagent Dashboard — Python 3.9 以降 / 外部ライブラリなし / Windows・macOS・Linux 対応',
     'm.footer2':   'Claude 向けの詳細な運用手順は <span class="path">{TOOL_ROOT}</span> の <code>OPERATION.md</code> にあります。',
   };
@@ -513,6 +580,8 @@
     'm.s2.step3.p1':'接下来照常请 Claude 做调查或工作即可。子代理一被启动，机器人就会当场<strong>「啵」地出现</strong>。画面约每秒自动刷新一次，无需重新加载。',
     'm.s2.note.b': '只想先看看效果时',
     'm.s2.note.p': '若不想等待实际工作就确认显示效果，请在想查看的项目文件夹中执行以下命令。它会写入包含待机中、运行中、等待回报、已完成的示例数据。',
+    'm.mask.b':    '下面的路径隐去了你的用户名',
+    'm.mask.p':    '本页面路径经过主文件夹时，用户名部分会显示为 <code>&lt;username&gt;</code>，这样截图或共享屏幕时都不会带出它。运行命令前，请把那部分换成你自己的用户名。',
 
     'm.s3.title':  '从机器人的表情看出状态',
     'm.s3.p1':     '状态只有四种。表情和动作各不相同，远远就能分辨。其中「等待回报」是工作中的一种，会出现在<strong>拥有运行中下属的单元</strong>上。',
@@ -535,52 +604,58 @@
     'm.s4.legend4':'<b>等待回报徽章</b> — 出现在拥有运行中下属的单元上（参见下方方框）',
     'm.s4.legend5':'<b>任务内容</b> — 让它做什么（最多两行）',
     'm.s4.legend6':'<b>已用时／Token／工具</b> — 运行中已用时每秒递增。完成后为实测值',
+    'm.s4.legend7':'<b>机身颜色</b> — 显示驱动该单元的是哪个模型（参见下方方框）',
     'm.s4.p1':     '完成后，卡片下方会以绿色文字追加<strong>结果的一行摘要</strong>，整张卡片会变成灰色。「已经不必再看的东西」在视觉上沉下去，于是只有还在运行的内容映入眼帘。',
     'm.s4.note1.b':'「等待回报」是推导出来的',
     'm.s4.note1.p1':'拥有一个以上运行中下属的单元会被标上「等待回报」，动作放缓为呼吸并转为琥珀色。如果指挥塔处于这个状态，该看的是向右延伸出去的子单元。',
     'm.s4.note1.p2':'但这并不是写在 <code>state.json</code> 里的事实，而是<strong>从父子关系推导出来的</strong>。「子在运行」是事实，「父在等待」则是推测，当父单元与子单元并行推进自己的工作时就会与实情不符。请记住它与 Token 数这类实测值的性质不同。没有用于回报它的命令（写入至今仍只有「启动直后」和「收到完成回报时」两个时点）。',
     'm.s4.note2.b':'没有进度条',
     'm.s4.note2.p1':'子代理在工作过程中不会回报「现在完成了百分之几」。也就是说，百分比的实测值根本不存在于任何地方。以前曾放过一条只表示「正在动」的流动条纹，但它容易被读成在表示进度，因此移除了。是否在运行，从机器人的动作和卡片颜色就能看出。已用时是真实的。',
+    'm.s4.note3.b':'哪种颜色对应哪种模型',
+    'm.s4.note3.p1':'蛋形机身与手臂的颜色，显示驱动该单元的是哪个模型。机器人身上的其他部分——眼睛、面罩、天线、胸口的灯、嘴巴，以及状态动画（待机中／工作中／等待回报／已完成）——都不会因模型而改变，这样两种含义就不会在同一处相互竞争。',
+    'm.s4.note3.li1':'<b>红色</b> — Fable',
+    'm.s4.note3.li2':'<b>橙色</b> — Opus / Sol',
+    'm.s4.note3.li3':'<b>浅绿</b> — Haiku / Luna',
+    'm.s4.note3.li4':'<b>白色</b> — Sonnet / Terra / Gemini，以及本工具无法识别的所有模型名称',
+    'm.s4.note3.p2':'无法识别的模型名称，会被特意保留为白色。如果凭猜测涂上别的颜色，画面就会在「这是哪个模型」这件事上悄悄撒谎。',
 
     'm.s5.title':  '哪些小队会显示在画面上',
-    'm.s5.p1':     '以前那套「项目变多时画面上方会排出切换用标题，点击切换」的机制已经撤除。现在无法由你来选择显示哪个小队。只有<strong>当前正在运行的所有小队</strong>，以及最近一次 <code>start</code> 的小队（即使已经完成）会自动显示。',
+    'm.s5.p1':     '画面呈现的内容由两点决定。<strong>可供选择的范围</strong>是标签栏：各个项目正在进行的任务，以及保存在 <code>history/</code> 中的每一个过去任务，都会排列在那里——每执行一次 <code>start</code> 对应一个标签。<strong>实际显示的</strong>是你选中的那一个标签，同一时刻画面上只会有一个小队。打开画面时会自动为你选好一个正在运行的小队；如果在你查看旧记录期间又有新任务开始，画面会把你带回那个正在运行的小队。',
     'm.s5.th1':    '情况',
     'm.s5.th2':    '画面',
-    'm.s5.r1a':    '一条记录都没有，或全都很旧',
+    'm.s5.r1a':    '完全没有记录',
     'm.s5.r1b':    '待机画面',
     'm.s5.r2a':    '小队 A 运行中',
-    'm.s5.r2b':    '显示 A',
+    'm.s5.r2b':    'A 被选中并显示',
     'm.s5.r3a':    'A 执行了 <code>finish</code>',
     'm.s5.r3b':    '仍显示 A（以完成状态保留）',
     'm.s5.r4a':    '接着 B 执行了 <code>start</code>',
-    'm.s5.r4b':    '只显示 B（A 从画面上退场）',
+    'm.s5.r4b':    '画面切换到 B。A 留在标签栏中，可以随时调回',
     'm.s5.r5a':    'A 和 B 同时运行中',
-    'm.s5.r5b':    'A 和 B 纵向堆叠同时显示',
+    'm.s5.r5b':    '两者都会各有一个标签；显示的是你选中的那一个（一次一个）',
     'm.s5.diagram':
-      '待机（没有记录，或全都很旧）\n' +
+      '待机（完全没有记录）\n' +
       '   │ start\n' +
       '   ▼\n' +
-      'A 运行中 ─────────────────────► 画面: A\n' +
+      'A 运行中 ────────────────► 画面: A\n' +
       '   │ finish\n' +
       '   ▼\n' +
-      'A 已完成（.current 仍为 A）────► 画面: A（以完成状态继续显示）\n' +
-      '   │ 在别的文件夹 start\n' +
+      'A 已完成（.current 仍为 A）─► 画面: A（以完成状态继续显示）\n' +
+      '   │ 在另一个文件夹里 start\n' +
       '   ▼\n' +
-      'B 运行中（.current 变为 B）───► 画面: B（换成新的一方，A 退场）\n' +
+      'B 运行中（.current 变为 B）► 画面: B（A 留在标签栏中）\n' +
       '\n' +
-      '如果 A 仍在运行时 B 也开始运行，则两者纵向堆叠显示。\n' +
-      '较新开始的一方排在上面。\n' +
-      '   ┌───────────────┐\n' +
-      '   │ B（较新的）     │ ← 上\n' +
-      '   ├───────────────┤\n' +
-      '   │ A              │\n' +
-      '   └───────────────┘',
+      '所有正在运行的任务，以及所有过去的任务，都会排列在标签栏中。\n' +
+      '画面只显示你选中的那一个标签——一次一个。较新的排在最左边。\n' +
+      '   ┌─────────────┬─────────────┬─────────────────┐\n' +
+      '   │ B（运行中） │ A（已完成） │ A（过去的记录） │ ← 标签栏\n' +
+      '   └─────────────┴─────────────┴─────────────────┘',
     'm.s5.note1.b':'并行运行时其中一方先结束，完成回报也不会消失',
-    'm.s5.note1.p1':'假设你并行运行 A 和 B，而 A 先执行了 <code>finish</code>。此时 A 已不再是「最近一次 <code>start</code> 的小队」，若不加处理，它会在完成的瞬间从画面上消失，谁也来不及读到 A 的成果。为避免如此，<b>在当前运行中的小队开始之后才完成的小队</b>也会保留下来。',
+    'm.s5.note1.p1':'假设你并行运行 A 和 B，而 A 先执行了 <code>finish</code>。此时 A 已不再是「最近一次 <code>start</code> 的小队」，若放任不管，它会在完成的瞬间不再被推送到画面上。为避免这种情况，<b>在当前运行中的小队开始之后才完成的小队</b>会继续被当作运行中推送。无论如何，A 的记录都能从标签栏中找到；这样做是为了不让你正在阅读的报告，在送达的那一刻就在你眼前定格。',
     'm.s5.note1.p2':'如果只是按顺序工作（前一个小队结束后才 <code>start</code> 下一个），前一个小队的完成时间早于下一个的开始时间，因此会如上表所示从画面上退场。这两种情况会根据完成时刻与开始时刻的先后自动区分。',
-    'm.s5.note2.b':'显示哪个小队无法由你选择',
-    'm.s5.note2.p1':'会改写 <code>missions/.current</code> 这个文件的只有 <code>start</code> 和 <code>demo</code>。<code>add</code> / <code>done</code> / <code>finish</code> 不会移动它，因此已完成的画面不会擅自切换到别的项目。既没有用于切换的界面部件，也没有隐藏的操作，即使在 URL 上加 <code>?project=</code> 这样的指定也会被有意忽略。显示哪个小队由服务器端决定，这是设计上的选择。',
-    'm.s5.p2':     '为了不让停止更新却仍处于 <code>running</code>（运行中）的旧记录一直显示下去，默认设有<strong>3 小时</strong>的时间窗口。<code>state.json</code> 的更新早于该窗口的 <code>running</code> 会被视为「已被放置」，不会显示在画面上。该时间窗口可通过环境变量 <code>AGENT_DASHBOARD_ACTIVE_WINDOW</code>（单位为秒）修改。',
+    'm.s5.note2.b':'显示哪个小队由服务器决定',
+    'm.s5.note2.p1':'会改写 <code>missions/.current</code> 这个文件的只有 <code>start</code> 和 <code>demo</code>。<code>add</code> / <code>done</code> / <code>finish</code> 不会移动它，因此已完成的画面不会擅自切换到别的项目。即使在 URL 上加 <code>?project=</code> 这样的指定，也会被有意忽略——服务器要推送哪些小队，是它按设计做出的决定。<em>你</em>能选择的，是从标签栏中查看其中的哪一个——以及哪一条过去的记录。这个选择会被浏览器记住。',
+    'm.s5.p2':     '为了不让停止更新却仍处于 <code>running</code>（运行中）的旧记录一直显示下去，默认设有<strong>3 小时</strong>的时间窗口。<code>state.json</code> 的更新早于该窗口的 <code>running</code> 会被视为「已被放置」，不再作为运行中的小队被推送（记录本身仍会保留，并可继续从标签栏中选择）。该时间窗口可通过环境变量 <code>AGENT_DASHBOARD_ACTIVE_WINDOW</code>（单位为秒）修改。',
     'm.s5.p3':     '属于哪个项目<strong>由你所在的工作文件夹自动决定</strong>。即使不同位置有同名文件夹，也会以完整路径区分，不会混淆（用于区分的名称只出现在记录文件夹内部，不会显示在画面上）。',
     'm.s5.note3.b':'从画面上消失并不代表记录被删除',
     'm.s5.note3.p1':'不再显示的小队，其记录仍原样保留在 <code>missions/&lt;slug&gt;/</code> 中。列出、删除、初始化请使用以下命令。',
@@ -589,6 +664,13 @@
     'm.s5.c1':     '列出保留下来的记录。<code>●</code> 表示当前显示在画面上的小队',
     'm.s5.c2':     '删除记录。默认只是移入 <code>trash/&lt;slug&gt;-&lt;时间戳&gt;/</code>，把文件夹放回去即可恢复。要彻底删除请加上 <code>--yes --force</code>',
     'm.s5.c3':     '将该项目的记录恢复为待机中（文件夹本身保留）',
+    'm.s5.note4.b':'防止两个会话争抢同一份记录',
+    'm.s5.note4.p1':'在两个 Claude Code 会话中打开同一个文件夹——第二个窗口、第二个终端、崩溃前遗留下来的会话——是很容易发生的事。两边都会写入同一个项目的记录，因此在此之前，后执行 <code>start</code> 的一方，可能会在谁都没注意到的情况下，把先前那个还在运行的任务推入历史记录、将其中断。以这种方式被中断的记录，事后都无法再标记为已完成。更糟的是，被中断的那个会话如果不知道自己的记录已经丢失，仍会继续成功调用 <code>add</code> / <code>done</code> / <code>finish</code>——写入到那时已经变成别人的任务里，把两份记录混在一起。',
+    'm.s5.note4.p2':'现在 <code>start</code> / <code>add</code> / <code>done</code> / <code>finish</code> / <code>log</code> / <code>demo</code> 在写入前都会先确认记录的所有者（<code>start</code> 时刻记下的 <code>mission.sessionId</code>）。如果确定是不同的会话，命令会被拒绝——不写入任何内容，也不会中断任何任务——并会打印一行可以直接复制粘贴的命令，其中带有工具已经为你生成好的 <code>--project</code> 名称，让你自己的工作拥有专属的记录，而不是与正在进行的那个相撞。请在你的 <code>start</code> / <code>add</code> / <code>done</code> / <code>finish</code> 上都带上同一个 <code>--project</code>。',
+    'm.s5.note4.p3':'如果仍想强行推进（也就是以前的行为），请加上 <code>--force</code>。即便如此，被中断的记录也不会丢失——从标签栏打开它，把鼠标悬停在状态徽章上，就会告诉你它被哪个任务、在什么时候中断的。唯一做不到的是把它改回已完成；这个限制本身没有变，而这道防线存在的目的，正是要让你在事故发生之前先停下来想一想。',
+    'm.s5.note5.b':'这道防线保护不到的地方',
+    'm.s5.note5.p1':'这项核对只有在双方都带着标记时才会启动：记录一侧必须知道自己的所有者，发起调用的会话也必须能被识别出来。在这道防线出现之前就已经 <code>start</code> 的记录，或者从未收到过 <code>CLAUDE_CODE_SESSION_ID</code> 的终端（钩子没有接好、或是手动敲的命令），都会像以前一样直接放行。与其凭没有依据的猜测去拒绝，工具更愿意保持可用。',
+    'm.s5.note5.p2':'子代理会直接继承父级的会话 ID，因此可以自由地对父级 <code>start</code> 开始的任务执行 <code>add</code> / <code>done</code>。这道防线针对的是两个各自独立的会话，而不是指挥塔与它启动的子代理之间的关系。',
 
     'm.s6.title':  '「—」不是故障',
     'm.s6.note.b': '重要',
@@ -626,12 +708,12 @@
     'm.s7.p7':     '当前实际的保存位置如下。',
     'm.s7.h6':     '孙代理的自行申报',
     'm.s7.p8':     '无法经由 <code>update_state.py</code> 的子代理（相当于孙代理）也可以自行写入 <code>missions/&lt;slug&gt;/agents/&lt;ID&gt;.json</code> 文件，把自己注册到画面上。服务器在读取时会把这些内容与 <code>state.json</code> 合并，但<strong>如果 ID 重复，则以 <code>state.json</code> 一侧为准</strong>（自行申报终究只是辅助）。执行 <code>start</code> 时，上一个任务的自行申报文件会全部被删除。这是为了防止没有收到完成回报的孙代理一直以「运行中」的状态留在画面上。',
-    'm.s7.h7':     '代数（第几列）由服务器每次重新计算',
-    'm.s7.p9':     '单元在画面上位于第几代（第几列），并不是直接使用保存的值，而是由服务器每次沿着 <code>parentId</code>（父的 ID）重新推算。因此即使在自行申报文件里写错了代数，画面也不会出错。找不到父的单元会被视为直接位于指挥塔之下；父子关系出现循环时也会被检测出来并停止处理。',
+    'm.s7.h7':     '代数由服务器每次重新计算',
+    'm.s7.p9':     '单元在画面上位于第几代，并不是直接使用保存的值，而是由服务器每次沿着 <code>parentId</code>（父的 ID）重新推算。因此即使在自行申报文件里写错了代数，画面也不会出错。找不到父的单元会被视为直接位于指挥塔之下；父子关系出现循环时也会被检测出来并停止处理。',
     'm.s7.h8':     '谱系树的排布方式',
-    'm.s7.p10':    '单元以「向右延伸的整形树」的形式排布。父单元被放在它所生子单元占据的纵向范围的中央。位置从最深的代数开始依次确定，当间距变紧时，会把该单元连同其下的子树一起向下移动。每个单元的位置只由纵坐标（<code>top</code>）指定，画面上的排列顺序本身不会改变。因为一旦改变元素顺序，浏览器就会中断该元素以下的 CSS 动画并从头重建——那样每增加一个单元，画面上已有的所有机器人的呼吸、眨眼、表情变化都会被重置。',
+    'm.s7.p10':    '单元以「向右延伸的整形树」的形式排布。父单元被放在它所生子单元占据的纵向范围的中央。位置从最深的代数开始依次确定，当间距变紧时，会把该单元连同其下的子树一起向下移动。每个单元的位置只由纵坐标（<code>top</code>）指定，画面上的排列顺序本身不会改变。因为一旦改变元素顺序，浏览器就会中断该元素以下的 CSS 动画并从头重建——那样每增加一个单元，画面上已有的所有机器人的呼吸、眨眼、表情变化都会被重置。当同一个父单元下有 4 个以上没有子单元的单元（叶）时，它们不会排成竖着的一列，而是折返成多列。某一代的横带占几列宽，每次都会重新选择，使整棵树能在画面上尽量大地容纳。但如果横穿该横带的父子连线会贯穿折返后的单元，则只有该横带取消折返，退回一列。',
     'm.s7.h9':     '连接父子的线',
-    'm.s7.p11':    '连接父子的线，是通过测量实际绘制出来的卡片和机器人的位置，在其连接处画出曲线的。由于使用的是实际绘制的位置而非计算位置，即使卡片高度因字数或换行而变化，线也不会错位。运行中的单元较多时，会停止线的虚线动画。因为每一条线每帧都会引发重绘，停止动作可以抑制负载。',
+    'm.s7.p11':    '连接父子的线，是通过测量实际绘制出来的卡片和机器人的位置，在其连接处画出曲线的。由于使用的是实际绘制的位置而非计算位置，即使卡片高度因字数或换行而变化，线也不会错位。运行中的单元较多时，会停止线的虚线动画。因为每一条线每帧都会引发重绘，停止动作可以抑制负载。对于折返归拢在一起的单元，不再逐个绘制曲线，而是从父单元向框引出一条主干线，框内用每行的横线，以及落到各机器人头顶的短竖线相连。带有状态颜色的只有这些短竖线。因为一条横线上会混有运行中与已完成的单元，若给横线上色，就无法确定它表示的是哪个单元的状态。',
     'm.s7.h10':    '画面的更新',
     'm.s7.p12':    '画面采用每秒获取一次最新状态的方式更新。没有使用 WebSocket 这类常连接机制（为了不增加依赖）。它会根据获取到的内容生成任务、单元、日志条数的特征，若与上次获取时相同则不重绘。只有运行中单元的已用时会每秒递增。即使服务器与浏览器的时钟有偏差，也会用响应中包含的服务器时刻每次校正。若因网络延迟等原因旧的响应后到达，则会丢弃旧的那个。',
     'm.s7.h11':    '服务器',
@@ -639,9 +721,11 @@
     'm.s7.h12':    'VSCode 扩展',
     'm.s7.p14':    'VSCode 扩展只是启动服务器，并把 <code>http://127.0.0.1:&lt;端口&gt;/</code> 嵌入 webview 中显示而已。画面内容与在浏览器中直接查看完全相同。存活确认是通过响应中是否包含自身工具的位置（<code>toolRoot</code>）来判定的，因此不会碰巧连上别人另行启动的服务器。',
     'm.s7.h13':    '只显示实测值',
-    'm.s7.p15':    '在已用时、Token 数、工具使用次数之中，未传入的值会被保存为「未知」，画面上显示为 <code>—</code>。不会用看似合理的估算值填补。这一方针在代码的多处（说明文、命令帮助、运行时显示）都有明确记载。这个画面的目的是看「实际发生了什么」，一旦填补，这个目的就被破坏了。',
+    'm.s7.p15':    '已用时间、Token 数、工具调用次数，以及<strong>模型名称</strong>之中，未传入的值会被保存为「未知」——前三项在画面上显示为 <code>—</code>，模型名称则显示为「未知」。绝不会用看似合理的估算值填补。指挥部自身的模型也遵循同一规则：在 <code>start</code> 上不加 <code>--model</code>，它就会显示为未知，而不会回退到某个固定的模型 ID。这一方针在代码的多处（说明文、命令帮助、运行时显示）都有明确记载。这个画面的目的是看「实际发生了什么」，一旦填补，这个目的就被破坏了。',
     'm.s7.h14':    '「？」按钮以浮层方式打开的原因',
     'm.s7.p16':    'VSCode 的 webview 不允许其中嵌入的画面打开新窗口（因为其 <code>sandbox</code> 属性不包含 <code>allow-popups</code>）。该限制也会波及嵌套的画面，因此在 VSCode 中嵌入查看时，试图用新窗口打开手册链接会<strong>连错误都不报就被忽略</strong>。所以这份手册不是以新窗口，而是以画面内的浮层方式打开。在浏览器中直接查看时，也可以选择「在新窗口中打开」。',
+    'm.s7.h15':    '让缩放比例自动贴合画面（自动适应）',
+    'm.s7.p17':    '右上角的 ⛶ 按钮用来切换自动适应的开关。开启期间，旁边的缩放比例前会加上「自动」二字，随着单元的诞生与完成，谱系树会自动重新调整缩放比例，让整棵树始终贴合画面——不必再为了看到整个小队而每次手动缩放。输入数值、使用 ±按钮，或是在谱系树上按 Ctrl+滚轮，都算作手动操作，<strong>手动操作永远优先</strong>——它会当场关闭自动适应，缩放比例就停在你调整的那个数值，直到你再次按下 ⛶ 为止。早期版本有时会追着自己刚做的那一步不停地放大缩小、永远无法稳定下来；这种反复震荡的问题后来已经修复。',
 
     'm.s8.title':  '你自己会用到的命令',
     'm.s8.p1':     '平时由 Claude 自动更新，所以你实际用到的就只有这些。表中把 <code>{LAUNCHER_PATH}</code> 简写为 <code>dash</code>。写成 <code>{PY} {UPDATE_PY}</code> 效果相同。',
@@ -652,7 +736,8 @@
     'm.s8.c3':     '以表格形式查看当前项目的内容',
     'm.s8.c4':     '写入用于确认显示效果的示例数据',
     'm.s8.c5':     '清空当前项目（不影响其他项目）',
-    'm.s8.c6':     '迁移到别的电脑时的初始设置（把路径写入 Claude 的配置文件）',
+    'm.s8.c6':     '迁移到别的电脑时的初始设置（把路径写入这台机器上每个 AI 编程 CLI 的指示文件中）',
+    'm.s8.c7':     '列出该项目过去的任务（保存在 <code>history/</code> 中的那些）',
     'm.s8.note.b': '在哪里执行',
     'm.s8.note.p': '目标项目由<strong>执行命令时所在的文件夹</strong>决定。想操作别的项目时，请像 <code>--project learning</code> 这样加上名称的一部分。',
 
@@ -668,16 +753,20 @@
     'm.s9.q5':     '想删除不再需要的项目',
     'm.s9.a5':     '执行 <code>{PY} {UPDATE_PY} remove</code> 最为安全。默认只是移入 <code>trash/&lt;slug&gt;-&lt;时间戳&gt;/</code>，即使弄错了，把文件夹放回去也能恢复。若想手动删除，请从下面的文件夹中整个删掉对应项目的文件夹。之后它会从列表（<code>{PY} {UPDATE_PY} projects</code>）中消失。',
     'm.s9.q6':     '过去的任务能保留多久？',
-    'm.s9.a6':     '每个项目保留<strong>最新的一个任务</strong>。开始新任务时，该项目上一次的记录会被覆盖（与其他项目无关）。事件日志最多保留最近 300 行。',
-    'm.s9.q7':     'Claude 不帮我更新',
-    'm.s9.a7a':    '运行规则写在全局配置（<span class="path">{CLAUDE_MD}</span>）里，通常会自动更新。如果它似乎忘了，补一句「顺便也更新面板」即可。',
-    'm.s9.a7b':    '如果配置不在（比如刚复制到另一台电脑后），请执行一次 <code>dash install</code>。它会写入这台电脑上正确的路径。',
+    'm.s9.a6':     '每个项目最多保留<strong>20 个过去的任务</strong>。再次执行 <code>start</code> 不会覆盖上一次的记录——整份记录会移动到 <code>missions/&lt;project&gt;/history/&lt;start time&gt;/</code>，并可从标签栏中调回。超过 20 个后，最旧的会被移动到 <code>trash/</code>（把文件夹移回去即可恢复）。这个数量可以通过环境变量 <code>AGENT_DASHBOARD_HISTORY_KEEP</code> 修改。事件日志最多保留最近 300 行。',
+    'm.s9.q7':     'AI 不帮我更新',
+    'm.s9.a7a':    '运行规则会写入这台机器上安装的每一个 AI 编程 CLI 的指示文件中（<span class="path">{INSTRUCTION_FILES}</span>），通常会自动更新。如果它似乎忘了，补一句「顺便也更新面板」即可。',
+    'm.s9.a7b':    '如果这些规则不在那里（比如刚复制到另一台电脑后），请执行一次 <code>dash install</code>。它会把这台电脑上正确的路径写入它找到的每一个 CLI 中。',
     'm.s9.q8':     '想在别的电脑上使用 / 想更换位置',
     'm.s9.a8a':    '把整个文件夹复制过去，然后在目标位置执行一次 <code>dash install</code>。路径会在运行时自动解析，放在哪里都可以。',
     'm.s9.a8b':    '想更改记录的保存位置时，请把环境变量 <code>AGENT_DASHBOARD_HOME</code> 指向某个文件夹（适用于想放在共享盘或其他磁盘的场合）。',
     'm.s9.q9':     '只有名字和任务内容跟画面是不同的语言',
-    'm.s9.a9a':    '名字和任务内容<strong>不会被翻译</strong>。它们是 Claude 登记部队时写下的自由文本，画面照记录的样子显示——在右上角切换语言，改变的是它们周围的标题和标签，记录本身不会变。',
-    'm.s9.a9b':    'Claude 用什么语言来写，是在命令那一侧另外定下的。执行 <code>dash lang zh</code>（或 <code>en</code> / <code>ja</code> / <code>ko</code>），接着执行 <code>dash install</code>，然后重启 Claude。已经记录下来的任务保持写下时的样子，因为这个画面是用来映照「实际发生的事情」的。',
+    'm.s9.a9a':    '名字和任务内容<strong>不会被翻译</strong>。它们是 AI 登记部队时写下的自由文本，画面照记录的样子显示——在右上角切换语言，改变的是它们周围的标题和标签，记录本身不会变。',
+    'm.s9.a9b':    'AI 用什么语言来写，是在命令那一侧另外定下的。执行 <code>dash lang zh</code>（或 <code>en</code> / <code>ja</code> / <code>ko</code>），然后重启你的 AI 编程 CLI 会话——这一条命令也会把运行规则改写成新的语言，所以你设置的语言就是组队时使用的语言。已经记录下来的任务保持写下时的样子，因为这个画面是用来映照「实际发生的事情」的。',
+
+    'm.s9.q10':    '忘记关闭的任务，工具能不能自动帮忙关闭？',
+    'm.s9.a10a':   '可以。<code>autofinish</code> 是接在你所用的 AI 编程 CLI 的 SessionEnd 钩子上的一张安全网（详见 <code>OPERATION.md</code>），会在会话结束的那一刻，把当时仍在运行的任务自动关闭，这样忘记执行 <code>finish</code> 也不会让记录永远卡在「运行中」。如果没有任何任务在运行，它什么都不做，也不会输出任何内容。',
+    'm.s9.a10b':   '不过这并不能代替你自己调用 <code>finish</code>。自动关闭时留下的只能是一句机械式的标题——「因会话结束而自动关闭」——绝不会是对实际所做工作的真正总结。只要还能做到，就请自己执行 <code>finish --headline "…"</code>；<code>autofinish</code> 终究只是接住你没来得及做的那一部分的安全网。',
 
     'm.s10.title': '什么东西在什么位置',
     'm.s10.p1':    '本工具位于以下位置。',
@@ -701,6 +790,17 @@
       '      └─ agents/            孙代理的自行申报',
     'm.s10.p2':    '记录的保存位置如下。',
     'm.s10.p3':    '无需额外安装。它仅靠 Python 的标准功能运行，既不使用外部库也不需要联网。画面也自成一体。在 Windows / macOS / Linux 上的表现完全相同。',
+
+    'm.s11.title': '无处安放的机体专区',
+    'm.s11.p1':    '有的机体明明正在运行，却完全没有留下记录——通常是因为忘记为它调用 <code>add</code>。这个画面不会掩盖这一事实：它会在谱系树下方另设一个专区，把这些机体也显示出来，让忘记调用 <code>add</code> 这件事在发生的当下就能被看见，而不是等到有人事后才察觉数字对不上。',
+    'm.s11.p2':    '其中一部分机体其实还是能被正确归位的，因为它们的启动来源可以通过实测追溯——典型情况是，某个孙代理自行申报的内容中，<code>parentId</code> 指向了一个已经在画面上的机体。这类机体会像其他机体一样直接进入谱系树，不会出现在这个专区里。留在这里的，只是启动来源真的无法实测追溯的机体。它们的父级绝不会被凭空猜测——一旦从猜测画出一条线，这个画面就不再是「只显示实测结果的工具」了。',
+    'm.s11.li1':   '这里的机器人正好是谱系树中机器人的一半大小，卡片宽度也是一半——用视觉上的差异提醒你，这是另一类信息，不是谱系树的一部分',
+    'm.s11.li2':   '不会显示已用时、Token、工具次数和任务内容——因为没有可以据以回报这些数据的记录，与其假装有数据，不如干脆不显示',
+    'm.s11.li3':   '它现在在做什么——最近调用的工具、调用次数、Token 的估算值——只要能实测到，仍会照样实时显示。没有记录，不代表运行中的样子就无法实测',
+    'm.s11.li4':   '如果只能从日志中找回启动来源的名字（还不足以把它放进谱系树，但名字留了下来），就会以小字显示在卡片下方。连名字都找不到的机体，则什么都不会补充',
+    'm.s11.note1.b':'关闭任务并不会把这个专区一并清空',
+    'm.s11.note1.p1':'<code>finish</code> 和 <code>autofinish</code> 都会在把任务标记为完成之前，把当时还留在这个专区里的机体原样固化进记录，因此这类机体不会在你关闭任务的瞬间被悄悄遗漏——它会以最后一次被看到的样子，继续保留在这里，哪怕是在已完成的记录中也是如此。这个专区本身可以用标题旁的「隐藏」开关收起来。',
+
     'm.footer1':   'Subagent Dashboard — Python 3.9 以上 / 无外部库 / 支持 Windows・macOS・Linux',
     'm.footer2':   '给 Claude 的详细运行手册位于 <span class="path">{TOOL_ROOT}</span> 下的 <code>OPERATION.md</code>。',
   };
@@ -737,6 +837,8 @@
     'm.s2.step3.p1':'다음부터는 평소대로 Claude 에게 조사나 작업을 맡기기만 하면 됩니다. 서브에이전트가 시작되면 그 자리에서 로봇이 <strong>퐁 하고 나타납니다</strong>. 약 1초마다 자동으로 갱신되므로 화면을 새로 고칠 필요가 없습니다.',
     'm.s2.note.b': '우선 움직이는 모습을 보고 싶을 때',
     'm.s2.note.p': '실제 작업을 기다리지 않고 표시를 확인하고 싶다면, 보고 싶은 프로젝트 폴더에서 다음을 실행하세요. 대기 중・가동 중・보고 대기・완료가 모두 갖춰진 더미 데이터가 들어갑니다.',
+    'm.mask.b':    '아래 경로는 사용자 이름을 가렸습니다',
+    'm.mask.p':    '이 페이지의 경로가 홈 폴더를 지날 때, 사용자 이름 부분은 <code>&lt;username&gt;</code> 으로 표시됩니다——화면 공유나 스크린샷에 찍히지 않도록 하기 위해서입니다. 명령을 실행하기 전에, 그 부분을 자신의 사용자 이름으로 바꿔 주세요.',
 
     'm.s3.title':  '로봇의 표정으로 상태를 알 수 있습니다',
     'm.s3.p1':     '상태는 네 가지뿐입니다. 표정과 움직임이 다르므로 멀리서도 구별할 수 있습니다. 이 중 「보고 대기」는 작업 중의 한 종류로, <strong>가동 중인 부하를 거느린 유닛</strong>에 붙습니다.',
@@ -759,52 +861,58 @@
     'm.s4.legend4':'<b>보고 대기 배지</b> — 가동 중인 부하를 거느린 유닛에 붙습니다（아래 상자 참조）',
     'm.s4.legend5':'<b>임무 내용</b> — 무엇을 시키고 있는지（두 줄까지）',
     'm.s4.legend6':'<b>경과／토큰／도구</b> — 가동 중에는 경과 시간이 매초 늘어납니다. 완료 후에는 실측값',
+    'm.s4.legend7':'<b>몸체 색</b> — 그 유닛을 움직인 모델을 보여줍니다（아래 상자 참조）',
     'm.s4.p1':     '완료되면 카드 아래에 <strong>결과의 한 줄 요약</strong>이 초록 글씨로 추가되고, 카드 전체가 회색으로 가라앉습니다. 「더 볼 필요가 없는 것」이 시각적으로 가라앉으므로, 지금 움직이는 것만 눈에 들어옵니다.',
     'm.s4.note1.b':'「보고 대기」는 도출된 값입니다',
     'm.s4.note1.p1':'가동 중인 부하를 한 대 이상 거느린 유닛에는 「보고 대기」가 붙고, 움직임이 호흡으로 잦아들며 호박색이 됩니다. 지휘탑이 이 상태라면 봐야 할 것은 오른쪽으로 뻗은 자식 쪽입니다.',
     'm.s4.note1.p2':'다만 이것은 <code>state.json</code> 에 적힌 사실이 아니라 <strong>부모-자식 관계로부터의 도출</strong>입니다. 「자식이 움직이고 있다」는 사실이지만 「부모가 기다리고 있다」는 추측이며, 부모가 자식과 병행하여 자기 작업을 진행 중일 때는 실제와 어긋납니다. 토큰 수 같은 실측값과는 다루는 방식이 다르다는 점을 기억해 두세요. 이를 보고하기 위한 명령은 없습니다（기록은 지금도 「시작 직후」와 「완료 보고 시」 두 시점뿐입니다）.',
     'm.s4.note2.b':'진행률 표시줄은 없습니다',
     'm.s4.note2.p1':'서브에이전트는 작업 중에 「지금 몇 퍼센트」인지 보고하지 않습니다. 즉 퍼센트의 실측값은 어디에도 존재하지 않습니다. 예전에는 「움직이고 있다」는 것만 나타내는 흐르는 줄무늬를 두었지만, 진행 정도를 나타내는 것처럼 읽혀서 없앴습니다. 가동 중인지 아닌지는 로봇의 움직임과 카드 색으로 알 수 있습니다. 경과 시간은 진짜입니다.',
+    'm.s4.note3.b':'몸체 색과 모델의 대응',
+    'm.s4.note3.p1':'달걀형 몸체와 팔의 색은, 그 유닛을 움직인 모델을 나타냅니다. 로봇의 나머지 부분——눈, 바이저, 안테나, 가슴의 램프, 입, 그리고 상태 애니메이션（대기 중／작업 중／보고 대기／완료）——은 모델에 따라 바뀌지 않습니다. 같은 자리에 두 가지 의미를 겹쳐 경쟁시키지 않기 위해서입니다.',
+    'm.s4.note3.li1':'<b>빨강</b> — Fable',
+    'm.s4.note3.li2':'<b>주황</b> — Opus / Sol',
+    'm.s4.note3.li3':'<b>연한 초록</b> — Haiku / Luna',
+    'm.s4.note3.li4':'<b>흰색</b> — Sonnet / Terra / Gemini, 그리고 도구가 인식하지 못하는 모든 모델 이름',
+    'm.s4.note3.p2':'인식하지 못하는 모델 이름은 항상 흰색 그대로 둡니다. 추측해서 다른 색을 칠하면, 화면이 어떤 모델이었는지에 대해 조용히 거짓말을 하게 되기 때문입니다.',
 
     'm.s5.title':  '어떤 팀이 화면에 나오는가',
-    'm.s5.p1':     '예전에 있던 「프로젝트가 늘면 화면 위쪽에 전환용 제목이 늘어서고, 클릭해서 전환한다」는 구조는 없앴습니다. 지금은 화면에 나올 팀을 이쪽에서 고를 수 없습니다. <strong>지금 움직이는 팀 전부</strong>와, 가장 최근에 <code>start</code> 된 팀（이미 완료되었더라도）만 자동으로 나옵니다.',
+    'm.s5.p1':     '화면에 무엇이 나오는지는 두 가지로 정해집니다. <strong>고를 수 있는 범위</strong>는 탭 바입니다. 가동 중인 각 프로젝트의 미션과 <code>history/</code> 에 남아 있는 지난 미션들이 <code>start</code> 한 번당 탭 하나로 그곳에 나란히 놓입니다. <strong>실제로 표시되는 것</strong>은 그중 선택한 탭 하나뿐이며, 화면에는 한 번에 팀 하나만 나옵니다. 화면을 열면 가동 중인 팀이 자동으로 선택되고, 지난 기록을 보는 동안 새 미션이 시작되면 화면은 그 가동 중인 팀으로 다시 이동합니다.',
     'm.s5.th1':    '상황',
     'm.s5.th2':    '화면',
-    'm.s5.r1a':    '기록이 하나도 없거나 전부 오래됨',
+    'm.s5.r1a':    '기록이 전혀 없음',
     'm.s5.r1b':    '대기 화면',
     'm.s5.r2a':    '팀 A 가 가동 중',
-    'm.s5.r2b':    'A 를 표시',
+    'm.s5.r2b':    'A 가 선택되어 표시됨',
     'm.s5.r3a':    'A 가 <code>finish</code> 함',
     'm.s5.r3b':    'A 그대로 표시（완료 상태로 남음）',
     'm.s5.r4a':    '다음으로 B 가 <code>start</code> 함',
-    'm.s5.r4b':    'B 만（A 는 화면에서 내려감）',
+    'm.s5.r4b':    '화면은 B 로 이동함. A 는 탭 바에 남아 다시 불러올 수 있음',
     'm.s5.r5a':    'A 와 B 가 동시에 가동 중',
-    'm.s5.r5b':    'A 와 B 를 세로로 쌓아 동시에 표시',
+    'm.s5.r5b':    '둘 다 탭이 생김. 선택한 쪽만 표시됨（한 번에 하나）',
     'm.s5.diagram':
-      '대기（기록이 없거나 전부 오래됨）\n' +
+      '대기（기록이 전혀 없음）\n' +
       '   │ start\n' +
       '   ▼\n' +
-      'A 가동 중 ────────────────────► 화면: A\n' +
+      'A 가 가동 중 ────────────────► 화면: A\n' +
       '   │ finish\n' +
       '   ▼\n' +
-      'A 완료（.current 는 A 그대로）──► 화면: A（완료 상태로 계속 표시됨）\n' +
+      'A 완료（.current 는 A 그대로）─► 화면: A（완료 상태로 계속 표시됨）\n' +
       '   │ 다른 폴더에서 start\n' +
       '   ▼\n' +
-      'B 가동 중（.current 가 B 로 바뀜）► 화면: B（새 쪽으로 교체되고 A 는 퇴장）\n' +
+      'B 가동 중（.current 가 B 로 바뀜）► 화면: B（A 는 탭 바에 남음）\n' +
       '\n' +
-      'A 가 아직 가동 중인 채로 B 도 가동되면 둘 다 세로로 쌓여 표시됩니다.\n' +
-      '새로 시작한 쪽이 위로 옵니다.\n' +
-      '   ┌───────────────┐\n' +
-      '   │ B（새 쪽）      │ ← 위\n' +
-      '   ├───────────────┤\n' +
-      '   │ A              │\n' +
-      '   └───────────────┘',
+      '지금 가동 중인 것 전부와 지난 미션 전부가 탭 바에 나란히 놓입니다.\n' +
+      '화면은 선택한 탭 하나만 표시합니다——한 번에 하나. 가장 최근 것이 맨 왼쪽에 옵니다.\n' +
+      '   ┌──────────────┬───────────┬────────────────┐\n' +
+      '   │ B（가동 중） │ A（완료） │ A（지난 기록） │ ← 탭 바\n' +
+      '   └──────────────┴───────────┴────────────────┘',
     'm.s5.note1.b':'병렬로 돌린 한쪽이 먼저 끝나도 완료 보고는 사라지지 않습니다',
-    'm.s5.note1.p1':'A 와 B 를 병렬로 돌리다가 A 가 먼저 <code>finish</code> 했다고 합시다. 이때 A 는 더 이상 「가장 최근에 <code>start</code> 된 팀」이 아니므로, 그대로 두면 완료된 순간 화면에서 사라져 A 의 성과를 아무도 읽지 못한 채 끝나 버립니다. 그렇게 되지 않도록, <b>지금 움직이는 팀이 시작된 뒤에 완료된 팀</b>도 남겨 둡니다.',
+    'm.s5.note1.p1':'A 와 B 를 병렬로 돌리다가 A 가 먼저 <code>finish</code> 했다고 합시다. 이 시점에서 A 는 더 이상 「가장 최근에 <code>start</code> 된 팀」이 아니므로, 그대로 두면 완료된 순간 화면으로 보내지지 않게 됩니다. 그렇게 되지 않도록, <b>지금 가동 중인 팀이 시작된 뒤에 완료된 팀</b>은 계속 가동 중인 것으로 취급되어 보내집니다. A 의 기록은 어느 쪽이든 탭 바에서 볼 수 있지만, 이는 읽고 있던 보고서가 도착한 그 순간 그대로 멈춰버리지 않도록 하기 위해서입니다.',
     'm.s5.note1.p2':'순서대로 작업하고 있을 뿐인 경우（이전 팀이 끝난 뒤 다음을 <code>start</code> 한 경우）에는 이전 팀의 완료가 다음 시작보다 앞서므로, 위 표대로 화면에서 내려갑니다. 이 둘은 완료한 시각과 시작한 시각의 앞뒤로 자동 구분됩니다.',
-    'm.s5.note2.b':'어떤 팀을 보여줄지는 이쪽에서 고를 수 없습니다',
-    'm.s5.note2.p1':'<code>missions/.current</code> 라는 파일을 고쳐 쓰는 것은 <code>start</code> 와 <code>demo</code> 뿐입니다. <code>add</code> / <code>done</code> / <code>finish</code> 는 이 파일을 움직이지 않으므로, 완료된 화면이 제멋대로 다른 프로젝트로 바뀌는 일은 없습니다. 전환을 고르는 화면 부품도, 숨기는 조작도 없으며, URL 에 <code>?project=</code> 같은 지정을 붙여도 의도적으로 받지 않습니다. 어떤 팀을 보여줄지는 서버 쪽이 정한다는 설계입니다.',
-    'm.s5.p2':     '<code>running</code>（가동 중）인 채로 갱신이 멈춘 오래된 기록을 계속 보여주지 않도록, 기본 <strong>3시간</strong>의 시간 창이 있습니다. <code>state.json</code> 의 갱신이 그보다 오래된 <code>running</code> 은 「방치되었다」고 보고 화면에 나오지 않습니다. 이 시간 창은 환경 변수 <code>AGENT_DASHBOARD_ACTIVE_WINDOW</code>（초 단위）로 바꿀 수 있습니다.',
+    'm.s5.note2.b':'어떤 팀을 보여줄지는 서버 쪽의 결정입니다',
+    'm.s5.note2.p1':'<code>missions/.current</code> 라는 파일을 고쳐 쓰는 것은 <code>start</code> 와 <code>demo</code> 뿐입니다. <code>add</code> / <code>done</code> / <code>finish</code> 는 이 파일을 움직이지 않으므로, 완료된 화면이 제멋대로 다른 프로젝트로 바뀌는 일은 없습니다. URL 에 <code>?project=</code> 같은 지정을 붙여도 의도적으로 받지 않습니다——어떤 팀을 서버가 보낼지는 설계상 서버 쪽이 정하는 일이기 때문입니다. <em>당신</em>이 고를 수 있는 것은, 그중 어느 것을——그리고 어느 지난 기록을——탭 바에서 볼지 입니다. 그 선택은 브라우저에 기억됩니다.',
+    'm.s5.p2':     '<code>running</code>（가동 중）인 채로 갱신이 멈춘 오래된 기록을 계속 보여주지 않도록, 기본 <strong>3시간</strong>의 시간 창이 있습니다. <code>state.json</code> 의 갱신이 그보다 오래된 <code>running</code> 은 「방치되었다」고 보고, 가동 중인 팀으로는 더 이상 보내지지 않습니다（기록 자체는 남아 탭 바에서 계속 선택할 수 있습니다）. 이 시간 창은 환경 변수 <code>AGENT_DASHBOARD_ACTIVE_WINDOW</code>（초 단위）로 바꿀 수 있습니다.',
     'm.s5.p3':     '어느 프로젝트가 될지는 <strong>작업 중인 폴더로 자동으로 정해집니다</strong>. 같은 이름의 폴더가 다른 곳에 있어도 전체 경로로 구분되므로 섞이지 않습니다（구분에 쓰이는 이름은 기록 폴더 안에만 나타나고 화면에는 나오지 않습니다）.',
     'm.s5.note3.b':'화면에서 사라져도 기록은 지워지지 않습니다',
     'm.s5.note3.p1':'표시되지 않게 된 팀의 기록은 <code>missions/&lt;슬러그&gt;/</code> 에 그대로 남아 있습니다. 목록・삭제・초기화에는 다음 명령을 씁니다.',
@@ -813,6 +921,13 @@
     'm.s5.c1':     '남아 있는 기록의 목록. <code>●</code> 가 지금 화면에 나와 있는 팀',
     'm.s5.c2':     '기록을 지웁니다. 기본적으로는 <code>trash/&lt;슬러그&gt;-&lt;일시&gt;/</code> 로 옮길 뿐이므로, 폴더를 되돌리면 복구됩니다. 완전히 지우려면 <code>--yes --force</code> 를 붙입니다',
     'm.s5.c3':     '그 프로젝트의 기록을 대기 중으로 되돌립니다（폴더 자체는 남습니다）',
+    'm.s5.note4.b':'같은 기록을 두 세션이 놓고 다투지 않도록 막는 장치',
+    'm.s5.note4.p1':'같은 폴더를 두 개의 Claude Code 세션에서 여는 일——두 번째 창, 두 번째 터미널, 다운되기 전에 남아 있던 세션——은 흔히 일어납니다. 둘 다 같은 프로젝트의 기록에 쓰려고 하기 때문에, 최근까지는 나중에 <code>start</code> 한 쪽이, 먼저 돌아가고 있던 쪽의 가동 중인 미션을 아무도 모르는 사이에 히스토리로 밀어내며 중단시켜 버릴 수 있었습니다. 이렇게 중단된 기록은 나중에 완료로 되돌릴 수 없습니다. 더 나쁜 것은, 자신이 기록을 잃었다는 사실을 모르는 채로 중단당한 세션이 <code>add</code> / <code>done</code> / <code>finish</code> 를 계속 성공적으로 호출할 수 있었다는 점입니다——그 시점에는 이미 남의 미션이 되어 있는 곳에 써 넣으며, 두 기록을 뒤섞어 버리는 것입니다.',
+    'm.s5.note4.p2':'이제는 <code>start</code>, <code>add</code>, <code>done</code>, <code>finish</code>, <code>log</code>, <code>demo</code> 모두가 쓰기 전에 기록의 소유자(<code>start</code> 가 새겨 둔 <code>mission.sessionId</code>)를 확인합니다. 분명히 다른 세션이라고 판단되면, 명령은 그 대신 거부됩니다——아무것도 쓰지 않고, 아무것도 중단시키지 않습니다——그리고 도구가 이미 만들어 둔 <code>--project</code> 이름이 붙은, 그대로 붙여 넣으면 되는 명령 줄을 출력합니다. 그러면 당신의 작업은 진행 중인 것과 충돌하는 대신 자기만의 기록을 갖게 됩니다. <code>start</code> / <code>add</code> / <code>done</code> / <code>finish</code> 모두에 같은 <code>--project</code> 를 붙여 주세요.',
+    'm.s5.note4.p3':'그래도 밀어붙이고 싶다면(예전 동작 방식) <code>--force</code> 를 붙이세요. 그렇게 해도 중단당한 기록이 사라지는 것은 아닙니다——탭 바에서 그 기록을 열어 상태 배지 위에 마우스를 올리면, 어떤 미션에 의해 언제 중단되었는지 알려 줍니다. 다만 그것을 완료로 되돌리는 것만은 할 수 없습니다. 이 제약 자체는 변하지 않았고, 이 장치는 바로 그런 일이 실수로 일어나기 전에 한 번 멈춰 생각하게 만들기 위해 있는 것입니다.',
+    'm.s5.note5.b':'이 장치가 지켜주지 못하는 경우',
+    'm.s5.note5.p1':'이 확인은 양쪽 모두에 표시가 있을 때만 작동합니다. 기록 쪽이 자신의 소유자를 알고 있어야 하고, 호출하는 쪽의 세션도 식별할 수 있어야 합니다. 이 장치가 생기기 전에 <code>start</code> 된 기록이나, <code>CLAUDE_CODE_SESSION_ID</code> 를 한 번도 받지 못한 터미널(훅이 연결되어 있지 않거나, 명령을 손으로 입력한 경우)은 예전과 완전히 똑같이 그대로 통과합니다. 근거 없는 추측으로 거부하기보다, 도구로서 계속 쓸 수 있는 쪽을 택하고 있습니다.',
+    'm.s5.note5.p2':'서브에이전트는 부모의 세션 ID 를 그대로 물려받으므로, 부모의 <code>start</code> 가 시작한 미션에 자유롭게 <code>add</code> / <code>done</code> 할 수 있습니다. 이 장치가 대상으로 삼는 것은 서로 독립된 두 개의 세션이지, 지휘탑과 그 아래 서브에이전트의 관계가 아닙니다.',
 
     'm.s6.title':  '「—」는 고장이 아닙니다',
     'm.s6.note.b': '중요',
@@ -850,12 +965,12 @@
     'm.s7.p7':     '지금 실제 저장 위치는 다음과 같습니다.',
     'm.s7.h6':     '손자 에이전트의 자가 보고',
     'm.s7.p8':     '<code>update_state.py</code> 를 거칠 수 없는 서브에이전트（손자에 해당하는 존재）는 <code>missions/&lt;슬러그&gt;/agents/&lt;ID&gt;.json</code> 이라는 파일에 스스로 기록해 화면에 등록할 수도 있습니다. 서버는 읽을 때 이 내용을 <code>state.json</code> 과 섞지만, <strong>ID 가 겹치면 <code>state.json</code> 쪽이 이깁니다</strong>（자가 보고는 어디까지나 보조적인 취급입니다）. <code>start</code> 를 실행하면 이전 미션의 자가 보고 파일은 전부 삭제됩니다. 완료 보고가 오지 않은 손자가 언제까지나 「가동 중」인 채 화면에 남는 것을 막기 위해서입니다.',
-    'm.s7.h7':     '세대（몇 번째 열인가）는 서버가 매번 다시 계산합니다',
-    'm.s7.p9':     '유닛이 화면에서 몇 세대（몇 번째 열）에 오는지는 저장된 값을 그대로 쓰지 않고, <code>parentId</code>（부모의 ID）를 따라가 서버가 매번 다시 산출합니다. 그래서 자가 보고 파일에 세대 값을 잘못 써도 화면이 망가지지 않습니다. 부모를 찾을 수 없는 유닛은 지휘탑 바로 아래로 취급되며, 부모-자식 관계가 순환하는 경우도 검출해 처리를 멈춥니다.',
+    'm.s7.h7':     '세대는 서버가 매번 다시 계산합니다',
+    'm.s7.p9':     '유닛이 화면에서 몇 세대에 오는지는 저장된 값을 그대로 쓰지 않고, <code>parentId</code>（부모의 ID）를 따라가 서버가 매번 다시 산출합니다. 그래서 자가 보고 파일에 세대 값을 잘못 써도 화면이 망가지지 않습니다. 부모를 찾을 수 없는 유닛은 지휘탑 바로 아래로 취급되며, 부모-자식 관계가 순환하는 경우도 검출해 처리를 멈춥니다.',
     'm.s7.h8':     '계통수를 배치하는 방식',
-    'm.s7.p10':    '유닛은 「옆으로 뻗는 정형 트리」 형태로 배치됩니다. 부모는 자신이 낳은 자식들이 차지하는 세로 범위의 중앙에 오도록 놓입니다. 깊은 세대부터 차례로 위치를 확정해 가고, 간격이 좁아지면 그 유닛과 그 아래 부분 트리를 통째로 아래로 밀어냅니다. 각 유닛의 위치는 세로 좌표（<code>top</code>）만으로 지정하며, 화면상의 나열 순서 자체는 바꾸지 않습니다. 요소의 순서를 바꾸면 브라우저가 그 아래의 CSS 애니메이션을 중단하고 처음부터 다시 만들기 때문입니다. 유닛이 늘어날 때마다 이미 표시된 모든 로봇의 호흡・깜빡임・표정 변화가 초기화되는 것을 피하고 있습니다.',
+    'm.s7.p10':    '유닛은 「옆으로 뻗는 정형 트리」 형태로 배치됩니다. 부모는 자신이 낳은 자식들이 차지하는 세로 범위의 중앙에 오도록 놓입니다. 깊은 세대부터 차례로 위치를 확정해 가고, 간격이 좁아지면 그 유닛과 그 아래 부분 트리를 통째로 아래로 밀어냅니다. 각 유닛의 위치는 세로 좌표（<code>top</code>）만으로 지정하며, 화면상의 나열 순서 자체는 바꾸지 않습니다. 요소의 순서를 바꾸면 브라우저가 그 아래의 CSS 애니메이션을 중단하고 처음부터 다시 만들기 때문입니다. 유닛이 늘어날 때마다 이미 표시된 모든 로봇의 호흡・깜빡임・표정 변화가 초기화되는 것을 피하고 있습니다.자식을 갖지 않는 유닛(잎)이 같은 부모 아래에 4대 이상 늘어서면, 세로 한 줄이 아니라 여러 열로 접어서 묶습니다. 세대의 띠가 몇 열 너비를 갖는지는 나무 전체가 화면에 가장 크게 들어가는 형태를 매번 골라 정합니다. 다만 그 띠를 가로지르는 부모-자식 선이 접힌 유닛을 관통하게 되는 경우에는, 그 띠만 접기를 그만두고 한 열로 되돌립니다.',
     'm.s7.h9':     '부모와 자식을 잇는 선',
-    'm.s7.p11':    '부모와 자식을 잇는 선은 실제로 그려진 카드와 로봇의 위치를 측정해 그 이음매에 곡선을 그립니다. 계산상의 위치가 아니라 실제로 그려진 위치를 쓰므로, 글자 수나 줄바꿈으로 카드 높이가 달라져도 선이 어긋나지 않습니다. 가동 중인 유닛이 많을 때는 선의 파선 애니메이션을 멈춥니다. 유닛 수만큼 매 프레임 다시 그리기가 발생하므로, 움직임을 멈춰 부하를 억제합니다.',
+    'm.s7.p11':    '부모와 자식을 잇는 선은 실제로 그려진 카드와 로봇의 위치를 측정해 그 이음매에 곡선을 그립니다. 계산상의 위치가 아니라 실제로 그려진 위치를 쓰므로, 글자 수나 줄바꿈으로 카드 높이가 달라져도 선이 어긋나지 않습니다. 가동 중인 유닛이 많을 때는 선의 파선 애니메이션을 멈춥니다. 유닛 수만큼 매 프레임 다시 그리기가 발생하므로, 움직임을 멈춰 부하를 억제합니다.접어서 묶인 유닛에는 하나씩 곡선을 그리는 대신, 부모에서 틀로 줄기선 한 줄을 긋고, 틀 안은 행마다의 가로선과 각 로봇의 머리 위로 떨어지는 짧은 세로선으로 잇습니다. 상태 색을 갖는 것은 이 짧은 세로선뿐입니다. 하나의 가로선에는 가동 중과 완료가 섞이므로, 가로선을 상태로 칠하면 어느 유닛의 상태인지 정해지지 않기 때문입니다.',
     'm.s7.h10':    '화면의 갱신',
     'm.s7.p12':    '화면은 1초마다 최신 상태를 가져오는 방식으로 갱신됩니다. WebSocket 같은 상시 연결 구조는 쓰지 않습니다（의존을 늘리지 않기 위해서입니다）. 가져온 내용에서 미션・유닛・로그 건수의 특징을 만들어, 지난번과 달라지지 않았으면 다시 그리지 않습니다. 가동 중인 유닛의 경과 시간만 매초 늘어납니다. 서버의 시각과 브라우저의 시각이 어긋나 있어도, 응답에 담긴 서버 쪽 시각으로 매번 보정됩니다. 통신 지연 등으로 오래된 응답이 나중에 도착한 경우, 그 오래된 쪽은 버립니다.',
     'm.s7.h11':    '서버',
@@ -863,9 +978,11 @@
     'm.s7.h12':    'VSCode 확장',
     'm.s7.p14':    'VSCode 확장은 서버를 시작해 <code>http://127.0.0.1:&lt;포트&gt;/</code> 를 webview 안에 끼워 넣어 보여줄 뿐입니다. 화면의 내용은 브라우저에서 직접 볼 때와 완전히 같습니다. 생존 확인은 응답 안에 자기 자신의 도구 위치（<code>toolRoot</code>）가 들어 있는지로 판정하므로, 우연히 다른 사람이 따로 띄운 서버에 붙는 일은 없습니다.',
     'm.s7.h13':    '실측값만 내보냅니다',
-    'm.s7.p15':    '경과 시간・토큰 수・도구 사용 횟수 중 넘어오지 않은 값은 「불명」으로 저장되어 화면에는 <code>—</code> 로 표시됩니다. 그럴듯한 추정값으로 채우지 않습니다. 이 방침은 코드의 여러 곳（설명문・명령 도움말・실행 시 표시）에 명기되어 있습니다. 이 화면의 목적은 「실제로 무슨 일이 있었는가」를 보는 것이므로, 채워 버리면 그 목적이 망가지기 때문입니다.',
+    'm.s7.p15':    '경과 시간・토큰 수・도구 사용 횟수, 그리고 <strong>모델 이름</strong> 중 넘어오지 않은 값은 「불명」으로 저장됩니다——앞의 세 가지는 화면에 <code>—</code> 로 표시되고, 모델 이름은 「불명」으로 표시됩니다. 그럴듯한 추정값으로 채우는 일은 절대 없습니다. 지휘부 자신의 모델도 같은 규칙을 따릅니다. <code>start</code> 에서 <code>--model</code> 을 빼면, 고정된 모델 ID 로 대체되는 대신 불명으로 표시됩니다. 이 방침은 코드의 여러 곳(설명문・명령 도움말・실행 시 표시)에 명기되어 있습니다. 이 화면의 목적은 「실제로 무슨 일이 있었는가」를 보는 것이므로, 채워 버리면 그 목적이 망가지기 때문입니다.',
     'm.s7.h14':    '「？」버튼이 오버레이로 열리는 이유',
     'm.s7.p16':    'VSCode 의 webview 는 안에 끼워 넣은 화면이 새 창을 여는 것을 허용하지 않습니다（<code>sandbox</code> 속성에 <code>allow-popups</code> 가 들어 있지 않기 때문입니다）. 이 제약은 중첩된 화면에도 미치므로, VSCode 에 끼워 넣어 보고 있을 때는 설명서 링크를 새 창으로 열려고 해도 <strong>오류조차 나지 않은 채 무시됩니다</strong>. 그래서 이 설명서는 새 창이 아니라 화면 안의 오버레이로 열도록 하고 있습니다. 브라우저에서 직접 보고 있을 때는 「새 창으로 열기」도 고를 수 있습니다.',
+    'm.s7.h15':    '창에 맞추는 확대 비율（자동 맞춤）',
+    'm.s7.p17':    '오른쪽 위의 ⛶ 버튼으로 자동 맞춤을 켜고 끕니다. 켜져 있는 동안에는 옆의 확대 비율 표시 앞에 「자동」이 붙고, 유닛이 태어나거나 완료될 때마다 계통수 전체가 창에 들어오는 확대 비율로 자동으로 다시 맞춰집니다——전체를 보기 위해 일일이 손으로 확대 비율을 바꿀 필요가 없습니다. 값 직접 입력, ± 버튼 사용, 계통수 위에서의 Ctrl+휠은 모두 수동 조작에 해당하며, <strong>수동 조작은 항상 자동보다 우선합니다</strong>——그 자리에서 자동 맞춤이 꺼지고, 그때 맞춘 확대 비율 그대로 멈춥니다. 다시 켜려면 ⛶ 을 한 번 더 누르세요. 예전 버전에서는 자신이 방금 한 조작을 계속 뒤쫓아 확대와 축소를 끝없이 반복하며 안정되지 않는 경우가 있었지만, 그 반복 진동은 이제 해결되었습니다.',
 
     'm.s8.title':  '직접 쓰는 명령',
     'm.s8.p1':     '평소에는 Claude 가 자동으로 갱신하므로, 당신이 쓰는 것은 사실상 이것뿐입니다. 표에서는 <code>{LAUNCHER_PATH}</code> 를 <code>dash</code> 로 줄여 썼습니다. <code>{PY} {UPDATE_PY}</code> 라고 써도 같은 동작입니다.',
@@ -876,7 +993,8 @@
     'm.s8.c3':     '지금 프로젝트의 내용을 표로 확인합니다',
     'm.s8.c4':     '표시 확인용 더미 데이터를 넣습니다',
     'm.s8.c5':     '지금 프로젝트를 비웁니다（다른 프로젝트에는 영향이 없습니다）',
-    'm.s8.c6':     '다른 PC 로 옮겼을 때의 초기 설정（Claude 의 설정 파일에 경로를 씁니다）',
+    'm.s8.c6':     '다른 PC 로 옮겼을 때의 초기 설정（이 컴퓨터에 있는 모든 AI 코딩 CLI 의 지시 파일에 경로를 씁니다）',
+    'm.s8.c7':     '이 프로젝트의 지난 미션을 나열합니다（<code>history/</code> 에 남아 있는 것들）',
     'm.s8.note.b': '실행하는 위치',
     'm.s8.note.p': '대상 프로젝트는 <strong>명령을 실행한 폴더</strong>로 정해집니다. 다른 프로젝트를 다루고 싶을 때는 <code>--project learning</code> 처럼 이름의 일부를 붙이세요.',
 
@@ -892,16 +1010,20 @@
     'm.s9.q5':     '필요 없어진 프로젝트를 지우고 싶습니다',
     'm.s9.a5':     '<code>{PY} {UPDATE_PY} remove</code> 를 실행하는 것이 안전합니다. 기본적으로는 <code>trash/&lt;슬러그&gt;-&lt;일시&gt;/</code> 로 옮길 뿐이므로, 잘못해도 폴더를 되돌리면 복구됩니다. 손으로 지우고 싶다면 아래 폴더에서 해당 프로젝트의 폴더를 통째로 삭제하세요. 목록（<code>{PY} {UPDATE_PY} projects</code>）에서 사라집니다.',
     'm.s9.q6':     '지난 미션은 어디까지 남나요?',
-    'm.s9.a6':     '프로젝트마다 <strong>가장 최근 미션 하나</strong>가 남습니다. 새 미션을 시작하면 그 프로젝트의 지난번 것은 덮어써집니다（다른 프로젝트는 무관합니다）. 이벤트 로그는 최근 300줄까지 보관됩니다.',
-    'm.s9.q7':     'Claude 가 갱신해 주지 않습니다',
-    'm.s9.a7a':    '전역 설정（<span class="path">{CLAUDE_MD}</span>）에 운용 규칙을 써 두었으므로 보통은 자동으로 갱신됩니다. 잊은 것 같으면 「대시보드도 갱신해 줘」라고 한마디 덧붙이세요.',
-    'm.s9.a7b':    '설정이 들어 있지 않은 경우（다른 PC 에 복사한 직후 등）에는 한 번만 <code>dash install</code> 을 실행하세요. 그 PC 에서의 올바른 경로가 기록됩니다.',
+    'm.s9.a6':     '<strong>지난 미션은 최대 20개</strong>까지 프로젝트별로 보관됩니다. 다시 <code>start</code> 해도 이전 것을 덮어쓰지 않습니다——기록 전체가 <code>missions/&lt;project&gt;/history/&lt;start time&gt;/</code> 로 옮겨지며, 탭 바에서 다시 불러올 수 있습니다. 20개를 넘으면 가장 오래된 것부터 <code>trash/</code> 로 옮겨집니다（폴더를 되돌리면 복구됩니다）. 이 개수는 환경 변수 <code>AGENT_DASHBOARD_HISTORY_KEEP</code> 으로 바꿀 수 있습니다. 이벤트 로그는 최근 300줄까지 보관됩니다.',
+    'm.s9.q7':     'AI 가 갱신해 주지 않습니다',
+    'm.s9.a7a':    '운용 규칙은 이 컴퓨터에 설치된 모든 AI 코딩 CLI 의 지시 파일（<span class="path">{INSTRUCTION_FILES}</span>）에 적혀 있으므로 보통은 자동으로 갱신됩니다. 잊은 것 같으면 「대시보드도 갱신해 줘」라고 한마디 덧붙이세요.',
+    'm.s9.a7b':    '그 규칙이 들어 있지 않은 경우（다른 PC 에 복사한 직후 등）에는 한 번만 <code>dash install</code> 을 실행하세요. 그 PC 에서 찾아낸 각 CLI 에 올바른 경로가 기록됩니다.',
     'm.s9.q8':     '다른 PC 에서 쓰고 싶다 / 위치를 옮기고 싶다',
     'm.s9.a8a':    '폴더를 통째로 복사하고, 복사한 곳에서 <code>dash install</code> 을 한 번 실행하세요. 경로는 실행 시 자동으로 해결되므로 어디에 둬도 상관없습니다.',
     'm.s9.a8b':    '기록의 저장 위치를 바꾸고 싶다면 환경 변수 <code>AGENT_DASHBOARD_HOME</code> 에 폴더를 지정하세요（공유 드라이브나 다른 드라이브에 두고 싶을 때 씁니다）.',
     'm.s9.q9':     '이름과 임무 내용만 화면과 다른 언어로 나온다',
-    'm.s9.a9a':    '이름과 임무 내용은 <strong>번역되지 않습니다</strong>. 이것들은 Claude 가 부대를 등록할 때 적은 자유 기술이며, 화면은 기록된 그대로 내보냅니다——오른쪽 위에서 언어를 바꾸면 그 주위의 제목과 라벨은 바뀌지만, 기록 자체는 바뀌지 않습니다.',
-    'm.s9.a9b':    'Claude 가 어느 언어로 쓸지는 명령 쪽에서 따로 정해져 있습니다. <code>dash lang ko</code>(또는 <code>en</code> / <code>ja</code> / <code>zh</code>)를 실행하고, 이어서 <code>dash install</code>, 그다음 Claude 를 재시작하세요. 이미 기록된 미션은 쓰였을 때 그대로입니다. 이 화면은 「실제로 일어난 일」을 비추기 위한 것이기 때문입니다.',
+    'm.s9.a9a':    '이름과 임무 내용은 <strong>번역되지 않습니다</strong>. 이것들은 AI 가 부대를 등록할 때 적은 자유 기술이며, 화면은 기록된 그대로 내보냅니다——오른쪽 위에서 언어를 바꾸면 그 주위의 제목과 라벨은 바뀌지만, 기록 자체는 바뀌지 않습니다.',
+    'm.s9.a9b':    'AI 가 어느 언어로 쓸지는 명령 쪽에서 따로 정해져 있습니다. <code>dash lang ko</code>(또는 <code>en</code> / <code>ja</code> / <code>zh</code>)를 실행하고, 사용 중인 AI 코딩 CLI 세션을 재시작하세요——이 명령 하나가 운용 규칙도 새 언어로 다시 쓰므로, 설정한 언어가 그대로 팀을 짜는 언어가 됩니다. 이미 기록된 미션은 쓰였을 때 그대로입니다. 이 화면은 「실제로 일어난 일」을 비추기 위한 것이기 때문입니다.',
+
+    'm.s9.q10':    '깜빡 잊은 미션을, 도구가 스스로 닫아 줄 수 있나요?',
+    'm.s9.a10a':   '있습니다. <code>autofinish</code> 는 사용 중인 AI 코딩 CLI 의 SessionEnd 훅（자세한 내용은 <code>OPERATION.md</code> 참고）에 연결해 두는 안전망으로, 세션이 끝나는 순간 그때 가동 중이던 미션을 자동으로 닫습니다. <code>finish</code> 를 깜빡 잊은 채로 기록이 영원히 「가동 중」으로 남는 것을 막기 위한 것입니다. 가동 중인 미션이 없으면 아무것도 하지 않고 아무것도 출력하지 않습니다.',
+    'm.s9.a10b':   '그렇다고 직접 <code>finish</code> 를 호출하지 않아도 되는 것은 아닙니다. 자동으로 닫을 때 남는 것은 「세션 종료로 자동으로 닫았습니다」라는 기계적인 한 줄뿐이며, 실제로 무엇을 했는지에 대한 진짜 요약은 될 수 없습니다. 가능한 한 직접 <code>finish --headline "…"</code> 를 호출하세요. <code>autofinish</code> 는 어디까지나 당신이 미처 하지 못한 부분을 받아 주는 안전망일 뿐입니다.',
 
     'm.s10.title': '무엇이 어디에 있는가',
     'm.s10.p1':    '이 도구는 다음 위치에 있습니다.',
@@ -925,6 +1047,17 @@
       '      └─ agents/            손자 에이전트의 자가 보고',
     'm.s10.p2':    '기록의 저장 위치는 다음과 같습니다.',
     'm.s10.p3':    '추가 설치는 필요 없습니다. Python 의 표준 기능만으로 동작하며, 외부 라이브러리도 인터넷 연결도 쓰지 않습니다. 화면도 그 자체로 완결됩니다. Windows / macOS / Linux 어디서든 똑같이 동작합니다.',
+
+    'm.s11.title': '놓을 자리를 정할 수 없는 기체 구역',
+    'm.s11.p1':    '지금 가동 중인데도 기록이 전혀 없는 기체가 있습니다——대개는 그 기체에 대한 <code>add</code> 호출을 잊었기 때문입니다. 이 화면은 그 사실을 감추지 않습니다. 계통수 아래에 별도의 구역을 두어 그런 기체도 함께 표시합니다. 숫자가 맞지 않는 것을 누군가 나중에 알아차리게 하는 대신, <code>add</code> 를 빠뜨렸다는 사실이 일어난 그 순간 보이도록 하기 위해서입니다.',
+    'm.s11.p2':    '이 중 일부는 그래도 제자리에 올바르게 배치할 수 있습니다. 그 기체의 시작을 실측으로 추적할 수 있었기 때문입니다——전형적으로는, 손자 기체가 스스로 남긴 자가 보고에 이미 화면에 있는 기체를 가리키는 <code>parentId</code> 가 적혀 있는 경우입니다. 그런 기체는 다른 기체와 마찬가지로 곧바로 계통수 안에 들어가며, 이 구역에는 나타나지 않습니다. 여기 남는 것은 오직 시작을 정말로 실측으로 추적할 수 없었던 기체뿐입니다. 부모는 절대로 추측하지 않습니다——추측으로 선을 한 번이라도 그리는 순간, 이 화면은 「실측한 것만 보여주는 도구」가 아니게 되어 버리기 때문입니다.',
+    'm.s11.li1':   '여기 늘어선 로봇은 계통수에 있는 로봇의 정확히 절반 크기이고, 카드도 폭이 절반입니다——계통수의 일부가 아니라 성질이 다른 정보라는 것을 눈으로도 알 수 있게 하기 위해서입니다',
+    'm.s11.li2':   '경과 시간・토큰・도구 횟수・임무 내용 줄은 표시하지 않습니다——그것을 보고할 수 있는 기록이 없기 때문이며, 없는 것을 있는 것처럼 보여주느니 차라리 표시하지 않는 쪽을 택했습니다',
+    'm.s11.li3':   '지금 무엇을 하고 있는지——가장 최근에 호출한 도구, 그 횟수, 토큰의 추정치——는 실측할 수 있는 한 그대로 실시간으로 표시됩니다. 기록이 없다는 것과, 가동 중인 모습을 실측할 수 없다는 것은 별개의 이야기입니다',
+    'm.s11.li4':   '기동원의 이름만 로그에서 알아낼 수 있었던 경우（계통수에 놓을 만한 단서는 아니지만 이름은 남아 있는 경우）, 카드 아래에 작은 글씨로 표시됩니다. 그것조차 알아낼 수 없는 기체에는 아무것도 채워 넣지 않습니다',
+    'm.s11.note1.b':'미션을 닫아도 이 구역이 통째로 사라지지는 않습니다',
+    'm.s11.note1.p1':'<code>finish</code> 와 <code>autofinish</code> 는 모두, 미션을 완료로 표시하기 직전에 그때 이 구역에 남아 있던 기체를 그대로 기록에 새겨 넣습니다. 그래서 이런 기체가 닫는 순간 조용히 사라지는 일은 없습니다——마지막으로 보였던 모습 그대로, 완료된 기록 안에서도 계속 이곳에 남아 있습니다. 구역 자체는 제목 옆의 「숨기기」로 접어 둘 수 있습니다.',
+
     'm.footer1':   'Subagent Dashboard — Python 3.9 이상 / 외부 라이브러리 없음 / Windows・macOS・Linux 지원',
     'm.footer2':   'Claude 를 위한 상세 운용 절차는 <span class="path">{TOOL_ROOT}</span> 의 <code>OPERATION.md</code> 에 있습니다.',
   };

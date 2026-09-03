@@ -54,6 +54,39 @@ CATALOG["ja"] = {
         "      同じディレクトリで2本を並行するときは、start / add / done / finish の\n"
         "      すべてに --project <一意な名前> を付けて記録先を分けてください。",
 
+    # ---- owner conflict（別のセッションが使っている記録への書き込みを拒否する）
+    "unknown": "不明",
+    "{time} ago": "{time}前",
+    "another session is using this project's record right now.":
+        "このプロジェクトの記録は、いま別のセッションが使っています。",
+    "this record belongs to another session that is using it right now.":
+        "この記録は、いま別のセッションが使っているものです。",
+    '      The record here is "{title}" (started {when}).':
+        '      ここにある記録は「{title}」です（開始: {when}）。',
+    "      Starting here would push that record into the history while it is\n"
+    "      still running, and it could never be marked finished afterwards.\n"
+    "      Nothing was started.":
+        "      ここで start すると、稼働中のその記録が履歴へ押し出され、\n"
+        "      あとから完了にはできなくなります。\n"
+        "      何も開始していません。",
+    "      Writing here would file your work into that mission and mix the\n"
+    "      two records together. Nothing was written.":
+        "      ここで書き込むと、あなたの作業がそのミッションの一部として記録され、\n"
+        "      2本の記録が混ざります。何も書き込んでいません。",
+    "      Give your work its own record. Put the same --project on all four:":
+        "      自分の作業には専用の記録を用意してください。"
+        "次の4つすべてに同じ --project を付けます:",
+    '        start --project "{name}" --title "<name of the work>" '
+    '--model <your own model ID>':
+        '        start --project "{name}" --title "<作業名>" --model <自分のモデルID>',
+    "      To do it anyway, add --force.":
+        "      それでも実行するなら、--force を付けてください。",
+    "push the record that is here into the history even when another "
+    "session owns it":
+        "ここにある記録の持ち主が別のセッションでも、履歴へ押し出して開始する",
+    "write to this record even when another session owns it":
+        "この記録の持ち主が別のセッションでも書き込む",
+
     # ---- start
     "Command": "指令塔",
     "overall control": "全体統括",
@@ -107,6 +140,8 @@ CATALOG["ja"] = {
     "Back home — {headline} ({detail})": "帰還 — {headline}（{detail}）",
     "no report": "報告なし",
     "Marked done: {id} ({detail})": "完了にしました: {id}（{detail}）",
+    "  * Values you left out were measured from Claude Code's own records ({id}).":
+        '  * 省略された数値は、Claude Code 自身の記録から実測で補いました（{id}）。',
     '  * No token count was given, so it is null (the screen shows "—").':
         "  ※ トークン数は未指定のため null（画面では「—」表示）",
     '  * No tool-call count was given, so it is null (the screen shows "—").':
@@ -291,7 +326,18 @@ CATALOG["ja"] = {
     "ID of the parent (the command post when omitted)": "親のID（省略時は指令塔）",
     "model ID that was used": "使用したモデルID",
     "what the task is": "任務内容",
-    "initial state": "初期状態",
+    "ID of the Agent call that started it "
+    "(pairs the card with the real unit; usually left out)":
+        "その機体を起動した Agent 呼び出しのID（カードと実機を結ぶ。普通は省く）",
+    "called by Claude Code's hooks — do not type this yourself":
+        "Claude Code の hook から呼ばれる（人が打つものではない）",
+    "Dashboard: recorded {id} ({event}).": "ダッシュボード: {id} を記録しました（{event}）。",
+    "The dashboard hook did nothing: {err}":
+        "ダッシュボードの hook は何もしませんでした: {err}",
+    "Dashboard: {n} missions are running in this folder, so there is no "
+    "way to tell which one this unit belongs to. Nothing was recorded "
+    "(it will show up as a running unit that is not in the records).":
+        "ダッシュボード: このフォルダでは {n} 本のミッションが稼働中で、この機体がどちらのものか決められません。記録しませんでした（画面には「記録に無い稼働中の機体」として出ます）。",
     "copy the measured values in once the report arrives":
         "完了通知を受け取ったら実測値を転記する",
     "seconds taken (computed from the start time when omitted)":
@@ -355,6 +401,38 @@ CATALOG["zh"] = {
         "      要在同一目录下并行跑两个时，请在 start / add / done / finish 的\n"
         "      全部命令上加 --project <唯一的名称> 来分开记录位置。",
 
+    # ---- owner conflict（拒绝写入被别的会话占用的记录）
+    "unknown": "未知",
+    "{time} ago": "{time}前",
+    "another session is using this project's record right now.":
+        "该项目的记录目前正被另一个会话使用。",
+    "this record belongs to another session that is using it right now.":
+        "这条记录目前属于正在使用它的另一个会话。",
+    '      The record here is "{title}" (started {when}).':
+        '      这里的记录是「{title}」（开始于 {when}）。',
+    "      Starting here would push that record into the history while it is\n"
+    "      still running, and it could never be marked finished afterwards.\n"
+    "      Nothing was started.":
+        "      在这里执行 start 会把仍在运行的那条记录推入历史，\n"
+        "      之后再也无法标记为完成。\n"
+        "      没有开始任何任务。",
+    "      Writing here would file your work into that mission and mix the\n"
+    "      two records together. Nothing was written.":
+        "      在这里写入会把你的工作归档进那个任务里，两份记录会混在一起。\n"
+        "      没有写入任何内容。",
+    "      Give your work its own record. Put the same --project on all four:":
+        "      请为自己的工作准备专属记录。在下面这四个命令上都加上同样的 --project:",
+    '        start --project "{name}" --title "<name of the work>" '
+    '--model <your own model ID>':
+        '        start --project "{name}" --title "<工作名称>" --model <自己的模型 ID>',
+    "      To do it anyway, add --force.":
+        "      如果仍要这样做，请加上 --force。",
+    "push the record that is here into the history even when another "
+    "session owns it":
+        "即使这里的记录属于另一个会话，也把它推入历史",
+    "write to this record even when another session owns it":
+        "即使这条记录属于另一个会话，也写入它",
+
     # ---- start
     "Command": "指挥塔",
     "overall control": "全局统筹",
@@ -408,6 +486,8 @@ CATALOG["zh"] = {
     "Back home — {headline} ({detail})": "归队 — {headline}（{detail}）",
     "no report": "无报告",
     "Marked done: {id} ({detail})": "已置为完成: {id}（{detail}）",
+    "  * Values you left out were measured from Claude Code's own records ({id}).":
+        '  * 省略的数值已从 Claude Code 自身的记录中实测补全（{id}）。',
     '  * No token count was given, so it is null (the screen shows "—").':
         "  ※ 未指定 Token 数，因此为 null（画面显示「—」）",
     '  * No tool-call count was given, so it is null (the screen shows "—").':
@@ -592,7 +672,17 @@ CATALOG["zh"] = {
     "ID of the parent (the command post when omitted)": "父级的 ID（省略时为指挥塔）",
     "model ID that was used": "使用的模型 ID",
     "what the task is": "任务内容",
-    "initial state": "初始状态",
+    "ID of the Agent call that started it "
+    "(pairs the card with the real unit; usually left out)":
+        "启动该机体的 Agent 调用 ID（用于把卡片与实机对应，通常省略）",
+    "called by Claude Code's hooks — do not type this yourself":
+        "由 Claude Code 的 hook 调用（不是手动输入的命令）",
+    "Dashboard: recorded {id} ({event}).": "仪表盘: 已记录 {id}（{event}）。",
+    "The dashboard hook did nothing: {err}": "仪表盘的 hook 什么也没做: {err}",
+    "Dashboard: {n} missions are running in this folder, so there is no "
+    "way to tell which one this unit belongs to. Nothing was recorded "
+    "(it will show up as a running unit that is not in the records).":
+        "仪表盘: 这个文件夹里有 {n} 条任务正在运行，无法判断这个机体属于哪一条。没有记录（画面上会显示为「记录中没有的运行中机体」）。",
     "copy the measured values in once the report arrives":
         "收到完成通知后把实测值转记进来",
     "seconds taken (computed from the start time when omitted)":
@@ -656,6 +746,39 @@ CATALOG["ko"] = {
         "      같은 디렉터리에서 두 개를 병렬로 돌릴 때는 start / add / done / finish\n"
         "      전부에 --project <고유한 이름> 을 붙여 기록 위치를 나누세요.",
 
+    # ---- owner conflict（다른 세션이 쓰고 있는 기록에 쓰는 것을 거부）
+    "unknown": "알 수 없음",
+    "{time} ago": "{time} 전",
+    "another session is using this project's record right now.":
+        "이 프로젝트의 기록은 지금 다른 세션이 사용하고 있습니다.",
+    "this record belongs to another session that is using it right now.":
+        "이 기록은 지금 사용 중인 다른 세션의 것입니다.",
+    '      The record here is "{title}" (started {when}).':
+        '      여기에 있는 기록은 「{title}」입니다 (시작: {when}).',
+    "      Starting here would push that record into the history while it is\n"
+    "      still running, and it could never be marked finished afterwards.\n"
+    "      Nothing was started.":
+        "      여기서 start 하면 가동 중인 그 기록이 이력으로 밀려나\n"
+        "      나중에 완료로 만들 수 없게 됩니다.\n"
+        "      아무것도 시작하지 않았습니다.",
+    "      Writing here would file your work into that mission and mix the\n"
+    "      two records together. Nothing was written.":
+        "      여기서 쓰면 당신의 작업이 그 미션의 일부로 기록되어\n"
+        "      두 기록이 섞입니다. 아무것도 쓰지 않았습니다.",
+    "      Give your work its own record. Put the same --project on all four:":
+        "      자신의 작업에는 전용 기록을 마련하세요. "
+        "다음 네 곳 모두에 같은 --project 를 붙입니다:",
+    '        start --project "{name}" --title "<name of the work>" '
+    '--model <your own model ID>':
+        '        start --project "{name}" --title "<작업 이름>" --model <자신의 모델 ID>',
+    "      To do it anyway, add --force.":
+        "      그래도 실행하려면 --force 를 붙이세요.",
+    "push the record that is here into the history even when another "
+    "session owns it":
+        "여기 있는 기록이 다른 세션의 것이어도 이력으로 밀어붙여 시작한다",
+    "write to this record even when another session owns it":
+        "이 기록이 다른 세션의 것이어도 그대로 쓴다",
+
     # ---- start
     "Command": "지휘탑",
     "overall control": "전체 총괄",
@@ -709,6 +832,8 @@ CATALOG["ko"] = {
     "Back home — {headline} ({detail})": "귀환 — {headline}({detail})",
     "no report": "보고 없음",
     "Marked done: {id} ({detail})": "완료로 만들었습니다: {id}({detail})",
+    "  * Values you left out were measured from Claude Code's own records ({id}).":
+        '  * 생략된 수치는 Claude Code 자체 기록에서 실측으로 채웠습니다({id}).',
     '  * No token count was given, so it is null (the screen shows "—").':
         "  ※ 토큰 수가 지정되지 않아 null 입니다 (화면에는 「—」로 표시)",
     '  * No tool-call count was given, so it is null (the screen shows "—").':
@@ -893,7 +1018,17 @@ CATALOG["ko"] = {
     "ID of the parent (the command post when omitted)": "부모의 ID (생략하면 지휘탑)",
     "model ID that was used": "사용한 모델 ID",
     "what the task is": "임무 내용",
-    "initial state": "초기 상태",
+    "ID of the Agent call that started it "
+    "(pairs the card with the real unit; usually left out)":
+        "그 기체를 기동한 Agent 호출 ID (카드와 실제 기체를 잇는다. 보통은 생략)",
+    "called by Claude Code's hooks — do not type this yourself":
+        "Claude Code 의 hook 이 호출한다 (사람이 입력하는 것이 아님)",
+    "Dashboard: recorded {id} ({event}).": "대시보드: {id} 를 기록했다 ({event}).",
+    "The dashboard hook did nothing: {err}": "대시보드 hook 은 아무것도 하지 않았다: {err}",
+    "Dashboard: {n} missions are running in this folder, so there is no "
+    "way to tell which one this unit belongs to. Nothing was recorded "
+    "(it will show up as a running unit that is not in the records).":
+        "대시보드: 이 폴더에서는 {n} 개의 임무가 가동 중이라 이 기체가 어느 쪽인지 정할 수 없습니다. 기록하지 않았습니다 (화면에는 「기록에 없는 가동 중인 기체」로 나옵니다).",
     "copy the measured values in once the report arrives":
         "완료 통지를 받으면 실측값을 옮겨 적는다",
     "seconds taken (computed from the start time when omitted)":

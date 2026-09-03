@@ -34,6 +34,10 @@
   /* 機体1体の横幅（ロボ + gap 4px + カード）。.agent を絶対配置にすると
      絶対配置の子は親の寸法に寄与しないので、列の幅を計算で確定させる必要がある。 */
   --agent-w:   calc(var(--robot-w) + 4px + var(--card-w));
+  /* レーンの間隔。世代（バンド）の間隔と、バンド内のレーンの間隔は同じ値を使う。
+     真実の源はここ1箇所で、JS 側は起動時に getComputedStyle で1回読む。
+     JS に数値を直書きすると、ここを変えた瞬間に R 探索の見積りだけが古い値のまま残る。 */
+  --band-gap:  38px;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -57,8 +61,14 @@ body {
 
 /* ============================================================ 上部バー（画面に1つ） */
 /* チームを縦に積むので、接続状態と説明書はどのチームにも属さない共通の帯に置く。 */
+/* **折り返す。** この画面は VSCode のサイドバー（実測 340px 前後）の中にも出る。
+   折り返さない帯だと、右端に置いたものから順に画面の外へ出ていく——`body{overflow:hidden}`
+   なので横スクロールも出ず、押す手段が完全に無くなる（実測: 変更履歴ボタンが 340px 幅で
+   完全に画面外、? も 860px を切ると欠け始めていた）。高さが増えるのは見えるので直せるが、
+   出ていったボタンは見えないので直せない。 */
 #topbar {
   display: flex; align-items: center; gap: 14px;
+  flex-wrap: wrap; row-gap: 8px;
   padding: 10px 20px; flex: none;
   background: linear-gradient(180deg, rgba(23,34,48,.95), rgba(13,19,28,.92));
   border-bottom: 1px solid var(--line);
@@ -71,7 +81,31 @@ body {
   padding: 4px 11px; border-radius: 999px;
   background: rgba(255,255,255,.035); border: 1px solid var(--line);
 }
-.topbar-right { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
+.topbar-right {
+  display: flex; align-items: center; gap: 8px; margin-left: auto;
+  /* 中身も折り返す。#topbar 側だけだと、この塊が1行に収まらないときに右へはみ出す */
+  flex-wrap: wrap; row-gap: 6px; justify-content: flex-end;
+  flex: 0 1 auto; min-width: 0;
+}
+
+/* 狭いところ（VSCode のサイドバー、細くした別ウィンドウ）では、折り返す前に
+   まず詰める。折り返しは「押せなくなるより高くなるほうがまし」という最後の砦で、
+   ここで詰めておけば実際には1〜2行に収まる。 */
+@media (max-width: 760px) {
+  #topbar { gap: 8px; padding: 8px 12px; }
+  .app-name { font-size: 12.5px; letter-spacing: .1em; }
+  .topbar-right { gap: 6px; }
+  .screen-btn { padding: 5px 9px; font-size: 11px; }
+  .zoom-control { padding: 3px 5px; gap: 2px; }
+  .zoom-level, .zoom-input { width: 50px; }
+}
+/* さらに狭いところ。ここまで来たら製品名は畳む（切れて読めない名前より、
+   押せるボタンを優先する）。画面が何かは切り替えボタンが示している。 */
+@media (max-width: 460px) {
+  .app-name { display: none; }
+  #team-count { padding: 3px 8px; }
+  .topbar-right { margin-left: 0; flex: 1 1 100%; justify-content: flex-start; }
+}
 .zoom-control {
   display: flex; align-items: center; gap: 4px; flex: none;
   padding: 4px 8px; border-radius: 7px;
@@ -89,6 +123,18 @@ body {
    ボタンが出たり消えたりする作りにすると、トップバーの他の部品が左右にずれて落ち着かない。 */
 .zoom-btn.zoom-auto { font-size: 12px; }
 .zoom-btn.zoom-auto.on { color: var(--cyan); background: rgba(62,224,255,.12); }
+/* イベントログの開閉。見た目は .zoom-btn と同じ角丸ボックスに、.zoom-btn.zoom-auto と
+   同じ「on＝シアン点灯」を重ねる。.team-side の外（トップバー）に居るボタンなので、
+   ログが畳まれていても押す手段が隠れることはない。 */
+.log-toggle {
+  flex: none; width: 24px; height: 24px; display: grid; place-items: center;
+  font-size: 14px; cursor: pointer; border-radius: 5px; font-family: inherit;
+  background: transparent; border: 0; color: var(--dim);
+  transition: color .2s, background .2s;
+  padding: 0; touch-action: manipulation;
+}
+.log-toggle:hover { color: var(--cyan); background: rgba(62,224,255,.08); }
+.log-toggle.on { color: var(--cyan); background: rgba(62,224,255,.12); }
 /* 拡大率は 1%〜500%（"1%"〜"自動 500%"）で桁数が変わる。等幅＋固定幅で箱を動かさない。
    Consolas が無い環境でジェネリック monospace に落ちたときのために tabular-nums も置く。 */
 .zoom-level {
@@ -221,6 +267,9 @@ body {
    （縦積みしていた頃はチームの境目を示すために入れていた）。 */
 .team[data-active] { display: flex; flex: 1; min-height: 300px; flex-direction: column; }
 .team-body { flex: 1; display: flex; min-height: 0; }
+/* 木と、その下の区画を縦に積む器。min-width/min-height に 0 を入れておかないと、
+   flex の子の既定（auto）で中身の分だけ縮まなくなり、木のスクロールが効かなくなる。 */
+.tree-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 /* ============================================================ ミッションバー（チームごと） */
 .team-bar {
@@ -326,11 +375,19 @@ body {
                padding: 20px 18px 36px; min-width: 0; }
 .tree-canvas { position: relative; width: max-content; min-width: 100%; min-height: max-content; }
 .links { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
-.generations { position: relative; display: flex; align-items: flex-start; gap: 38px; }
+.generations { position: relative; display: flex; align-items: flex-start; gap: var(--band-gap); }
 
 /* 幅を固定するのは、絶対配置の .agent が列の幅を作らないため。
-   指定しないと列が潰れて世代見出しが左端で重なる。 */
-.gen-col { display: flex; flex-direction: column; gap: 20px; flex: none; width: var(--agent-w); }
+   指定しないと列が潰れて世代見出しが左端で重なる。
+   --band-lanes は葉クラスタが使うレーンの本数。layoutTree が書き、既定は 1（＝従来の1列）。
+   JS 側は必ず Math.max(1, Math.round(Number(L)) || 1) を通してから setProperty すること。
+   非数値を書くと calc が無効になり width:auto に落ちて列が潰れる（未設定の 1 では救われない）。 */
+.gen-col {
+  display: flex; flex-direction: column; gap: 20px; flex: none;
+  width: calc(var(--band-pad-l, 0px)
+              + var(--band-lanes, 1) * var(--agent-w)
+              + (var(--band-lanes, 1) - 1) * var(--band-lane-gap, var(--band-gap)));
+}
 /* 全列の .gen-body の上端が揃っていることが、列をまたいだ共通Y座標系の前提。
    高さを line-height で確定させておく。 */
 .gen-head {
@@ -342,7 +399,11 @@ body {
    なり、世代見出しの高さぶん全機がずれる。height は layoutTree() が px で入れる。
    入れないと絶対配置の子は高さを作らないので列が 0 になり、.tree-canvas.scrollHeight
    まで潰れて drawLinks が viewBox「0 0 0 0」を書き、親子線が全部消える。 */
-.gen-body { position: relative; }
+/* --band-pad-l は「左回廊」。この帯へ入ってくる扇のうち最大のものが、辺を縦に走らせる
+   ぶんの幅。列の宣言幅（上の calc）と .gen-body の寄せの**両方**に足すこと。片方だけだと、
+   列が広がったのにカードが左端のままになる（＝回廊ができない）か、カードだけ右へ出て
+   隣の列に重なる。layoutTree が px 付きの文字列で書く。既定は 0px。 */
+.gen-body { position: relative; margin-left: var(--band-pad-l, 0px); }
 .empty-note { color: var(--dim); font-size: 13px; padding: 40px 4px; line-height: 1.9; }
 .empty-note code { background: rgba(255,255,255,.06); padding: 2px 7px; border-radius: 5px;
                    font-family: Consolas, monospace; color: var(--cyan); }
@@ -362,10 +423,16 @@ body {
    display:none と content-visibility を使ってはいけない。どちらも配下の CSS
    アニメーションを取り消すので、ロボの呼吸・瞬き・手の動きと表情のクロスフェードが
    0 から作り直される。隠す必要が出たら opacity で行う。 */
+/* left も layoutTree が px で与える（葉クラスタのレーン）。transform は使えないので
+   （下の @keyframes pop が fill-mode:both で transform を占有している）、横も left で動かす。
+   .gen-col の幅にはトランジションを掛けない：fitContent が offsetWidth を測っているため、
+   460ms のあいだ autoFitZoom が中間幅を追いかけて拡大率が脈打つ。
+   レーンの本数が変わるフレームは、代わりに全機へ .snap を付けて一括で着地させる。 */
 .agent {
   position: absolute; left: 0; top: 0; width: var(--agent-w);
   display: flex; align-items: center; gap: 4px;
-  transition: top .46s cubic-bezier(.22,.68,.28,1);
+  transition: top .46s cubic-bezier(.22,.68,.28,1),
+              left .46s cubic-bezier(.22,.68,.28,1);
 }
 /* 初回配置だけは滑らせない（top:0 から所定の位置へ降ってくるのを防ぐ） */
 .agent.snap { transition: none; }
@@ -387,7 +454,12 @@ body {
   100% { transform: scale(2.2); opacity: 0; }
 }
 
-.robot-slot { position: relative; width: var(--robot-w); flex: none;
+/* align-self: flex-start が要る理由: .agent は align-items:center なので、既定では
+   ロボがカード高に応じて (カード高 - ロボ高)/2 だけ下がる。線はロボの上辺へ落ちるので、
+   その差がそのままスタブの長さの差になり、同じ行に並んだ機体で線がバラバラの長さに見える
+   （実測で行内 35.84px のばらつき）。上端に固定するとロボの縦位置がカード高から独立し、
+   行内どころか全クラスタでスタブ長が揃う（実測 0.00px）。カード側の高さは変わらない。 */
+.robot-slot { position: relative; width: var(--robot-w); flex: none; align-self: flex-start;
               display: flex; align-items: center; justify-content: center; }
 /* 高さは viewBox(120x166) の比率から計算する。直書きにすると --robot-w を変えた瞬間に
    等倍関係が崩れ、レターボックスでロボがスロット内に浮く。 */
@@ -403,6 +475,17 @@ body {
 .rb-egg           { fill: url(#rbEggGrad); }
 .rb-egg-shade     { fill: url(#rbShadeGrad); }
 .rb-arm           { fill: url(#rbLimbGrad); }
+/* --- モデル別のボディ色。塗り以外（目・バイザー・胸ライト・口・状態アニメ）は変えない。
+   グラデは #rb-defs に1組しか置けない（id が重複するため）ので、色ごとに定義を増やして
+   参照先を差し替える。クラスが付かない機体は既定の白のまま。 */
+.agent.mdl-red    .rb-egg { fill: url(#rbEggGradRed); }
+.agent.mdl-red    .rb-arm { fill: url(#rbLimbGradRed); }
+.agent.mdl-orange .rb-egg { fill: url(#rbEggGradOrange); }
+.agent.mdl-orange .rb-arm { fill: url(#rbLimbGradOrange); }
+.agent.mdl-green  .rb-egg { fill: url(#rbEggGradGreen); }
+.agent.mdl-green  .rb-arm { fill: url(#rbLimbGradGreen); }
+.agent.mdl-aqua   .rb-egg { fill: url(#rbEggGradAqua); }
+.agent.mdl-aqua   .rb-arm { fill: url(#rbLimbGradAqua); }
 .rb-socket        { fill: #ccd8e6; }
 .rb-bezel         { fill: #c9d5e3; }
 .rb-visor         { fill: url(#rbVisorGrad); }
@@ -574,7 +657,16 @@ body {
   color: var(--dim); font-family: Consolas, monospace; white-space: nowrap;
 }
 .badge.self { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+/* 記録に無い機体。**記録のあるカードと一目で見分けられること**が要件。
+   線は実測で引いているが、カードそのものは記録に裏付けが無い。 */
+.badge.b-orphan { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+.agent.orphan .card { border-style: dashed; opacity: .88; }
+.agent.orphan .card::before { background: var(--amber); }
 .badge.b-wait { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+/* 沈黙の札。b-wait と同じで status は上書きしない（動いていないことと、記録上の
+   状態が「稼働中」であることは両立する）。無風のほうを強く出す。 */
+.badge.b-idle { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+.badge.b-idle.stalled { color: #ff9b9b; border-color: rgba(255,120,120,.42); background: rgba(255,120,120,.1); }
 .c-mission {
   font-size: 12px; color: #c3d2e4; line-height: 1.5; min-height: 2.5em;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -602,6 +694,145 @@ body {
    display:flex に負けるので、結果が無いときも空の「▸」の行が残ってしまう。 */
 .c-result[hidden] { display: none; }
 
+/* 稼働中に読んだ実測（live）。Claude Code がサブエージェントごとに書いている記録から
+   数えた実数で、推定ではない。それでも .c-metrics（完了通知として受け取って記録した値）
+   とは出所が違うので、位置と書体を分けて、ひと目で別物と分かるようにする。
+   トークンだけは「最後の行のコンテキスト長」という近似なので ≈ を付ける
+   （実測誤差 -0.002%。ツール回数と経過秒は数え上げなので近似ではない）。 */
+.c-live {
+  display: flex; align-items: baseline; gap: 7px; margin-top: 7px;
+  font-size: 11px; line-height: 1.45; color: #9ed3c6;
+}
+.c-live[hidden] { display: none; }
+.c-live .lv-tool { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-live .lv-tool b { color: #ddf3ec; font-weight: 700; }
+.c-live .lv-num { flex: none; font-family: Consolas, monospace; opacity: .82; }
+.c-live.quiet   { color: #ddc79a; }
+.c-live.stalled { color: #ffadad; }
+
+/* ============================================================ 置き場所が決まらない機体の区画 */
+/* 記録に無いのに動いている機体のうち、**起動元を実測で辿れなかった**もの。
+   系統樹には入れない——親を推測して線を引いた瞬間、この画面は実測を出す道具ではなくなる。
+   かといって隠すのは違う。動いているのに記録が無いこと自体が、いま見えるべき事実なので、
+   木の下に別の区画を出して、木の中と同じロボ＋カードの姿で並べる。 */
+.orphan-bay {
+  flex: none; display: flex; flex-direction: column; min-height: 0;
+  /* **器の半分より大きくならない。** 画面基準（vh）だと木の取り分と無関係に決まり、
+     枠が低いときに木が潰れて自動フォーカスが黙って止まる。ここを器基準にすれば、
+     木は何があっても半分を保てる。 */
+  max-height: 50%;
+  border-top: 1px solid rgba(120,200,255,.28);
+  background: rgba(120,200,255,.05);
+}
+.orphan-bay[hidden] { display: none; }
+.bay-head {
+  flex: none; display: flex; align-items: baseline; gap: 14px;
+  padding: 8px 18px 6px; font-size: 11px; letter-spacing: .08em; color: #7fc4ee;
+}
+.bay-title { font-family: Consolas, monospace; }
+/* 文字ボタン。見た目は変更履歴の .cl-toggle と同じで、開いているときだけ点灯させる。
+   ボタンは見出し行（＝閉じても残る側）に置く。中身と一緒に隠れると開き直せない。 */
+.bay-toggle {
+  cursor: pointer; font-family: inherit; font-size: 11px; color: var(--dim);
+  background: transparent; border: 0; padding: 2px 0; flex: none;
+  transition: color .2s;
+}
+.bay-toggle:hover { color: var(--cyan); }
+.bay-toggle.on { color: var(--cyan); }
+.bay-note {
+  flex: none; padding: 0 18px 8px; font-size: 11px; line-height: 1.6; color: var(--dim);
+  /* 開いた側にも max-height を置く。初期値の none と 0px のあいだは補間できず、
+     畳むたびに注記だけが途中で1回パッと消える（本体は滑らかに縮むので余計に目立つ）。 */
+  max-height: 8em; overflow: hidden;
+  transition: max-height .26s cubic-bezier(.22,.68,.28,1), opacity .2s ease, padding .26s ease;
+}
+.bay-body {
+  /* 変更後（1体あたりの専有幅が 176→116px とさらに詰まったので、隙間も同じ向きに詰める。
+     176px のときの 12px 14px から、116/176 の比でおよそ 8px 9px） */
+  flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 9px;
+  padding: 2px 18px 14px; max-height: 46vh; overflow: auto; min-height: 0;
+  transition: max-height .26s cubic-bezier(.22,.68,.28,1), opacity .2s ease, padding .26s ease;
+}
+/* 畳むときに display:none を使わないのは .team-side と同じ理由（.agent のコメント参照）。
+   display:none は配下の CSS アニメーションを取り消すので、ロボの呼吸・瞬き・手の動きが
+   開き直すたびに 0 から作り直される。高さを 0 へ縮めて overflow で切る。 */
+#app.bay-collapsed .bay-note,
+#app.bay-collapsed .bay-body {
+  max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0;
+  overflow: hidden; pointer-events: none;
+}
+/* 木の中の .agent は layoutTree が top/left を書く絶対配置。区画では並べて折り返すので
+   通常のフローに戻し、ロボを上・カードを下に積む。木のほうの規則は触らない。 */
+.orphan-bay .agent {
+  position: static; width: var(--card-w);
+  flex-direction: column; align-items: center; gap: 4px;
+  transition: none;
+}
+/* 木では「線がロボの上辺へ落ちる」ために上端固定にしてある（.robot-slot のコメント）。
+   区画に線は無いので、カードの真上へ中央寄せする。 */
+.orphan-bay .robot-slot { align-self: center; }
+/* ---- 区画の機体は小さく並べる。**ロボは木の半分、カードは「入る中で一番小さい幅」。**
+   ロボもスロットもカードも、寸法はすべて --robot-w / --card-w から calc()/var() で
+   導かれている（.robot の height、.robot-slot の width、.card の width、上の
+   .orphan-bay .agent の width）ので、ここで2つ上書きすれば配下だけが揃って縮む。
+   JS のレーン幅（AGENT_W）は :root からしか読まないので、系統樹には一切届かない。
+
+   **transform: scale() は使えない。** .agent は誕生アニメーション pop が
+   fill-mode:both で transform を専有していて（上の .agent のコメントと同じ罠）、
+   静的な scale を足しても 0.68 秒のあいだ無視され、.born が外れた瞬間にガクッと縮む。 */
+.orphan-bay {
+  --robot-w: 47px;    /* 木の 94px の半分。高さは calc(--robot-w * 166 / 120) が追従する */
+  /* 「1行に収まること」をやめて、折り返しを前提に半分（116px）まで詰めた。
+     モデル札・.c-id とも、下の .orphan-bay .badge / .orphan-bay .c-id で折り返しを許している
+     ので、25文字のモデル名 claude-haiku-4-5-20251001 も「claude-haiku-」「4-5-20251001」の
+     2行（ハイフンの区切りで割れる）、.c-id の LIVE:+17桁も2行に収まる——実測
+     （headless Chromium, 最悪ケース機体で計測）で、その2行とも右端はカードの内側に収まり、
+     3行目には落ちない。card-w をさらに 96px まで詰めると札が3行目に落ちる実測が出たので、
+     116px はその閾値（96〜100px）から離れた安全側。padding を削った分の下限でもある
+     （右左 5px より狭いと同じ 96px 相当まで詰まってしまい、札の3行目落ちに近づく）。 */
+  --card-w: 116px;
+}
+/* モデル札は既定で white-space: nowrap（657行付近、木と共用）。折り返しは区画だけで許す
+   ——.badge を直接書き換えると木の札まで折り返ってしまうので、ここで上書きする。
+   ハイフンは overflow-wrap: break-word だけで折り返しの起点になる（実測: 25文字の
+   claude-haiku-4-5-20251001 が「claude-haiku-」「4-5-20251001」の2行に割れ、はみ出さない）。 */
+.orphan-bay .badge { white-space: normal; overflow-wrap: break-word; }
+/* .c-id は "LIVE:" + 17桁で、ハイフンなど自然な区切りが無い1つの塊。break-word では
+   割る場所が無く1行のままはみ出すので、anywhere で強制的に途中から折り返す
+   （実測でカードの内側に収まる2行になることを確認）。 */
+.orphan-bay .c-id { white-space: normal; overflow-wrap: anywhere; }
+/* 所要時間・トークン・ツールは区画では出さない（要件）。
+   **DOM からは消さず、CSS で隠す。** .c-metrics の中の要素は buildAgentDom が掴んだ参照を
+   updateAgent と updateAgentClock が毎秒書きに行く（entry.time/timeK/tok/tool）。木と共用の
+   関数なので、生成を分岐させれば null 参照で落ち、生成後に remove すれば「見えない要素へ
+   毎秒書き続ける」ことになる。display:none なら要素は生きたまま、見た目だけ消える。
+   中に CSS アニメーションを持つ要素は無いので、display:none で巻き戻る心配も無い
+   （ロボを畳むのに高さ 0 を使っているのは、そちらにはアニメーションがあるから）。 */
+.orphan-bay .c-metrics { display: none; }
+/* 区画の ID は "LIVE:" + 実機の agentId 17桁で、10px の等幅でも 121px を専有する。
+   .c-id は flex:none なので縮まず、狭いカードでは**隣の名前のほうが 0 まで潰れる**
+   （いまの 232px でも名前は 78px しか無い）。区画だけ ID を独立行に落として、
+   名前に幅を全部渡す。カードは小さくなるのに、名前は今より読める。 */
+.orphan-bay .c-top { flex-wrap: wrap; }
+.orphan-bay .c-id  { flex: 1 0 100%; }
+/* 区画のカードに任務は無い（orphanAgent が mission:'' を固定で入れる。記録が無いので
+   任務を名乗れない）。木では updateAgent がそこへ「（任務未記載）」と書くが、**区画では
+   その行ごと出さない。** 記録が無いと分かっている機体に「記載が無い」と毎行言わせても、
+   すぐ上の「記録に無い」の札と同じことを繰り返しているだけで、狭いカードの高さを食う。
+   .c-metrics と同じく **DOM からは消さず CSS で隠す**——entry.mission は木と共用の
+   updateAgent が毎回書きに行く参照なので、消すと null 参照で落ちる。 */
+.orphan-bay .c-mission { display: none; }
+/* 余白も幅に合わせてさらに詰める（176 → 116 なので、左右は 10 → 5）。上下は開閉ボタンや
+   折り返した2行を圧迫しない範囲で少しだけ（8→7, 9→8）。 */
+.orphan-bay .card { padding: 7px 5px 8px; }
+/* 起動元が名前だけ分かることがある（記録には無いが、親のログには残っている）。
+   分かったときだけカードの下に小さく出す。分からない機体に何かを補うことはしない。 */
+.bay-parent {
+  width: 100%; font-size: 10.5px; line-height: 1.5; color: var(--dim);
+  text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bay-parent[hidden] { display: none; }
+
 /* ============================================================ 親子線 */
 .link { fill: none; stroke-width: 2.5; stroke-linecap: round; }
 .link.standby { stroke: rgba(139,160,184,.28); stroke-dasharray: 3 6; }
@@ -611,11 +842,32 @@ body {
 .link.done    { stroke: rgba(139,160,184,.4); }
 @keyframes flow { to { stroke-dashoffset: -16; } }
 
+/* --- 葉クラスタの配線（幹線＋送り線＋列ごとのレール＋フック）
+   状態色を持つのは .stub（機体ごとのフック）だけ。送り線とレールは複数の機体で共有され、
+   1本の中に稼働中と完了が混在するので、そこを状態で塗ると「どの機体の状態なのか」が
+   決まらなくなる。共有される線は所属だけを表す中立色にする。
+   クラスタを囲む半透明の枠は置かない。線の束と二重になって格子＝表の罫線に見えるため
+   （実測の見た目で確認）、まとまりは線の通し方だけで表す。
+   クラスタ専用の線種（.bus / .stub）はもう無い。1辺＝1本になったので、クラスタの中も外も
+   同じ .link で引く——線の見た目でクラスタの内外を区別しないことが、そのまま
+   「共有された線が1本も無い」ことの担保になっている。 */
+
 /* ============================================================ サイドパネル（チームごと） */
+/* 開閉できる。状態は全チーム共通のグローバル1個（#app.log-collapsed）。個々の .team-side
+   に hidden は付けない——display:none は配下の CSS アニメーション（.log-row の slidein 等）
+   を巻き戻す（.agent のコメント参照）。閉じるときは幅だけを 0 へ縮め、overflow:hidden で切る。
+   中身は .team-side-inner に固定幅(292px)を持たせてあるので、縮む間に文字が折り返し直され
+   ない（折り返し直されると詰まった文字が一瞬読める見苦しい遷移になる）。 */
 .team-side {
-  width: 292px; flex: none; display: flex; flex-direction: column; min-height: 0;
+  width: 292px; flex: none; min-height: 0; overflow: hidden;
   background: linear-gradient(180deg, rgba(17,26,38,.95), rgba(10,14,20,.95));
   border-left: 1px solid var(--line);
+  transition: width .26s cubic-bezier(.22,.68,.28,1), opacity .2s ease, border-left-width .26s ease;
+}
+#app.log-collapsed .team-side { width: 0; opacity: 0; border-left-width: 0; pointer-events: none; }
+.team-side-inner {
+  width: 292px; height: 100%;
+  display: flex; flex-direction: column; min-height: 0;
 }
 .side-head {
   padding: 12px 16px 10px; font-size: 11px; letter-spacing: .16em; color: var(--dim);
@@ -656,6 +908,118 @@ body {
   font-size: 11px; line-height: 1.6; color: #ffd79a;
 }
 .warnings b { display: block; margin-bottom: 3px; color: var(--amber); font-size: 10.5px; letter-spacing: .08em; }
+
+/* ============================================================ トップバー: 画面切り替え */
+/* Phase 3で追加。「ミッション管制室」（既存の全機能）と「変更履歴」の2画面をトップバーの
+   ボタンで切り替える。既存のタブバー（#tab-bar、ミッション1回=1タブ）とは別物なので
+   name も screen-* に分けて、既存の .tab-* クラスとは衝突させない。 */
+.screen-switch {
+  display: flex; align-items: center; gap: 2px; flex: none;
+  padding: 3px; border-radius: 9px;
+  background: rgba(255,255,255,.035); border: 1px solid var(--line);
+}
+.screen-btn {
+  flex: none; cursor: pointer; font-family: inherit;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .03em;
+  padding: 5px 12px; border-radius: 7px;
+  background: transparent; border: 0; color: var(--dim);
+  transition: color .2s, background .2s;
+}
+.screen-btn:hover { color: var(--text); }
+.screen-btn.active { color: #04212b; background: var(--cyan); }
+
+/* ============================================================ 変更履歴画面 */
+/* #mission-screen は既存の #team-tabs/#teams-wrapper/#standby をそのまま包む器。
+   中の3つは元々 #app（flexカラム）の直接の子として flex:1 等を前提に組まれているので、
+   #mission-screen 自身も同じ flex カラムにして、入れ子にしても寸法の前提を崩さない。 */
+#mission-screen { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#mission-screen[hidden] { display: none; }
+
+#changelog-screen { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#changelog-screen[hidden] { display: none; }
+
+.cl-toolbar {
+  display: flex; align-items: center; gap: 10px; flex: none; flex-wrap: wrap;
+  padding: 10px 20px;
+  background: linear-gradient(180deg, rgba(17,26,38,.9), rgba(13,19,28,.87));
+  border-bottom: 1px solid var(--line);
+}
+.cl-label { flex: none; font-size: 11px; color: var(--dim); letter-spacing: .06em; }
+.cl-select {
+  flex: none; font-family: inherit; font-size: 12.5px; color: var(--text);
+  background: rgba(255,255,255,.05); border: 1px solid var(--line);
+  border-radius: 7px; padding: 5px 8px; min-width: 220px; max-width: 46vw;
+  cursor: pointer;
+}
+.cl-select option { background: var(--panel); color: var(--text); }
+.cl-meta { flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--dim); }
+.cl-conn { flex: none; font-size: 11px; color: #ff9d9d; }
+.cl-conn:empty { display: none; }
+
+.cl-feed-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px 40px; }
+.cl-empty { text-align: center; color: var(--dim); padding: 60px 20px; font-size: 13px; }
+.cl-empty[hidden] { display: none; }
+
+.cl-feed { display: flex; flex-direction: column; gap: 12px; max-width: 880px; margin: 0 auto; }
+
+.cl-card {
+  border-radius: 12px; border: 1px solid var(--line);
+  background: linear-gradient(165deg, var(--panel2), var(--panel));
+  padding: 12px 14px;
+}
+.cl-card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.cl-time {
+  flex: none; font-family: Consolas, monospace; font-size: 11px; color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.cl-auto-badge {
+  flex: none; font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  color: #3a2405; background: var(--amber); border-radius: 999px; padding: 2px 8px;
+}
+.cl-auto-badge[hidden] { display: none; }
+.cl-headline {
+  flex: 1 1 auto; min-width: 0; margin: 0; font-size: 13.5px; font-weight: 600;
+  color: var(--text); line-height: 1.5; word-break: break-word;
+}
+
+.cl-body-wrap { margin-top: 8px; }
+.cl-body {
+  font-size: 12px; line-height: 1.7; color: #cfdcea; white-space: pre-wrap;
+  word-break: break-word;
+}
+.cl-body[hidden] { display: none; }
+.cl-toggle {
+  cursor: pointer; font-family: inherit; font-size: 11px; color: var(--cyan);
+  background: transparent; border: 0; padding: 4px 0; margin-top: 2px;
+}
+.cl-toggle[hidden] { display: none; }
+
+.cl-files { margin-top: 8px; font-size: 11.5px; }
+.cl-files[hidden] { display: none; }
+.cl-files-label { color: var(--dim); letter-spacing: .05em; margin-bottom: 3px; }
+/* **高さに天井を置く。** 1セッションで120ファイル触ることは普通にあり、そのまま
+   並べるとカード1枚が数千pxになって、その下のカードへ辿り着けなくなる（実測）。
+   件数は見出しに出しているので、隠していないことは読めば分かる。 */
+.cl-files-list {
+  margin: 0; padding-left: 18px; color: #b7c8db;
+  max-height: 220px; overflow-y: auto; overscroll-behavior: contain;
+}
+.cl-files-list li { word-break: break-all; line-height: 1.6; }
+
+/* 詳細（本文・ファイル・内訳）をまだ取りに行っていないカードの断り書き。
+   **黙って「本文の無いセッション」の顔をさせない。** 見えているものが全部だと
+   読めてしまう表示は、このプロジェクトで最も避けたい壊れ方。 */
+.cl-pending {
+  margin-top: 6px; font-size: 11px; color: var(--dim); font-style: normal;
+}
+.cl-pending[hidden] { display: none; }
+
+.cl-tools {
+  margin-top: 8px; font-size: 11px; color: var(--dim); font-family: Consolas, monospace;
+}
+.cl-tools[hidden] { display: none; }
+
+.cl-sessionid { margin-top: 8px; font-size: 10px; color: #55677d; font-family: Consolas, monospace; }
 
 /* ============================================================ 取扱説明書オーバーレイ */
 /* 別ウィンドウではなく画面内の iframe で開く。理由は JS 側の「取扱説明書」節に書いた。 */
@@ -751,6 +1115,9 @@ body {
   }
   /* 系統樹の再配置も滑らせない。位置は top なので、transition を切れば即時反映になる。 */
   .agent { transition: none !important; }
+  .team-side { transition: none !important; }
+  /* 下部区画の開閉も同じ性質の畳みなので、ここに入れないと区画だけが滑る。 */
+  .bay-note, .bay-body { transition: none !important; }
 }
 </style>
 </head>
@@ -769,6 +1136,42 @@ body {
   <linearGradient id="rbLimbGrad" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="#ffffff"/>
     <stop offset="1" stop-color="#dbe5f1"/>
+  </linearGradient>
+  <linearGradient id="rbEggGradRed" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#fff2f4"/>
+    <stop offset="0.5"  stop-color="#ffbcc6"/>
+    <stop offset="1"    stop-color="#d9697d"/>
+  </linearGradient>
+  <linearGradient id="rbLimbGradRed" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#fff2f4"/>
+    <stop offset="1" stop-color="#f4a0ae"/>
+  </linearGradient>
+  <linearGradient id="rbEggGradOrange" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#fff6ec"/>
+    <stop offset="0.5"  stop-color="#ffd39b"/>
+    <stop offset="1"    stop-color="#dd9440"/>
+  </linearGradient>
+  <linearGradient id="rbLimbGradOrange" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#fff6ec"/>
+    <stop offset="1" stop-color="#f2b76c"/>
+  </linearGradient>
+  <linearGradient id="rbEggGradGreen" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#f4fcec"/>
+    <stop offset="0.5"  stop-color="#c6e79b"/>
+    <stop offset="1"    stop-color="#7cae4c"/>
+  </linearGradient>
+  <linearGradient id="rbLimbGradGreen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#f4fcec"/>
+    <stop offset="1" stop-color="#a9d178"/>
+  </linearGradient>
+  <linearGradient id="rbEggGradAqua" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#ebf5f9"/>
+    <stop offset="0.5"  stop-color="#a8def5"/>
+    <stop offset="1"    stop-color="#2d9dcd"/>
+  </linearGradient>
+  <linearGradient id="rbLimbGradAqua" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ebf5f9"/>
+    <stop offset="1" stop-color="#65bfe6"/>
   </linearGradient>
   <linearGradient id="rbVisorGrad" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="#0e1724"/>
@@ -807,6 +1210,15 @@ body {
     <span class="app-name" data-i18n="app.name">Subagent Dashboard</span>
     <span id="team-count">—</span>
     <div class="topbar-right">
+      <!-- Phase 3で追加。ミッション管制室（既存の全機能）と変更履歴の2画面をここで切り替える。
+           文言は他と同じく i18n.js の文言表から引く（data-i18n）。ここだけ固定の日本語に
+           すると、en/zh/ko の利用者には**この画面の入口だけ**日本語で出る。 -->
+      <div class="screen-switch" id="screen-switch">
+        <button type="button" class="screen-btn active" id="screen-btn-mission"
+                data-i18n="screen.mission">Mission control</button>
+        <button type="button" class="screen-btn" id="screen-btn-changelog"
+                data-i18n="screen.changelog">Changelog</button>
+      </div>
       <div class="conn" id="conn"><i></i><span id="conn-text" data-i18n="conn.connecting">Connecting…</span></div>
       <!-- 拡大率は 1%〜500% を1%刻みで扱う。ボタンだけでは 100%→500% が400回になるので、
            役割を3つに分ける：ボタンは丸い数字の飛び石（長押しで連続送り）、表示部のクリックで
@@ -820,6 +1232,10 @@ body {
         <button type="button" class="zoom-btn" id="zoom-in" data-i18n-title="zoom.in">+</button>
         <button type="button" class="zoom-btn zoom-auto" id="zoom-auto" data-i18n-title="zoom.auto">⛶</button>
       </div>
+      <!-- イベントログ（右パネル）の開閉。状態は全チーム共通でグローバルに1つ
+           （localStorage: dashboard:logOpen）。.team-side の中には置かない——
+           中に置くと、閉じた瞬間に再び開く手段まで一緒に隠れてしまう。 -->
+      <button type="button" class="log-toggle" id="log-toggle" data-i18n-title="log.toggle">◫</button>
       <!-- 中身の <option> は i18n.js の mountSelect が入れる。ここを空にしておくのは、
            対応言語を増やしたときに書き換える場所を1つ（i18n.js の SUPPORTED）に
            留めるため。JS が動かなければ空のまま出るが、画面は英語で読める。 -->
@@ -830,29 +1246,52 @@ body {
     </div>
   </header>
 
-  <!-- ミッション選択タブ。1枚＝「1回の start」で、過去の記録も同じ列に並ぶ。 -->
-  <div id="team-tabs" hidden>
-    <div class="tab-bar" id="tab-bar"></div>
-    <button type="button" class="history-clear" id="history-clear" hidden
-            data-i18n-title="tab.clear_done_title">
-      <span data-i18n="tab.clear_done">Delete finished records</span><span class="n"></span>
-    </button>
+  <!-- ミッション管制室(既存の全機能)。Phase 3で #mission-screen という器に包んだだけで、
+       中の3つ(#team-tabs/#teams-wrapper/#standby)とそのIDはPhase 3以前から変わっていない。
+       画面切り替えは hidden 属性のON/OFFのみで、既存のJSのDOM取得(id指定)には影響しない。 -->
+  <div id="mission-screen">
+
+    <!-- ミッション選択タブ。1枚＝「1回の start」で、過去の記録も同じ列に並ぶ。 -->
+    <div id="team-tabs" hidden>
+      <div class="tab-bar" id="tab-bar"></div>
+      <button type="button" class="history-clear" id="history-clear" hidden
+              data-i18n-title="tab.clear_done_title">
+        <span data-i18n="tab.clear_done">Delete finished records</span><span class="n"></span>
+      </button>
+    </div>
+
+    <!-- 選んだタブの中身を出す。器は JS が #team-tpl から作る（表示は常に1枚） -->
+    <div id="teams-wrapper">
+      <div id="teams"></div>
+    </div>
+
+    <!-- チームが1つも無いときだけ出す案内。
+         3行目だけ data-i18n-html なのは、訳文の中に <code> が入るため。
+         この HTML は文言表の中にしか無く、利用者の入力は通らない。 -->
+    <div id="standby" hidden>
+      <div class="empty-note"><span data-i18n="standby.head">Standing by</span><br><br>
+        <span data-i18n="standby.line1">Teams appear here once subagents start moving.</span><br><br>
+        <span data-i18n="standby.line2">To start one yourself, run this in your working directory:</span><br>
+        <code>update_state.py start --title "..."</code><br><br>
+        <span data-i18n-html="standby.line3">Just want to see how it looks? Use <code>update_state.py demo</code>.</span></div>
+    </div>
+
   </div>
 
-  <!-- 選んだタブの中身を出す。器は JS が #team-tpl から作る（表示は常に1枚） -->
-  <div id="teams-wrapper">
-    <div id="teams"></div>
-  </div>
-
-  <!-- チームが1つも無いときだけ出す案内。
-       3行目だけ data-i18n-html なのは、訳文の中に <code> が入るため。
-       この HTML は文言表の中にしか無く、利用者の入力は通らない。 -->
-  <div id="standby" hidden>
-    <div class="empty-note"><span data-i18n="standby.head">Standing by</span><br><br>
-      <span data-i18n="standby.line1">Teams appear here once subagents start moving.</span><br><br>
-      <span data-i18n="standby.line2">To start one yourself, run this in your working directory:</span><br>
-      <code>update_state.py start --title "..."</code><br><br>
-      <span data-i18n-html="standby.line3">Just want to see how it looks? Use <code>update_state.py demo</code>.</span></div>
+  <!-- 変更履歴画面(Phase 3で追加)。/api/changelog/* を3〜5秒間隔でポーリングする
+       (ミッション管制室側の1秒ポーリングとは別のタイマー。この画面が非表示の間は止める)。 -->
+  <div id="changelog-screen" hidden>
+    <div class="cl-toolbar">
+      <label class="cl-label" for="cl-project-select" data-i18n="cl.project">Project</label>
+      <select class="cl-select" id="cl-project-select" data-i18n-aria-label="cl.project"></select>
+      <span class="cl-meta" id="cl-project-meta"></span>
+      <span class="cl-conn" id="cl-conn"></span>
+    </div>
+    <div class="cl-feed-wrap" id="cl-feed-wrap">
+      <div class="cl-feed" id="cl-feed"></div>
+      <div class="cl-empty" id="cl-empty" hidden data-i18n="cl.empty">No changelog yet. Use Claude Code in a
+        registered project and each session is recorded automatically when it ends.</div>
+    </div>
   </div>
 
 </div>
@@ -902,20 +1341,58 @@ body {
       </div>
     </header>
     <div class="team-body">
-      <div class="tree-scroll">
-        <div class="tree-canvas">
-          <svg class="links"></svg>
-          <div class="generations"></div>
+      <div class="tree-pane">
+        <div class="tree-scroll">
+          <div class="tree-canvas">
+            <svg class="links"></svg>
+            <div class="generations"></div>
+          </div>
+        </div>
+        <!-- 置き場所が決まらない機体の区画。見出しの文言と件数は paintOrphanBay() が
+             入れるので data-i18n は付けない（付けると apply() が件数ごと塗り戻す）。 -->
+        <div class="orphan-bay" hidden>
+          <div class="bay-head"><span class="bay-title"></span><button type="button" class="bay-toggle"></button></div>
+          <div class="bay-note"></div>
+          <div class="bay-body"></div>
         </div>
       </div>
       <aside class="team-side">
-        <div class="summary" hidden></div>
-        <div class="side-head"><span data-i18n="log.title">Event log</span><span class="count log-count">0</span></div>
-        <div class="log"></div>
-        <div class="warnings" hidden></div>
+        <div class="team-side-inner">
+          <div class="summary" hidden></div>
+          <div class="side-head"><span data-i18n="log.title">Event log</span><span class="count log-count">0</span></div>
+          <div class="log"></div>
+          <div class="warnings" hidden></div>
+        </div>
       </aside>
     </div>
   </section>
+</template>
+
+<!-- 変更履歴カード1枚分の骨組み(Phase 3で追加)。#team-tpl と同じ考え方で、
+     クラスで引く(同じ形が画面に何枚も並ぶため)。
+     文言のうち「描くたびに変わらないもの」だけ data-i18n を付ける。複製した直後に
+     I18N.apply(root) を呼ぶ規約は #team-tpl（createTeam）と同じ。
+     件数の入る見出し(.cl-files-label)は JS が入れるので data-i18n は付けない
+     ——付けると apply(document) が引数なしのキーで塗り戻して件数が消える。 -->
+<template id="cl-card-tpl">
+  <article class="cl-card">
+    <header class="cl-card-head">
+      <span class="cl-time"></span>
+      <span class="cl-auto-badge" hidden data-i18n="cl.auto_badge">Not written</span>
+      <h3 class="cl-headline"></h3>
+    </header>
+    <div class="cl-body-wrap">
+      <div class="cl-body" hidden></div>
+      <button type="button" class="cl-toggle" hidden></button>
+      <div class="cl-pending" hidden data-i18n="cl.detail_pending">Details are not loaded yet.</div>
+    </div>
+    <div class="cl-files" hidden>
+      <div class="cl-files-label"></div>
+      <ul class="cl-files-list"></ul>
+    </div>
+    <div class="cl-tools" hidden></div>
+    <div class="cl-sessionid"></div>
+  </article>
 </template>
 
 <script>
@@ -969,7 +1446,22 @@ const FIT_DEADBAND   = 0.02;  // 現在値からこの割合（最低1%pt）未�
 const FIT_GROW_GAIN  = 1.05;  // 拡大は5%以上余ったときだけ
 const FIT_GROW_MS    = 500;   // 拡大は形が落ち着いてから（毎秒増える機体で脈打たせない）
 const FIT_MIN_GAP_MS = 200;   // 自動変更どうしの最短間隔
-const FIT_MAX_BURST  = 4;     // 同じ寸法のまま何度も動いたら手を引く（最後の止め）
+// 同じ形・同じ枠のまま動いてよい手数の上限（最後の止め）。旧 FIT_MAX_BURST(4) を
+// 改名して増やした。**数える相手が変わったため。** 旧実装は「同じ寸法のまま何度も
+// 動いた回数」だったが、その署名が往復のたびに動いてしまい一度も溜まらなかった
+// （autoFitZoom のコメント参照）。署名を測った px ではなく木の素性（機体数・世代数・
+// 状態別の数）で組み直すと今度は正しく溜まるが、下の二分探索は正当な詰めに何手か
+// 使う——1〜500 の全域を二分で詰め切るのに最大9手（2^9 = 512 > 500）、その前の
+// 生の目標値での数手を足して余裕を見た値。
+const FIT_MAX_STEPS  = 16;
+// 二分で挟んだ区間の有効期限（安全弁）。署名（autoFitZoom 内）は木の素性で組んでいる
+// ので拡大率では動かないが、**顔ぶれと状態が同じまま木の形だけ変わる**場合は捉え
+// られない（例: 任務の文言が伸びてカードが1行高くなる）。捉えられないまま区間を
+// 持ち続けると、「形は変わっているのに署名は同じなので区間の外へ出られず、ずれた
+// まま直せない」という新しい不具合になる——これは作ってはいけない。だから区間を
+// 作ってから一定時間を超えたら区間だけを手放す（署名と手数は捨てない）。9手・
+// 200ms間隔で2秒以内に詰め切る設計なので、6秒あれば正当な詰めを邪魔しない。
+const FIT_BRACKET_MS = 6000;   // ms
 
 // ================================================================ 黙って死なないための下ごしらえ
 // この画面は body の末尾にある**1本のインラインスクリプト**で出来ている。top-level で例外が
@@ -1047,8 +1539,12 @@ function boot() {
   try { loadState(); } catch (e) { markBroken(tr('broken.load_state', { msg: (e && e.message) || e })); }
   try { setupLang(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
   try { applyZoom(); } catch (e) { markBroken(tr('broken.apply_zoom', { msg: (e && e.message) || e })); }
+  try { applyLogPanel(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
+  try { applyBayPanel(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
   tick();
   setInterval(tick, POLL_MS);
+  // 変更履歴画面(Phase 3)。ここが落ちてもミッション管制室側は止めない。
+  try { initChangelog(); } catch (e) { markBroken('changelog init: ' + ((e && e.message) || e)); }
 }
 
 // 末尾の boot() に届かなかったときの保険。このスクリプトは body の末尾にあるので、
@@ -1059,6 +1555,7 @@ window.addEventListener('DOMContentLoaded', () => {
   try { boot(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
 });
 
+const elApp        = need('#app');
 const elTeams      = need('#teams');
 const elStandby    = need('#standby');
 const elCount      = need('#team-count');
@@ -1071,6 +1568,7 @@ const elZoomInput  = need('#zoom-input');
 const elZoomIn     = need('#zoom-in');
 const elZoomOut    = need('#zoom-out');
 const elZoomAuto   = need('#zoom-auto');
+const elLogToggle  = need('#log-toggle');
 const elLangSelect = need('#lang-select');
 const teamTpl      = need('#team-tpl');
 
@@ -1079,13 +1577,22 @@ let failCount = 0;
 let currentTab = null;      // 表示中のタブのキー（tabKey() の値）
 let zoomLevel = 100;        // 拡大率 %
 let autoFitOn = true;       // 自動フォーカスが入っているか（localStorage: dashboard:zoomAuto）
+let logPanelOpen = true;    // イベントログ（右パネル）を開いているか（localStorage: dashboard:logOpen）
+let bayOpen = true;         // 下部区画を開いているか（localStorage: dashboard:bayOpen）
 // 自動フォーカスの調律用。詳しくは autoFitZoom() の頭のコメント。
 let fitRaf       = 0;       // 予約中の rAF
 let fitRecheck   = 0;       // 「あとでもう一度測る」予約（待ちに入ったまま忘れないための命綱）
 let fitLastAt    = 0;       // 最後に自動で拡大率を変えた時刻
 let fitGrowSince = 0;       // 「拡大してよい」状態が続き始めた時刻（0＝続いていない）
-let fitBurst     = 0;       // 同じ寸法のまま何回動いたか
-let fitBurstSig  = null;    // その寸法の署名
+let fitSteps     = 0;       // 同じ署名のまま自動で何手動いたか（旧 fitBurst）
+let fitSig       = null;    // その署名（旧 fitBurstSig。組み方が変わっている）
+let fitDir       = 0;       // 直前に動いた向き（+1 拡大 / −1 縮小 / 0 まだ動いていない）
+let fitPrev      = 0;       // 直前に動く前の拡大率。反転したときに答えを挟む相手になる
+let fitLo        = 0;       // 答えを挟んだ区間の下端（0＝まだ挟めていない）。**そこでは
+                            //   まだ余っていた＝収まると実測できた**拡大率でもある
+let fitHi        = 0;       // 同じく上端（0＝まだ挟めていない）
+let fitBracketAt = 0;       // 区間を作った時刻（0＝区間が無い）。FIT_BRACKET_MS を過ぎたら
+                            //   区間だけを手放す安全弁（autoFitZoom 内のコメント参照）
 let tabs = [];              // サーバーが返したタブ一覧。並びもサーバーのものをそのまま使う
 let tabsSig = null;         // タブバーを組み直すかの判定用
 let liveSig = null;         // 進行中のミッションの顔ぶれ。新しい start の検出に使う
@@ -1115,6 +1622,13 @@ function loadState() {
   // いるならそれは必ず +/− を押した結果＝手動である。真っさらな初回だけ自動から始める。
   const autoRaw = localStorage.getItem('dashboard:zoomAuto');
   autoFitOn = (autoRaw === '0' || autoRaw === '1') ? (autoRaw === '1') : !zoom;
+  // 真っさらな初回は開いた状態から始める（既定値=表示）。
+  const logRaw = localStorage.getItem('dashboard:logOpen');
+  logPanelOpen = (logRaw === '0' || logRaw === '1') ? (logRaw === '1') : true;
+  // 下部区画も既定は開いた状態。**閉じたまま忘れられるのが一番まずい**ので、
+  // 明示的に閉じた記録があるときだけ閉じる。
+  const bayRaw = localStorage.getItem('dashboard:bayOpen');
+  bayOpen = (bayRaw === '0' || bayRaw === '1') ? (bayRaw === '1') : true;
 }
 
 /** 保存済みの選択を今の形に読み替える。以前は「プロジェクトの slug」をそのまま
@@ -1143,6 +1657,13 @@ function applyZoom() {
   // 系統樹スクロール領域だけに拡大を適用（ログ・バーは固定）
   for (const scrollEl of document.querySelectorAll('.tree-scroll')) {
     scrollEl.style.zoom = zoomPercent;
+  }
+  // 下部区画も同じ拡大率にする。**木の中と同じ姿で並べる**のが区画の狙いなので、
+  // ここを外すと、自動フォーカスが木を縮めたぶんだけ区画のカードだけが大きく残る
+  // （自動フォーカスは既定で入っているので、揃うのは拡大率がちょうど100%のときだけになる）。
+  // 掛けるのは中身（.bay-body）だけ。見出し行は固定にして、畳んだときの高さを変えない。
+  for (const bayEl of document.querySelectorAll('.bay-body')) {
+    bayEl.style.zoom = zoomPercent;
   }
   // 「自動」の2文字を数値の前に出す。自動で動いている画面と、利用者が決めた画面は
   // 見分けが付かないといけない——操作していないのに大きさが変わる理由がこれだから。
@@ -1182,17 +1703,87 @@ function nextZoomStep(dir) {
   return MIN_ZOOM;
 }
 
+/** 二分で挟んだ区間だけを手放す（fitSig / fitSteps には触らない）。
+ *
+ *  resetFitTuning() の中身から区間まわりだけを切り出したもの。区間の有効期限切れ
+ *  （FIT_BRACKET_MS、autoFitZoom 内）は「木の形は変わっていないかもしれないが、
+ *  区間が古くなったので測り直したい」場面で、**署名と手数は残したまま**区間だけを
+ *  捨てたい——そのためだけにここを分けてある。resetFitTuning() はこれに
+ *  fitSig/fitSteps のクリアを足したもの。 */
+function clearBracket() {
+  fitDir = 0; fitPrev = 0; fitLo = 0; fitHi = 0; fitBracketAt = 0; fitGrowSince = 0;
+}
+
+/** 自動フォーカスの調律をまっさらに戻す。
+ *
+ *  **捨て忘れが新しい不具合になる**ので、捨てる場所をここ1つに集めてある。捨て忘れると
+ *  「昔の往復の記憶（区間）が、木が本当に変わったあとの正当な合わせ直しを抑え込む」形で、
+ *  今度は**動かなすぎる**壊れ方をする。呼ぶのは次の3つだけ：
+ *    - 署名が変わったとき（木の形か枠の物理寸法が変わった＝測り直すべき）
+ *    - 自動フォーカスを入れ直したとき（＝「枠に合わせる」ボタンとして押されたとき）
+ *    - タブを切り替えたとき（別の木なので、前の木で挟んだ区間は意味を持たない）
+ *  区間の有効期限切れはここを呼ばない。署名と手数を残したいので、上の clearBracket()
+ *  だけを呼ぶ（autoFitZoom 内）。
+ *  @param {string} [sig] 署名。省略すると「署名も無かったことにする」
+ */
+function resetFitTuning(sig) {
+  fitSig = (sig === undefined) ? null : sig;
+  fitSteps = 0;
+  clearBracket();
+}
+
 /** 自動フォーカスの入切。`quiet` は setZoom から降ろされたときで、直後に本人が
  *  applyZoom を呼ぶので二度描かない。 */
 function setAutoFit(on, quiet) {
   autoFitOn = !!on;
   localStorage.setItem('dashboard:zoomAuto', autoFitOn ? '1' : '0');
-  fitBurstSig = null; fitBurst = 0; fitGrowSince = 0;   // 入れ直したら測り直す
+  resetFitTuning();   // 入れ直したら測り直す
   if (!quiet) applyZoom();
   if (autoFitOn) {
     const t = teams.get(currentTab);
     if (t) scheduleAutoFit(t);   // 入れ直した瞬間に効かせる＝「枠に合わせる」ボタンにもなる
   }
+}
+
+/** イベントログ（右パネル）の開閉を画面に反映する。状態は全チーム共通の1個なので、
+ *  チームごとに .els を持ち回らず #app にクラスを1つ立てるだけで済む——
+ *  #app.log-collapsed .team-side { ... } が既存・新規を問わず全チームの器に効く
+ *  （createTeam() 側で個別に呼び直す必要が無い）。 */
+function applyLogPanel() {
+  if (elApp) elApp.classList.toggle('log-collapsed', !logPanelOpen);
+  if (elLogToggle) {
+    elLogToggle.classList.toggle('on', logPanelOpen);
+    elLogToggle.title = tr(logPanelOpen ? 'log.hide' : 'log.show');
+  }
+}
+
+function setLogPanel(open) {
+  logPanelOpen = !!open;
+  localStorage.setItem('dashboard:logOpen', logPanelOpen ? '1' : '0');
+  applyLogPanel();
+}
+
+/** 下部区画（置き場所が決まらない機体）の開閉を画面に反映する。
+ *
+ *  状態は全チーム共通の1個なので、器の畳み方は #app のクラス1つで足りる
+ *  （applyLogPanel と同じ考え方）。ただしボタンは区画の見出し行＝チームごとの
+ *  DOM の中にあるので、文言だけは各チームぶん入れ直す。トップバーに出さないのは、
+ *  この区画が「出るときだけ出る」ものだからで、区画ごと消えている画面に
+ *  効かないボタンを常設したくない。閉じても見出し行は残るので押す手段は隠れない。 */
+function applyBayPanel() {
+  if (elApp) elApp.classList.toggle('bay-collapsed', !bayOpen);
+  for (const [, t] of teams) {
+    const b = t.els.bayToggle;
+    if (!b) continue;
+    b.textContent = tr(bayOpen ? 'live.bay_hide' : 'live.bay_show');
+    b.classList.toggle('on', bayOpen);
+  }
+}
+
+function setBayPanel(open) {
+  bayOpen = !!open;
+  localStorage.setItem('dashboard:bayOpen', bayOpen ? '1' : '0');
+  applyBayPanel();
 }
 
 /** 1フレームに1回だけ予約する。ResizeObserver のコールバックの中で寸法を書き換えないための
@@ -1240,6 +1831,10 @@ function fitBox(t) {
 function fitContent(t) {
   let right = 0;
   for (const [, c] of t.cols) right = Math.max(right, c.col.offsetLeft + c.col.offsetWidth);
+  // バンドが多レーンになると、宣言した列幅と、レーンに置いたカードや葉クラスタの枠の
+  // 実際の右端がずれうる。小さいほうを信じると「まだ余っている」と読まれ、右端の機体が
+  // 黙って枠の外へ出る（自動フォーカスは切れているものを直すのが仕事なので、これは最悪）。
+  right = Math.max(right, t.contentW || 0);
   const h = bodyOffsetTop(t) + (t.contentH || 0);
   return (right > 0 && h > 0) ? { w: right, h } : null;
 }
@@ -1248,19 +1843,51 @@ function fitContent(t) {
  * 表示中のチームの系統樹が枠に収まる拡大率へ合わせる。
  *
  * 収束の要は**相対**で決めること。新しい拡大率 = いまの拡大率 × (枠 ÷ 中身)。
- * 中身のローカル寸法は zoom に依らず、枠のローカル寸法は 物理寸法 ÷ z なので、この式は
- * z を約分して 物理寸法 ÷ 中身 になる——**現在の拡大率に関係なく必ず同じ答えを返す**。
- * つまり不動点であり、どこから始めても1歩で着き、2歩目は必ず「差なし」で止まる。
- *
  * 旧実装の絶対式 newLevel = 100 / 比 は Z(n+1) = K / Z(n) の形で、Z(n+2) = Z(n)。
- * すなわち周期2で永久に往復する（100% ⇔ 39.68% を実測で再現している）。ここを相対に
- * するだけで、往復は「止まる」のではなく**起きなくなる**。
+ * すなわち周期2で永久に往復した（100% ⇔ 39.68% を実測で再現している）。相対にした
+ * ことで**その**往復は起きなくなった。
+ *
+ * **ただし、これは不動点ではない。** ここにはかつて「z が約分されるので1歩で着く」と
+ * 書いてあったが、成り立っていなかった。実際の1歩は次のアフィン写像になる（u = z/100）：
+ *
+ *     next(u) = m · [ (H − h0) − (b + P)·u ] / C
+ *       H  … .tree-pane の物理高さ（flex:1 で上から降ってくるので拡大率に依らない）
+ *       h0 … 区画の見出し＋注記の物理高さ（zoom は .bay-body にしか掛けていない）
+ *       b  … .bay-body の中身のローカル高、  P … .tree-scroll の上下パディング 56px
+ *       C  … 木の中身のローカル高、          m … FIT_MARGIN
+ *
+ * **実測でもう1つ分かったことがある。C も完全な定数ではない。** 拡大率と同期して
+ * 374〜384px のあいだで揺れることを実測で確認した（検証者の報告）。原因は
+ * chooseWrap()（下で定義）が fitBox() の**ローカル**寸法（＝物理 ÷ 拡大率）で葉クラスタ
+ * の折り返し本数 R を選び直すこと——拡大率が変わると枠のローカル寸法が変わり、勝つ R が
+ * 変われば列のレーン本数が変わり、木の形＝ contentH そのものが変わる。**ここには元々
+ * 「C はローカル座標なので拡大率に依らない」と書いてあったが、それは前提の誤りだった。**
+ * この揺れ自体は往復の主因ではない（発散はあくまで b・P の効きで起きる）が、「同じ形の
+ * まま動いたか」を判定する第4層の署名に測った C をそのまま使うと、C 自身が揺れるせいで
+ * 署名が往復のたびに変わり、第4層が発動すべき相手にだけ発動できなくなる——これが実際に
+ * 起きていた（下の autoFitZoom 本体、署名まわりのコメント参照。署名は測った px ではなく
+ * 木の素性で組み直してある）。
+ *
+ * 傾きが 0 でない理由は2つある。ひとつは**枠の物理高さが拡大率の関数だから**——区画
+ * （.orphan-bay）は木と同じ縦の取り分を奪い合っていて、その中身には木と同じ zoom が
+ * 掛かっている（applyZoom のコメント参照）。もうひとつは**パディング P**で、clientHeight
+ * はローカル値なのに、そこから引くパディングもローカル値なので、約分されずに残る。
+ * 傾き −m(b+P)/C の絶対値が 1 を超えると**発散し、拡大と縮小を交互に繰り返す**
+ * （木が小さく区画が大きいときに実際に起きる。P のぶん、区画が無くても傾きは 0 でない）。
+ *
+ * そこで、写像の性質に頼るのをやめて**挟み撃ち**にする。増分は g(u) − u = (1+k)(u* − u)
+ * で係数 (1+k) は必ず正なので、**目標の向きは常に答えのある側を指す**。だから「前回動いた
+ * 向きと逆の目標が出た」ことは「答えは前回の拡大率といまの拡大率のあいだにある」ことと
+ * 同じで、中点を当てれば区間は毎回半分になる。整数なので 1〜500 の全域からでも9手で
+ * 詰み切り、そこで必ず止まる。**原因を知らなくても止まる**のがこの方式の値打ちで、
+ * 将来べつの「拡大率が枠の寸法を動かす」結合が入っても同じように効く。
  *
  * その上で、丸め・スクロールバー・毎秒増える機体という現実の揺らぎに4層で備える：
- *   1. 上の不動点性（振動そのものを消す）
+ *   1. 反転したら二分で詰める（往復を必ず有限回で終わらせる。区間には有効期限
+ *      FIT_BRACKET_MS があり、詰め切れないまま長居したら区間だけを手放して測り直す）
  *   2. CSS の scrollbar-gutter:stable（バーの出入りで枠幅が揺れる古典的な振動源を断つ）
  *   3. 不感帯と、拡大側だけの待ち時間（1%刻みの±1ジッタと、増え続ける最中の脈動を吸う）
- *   4. 同じ寸法のまま何度も動いたら手を引く（上3層が破れても必ず有限回で終わる）
+ *   4. 同じ署名のまま動きすぎたら、収まると実測できた拡大率へ固定して手を引く
  *
  * ResizeObserver の発火を数える echo guard は**採らない**。zoom の変更で RO が飛ぶかは
  * ブラウザ依存（Firefox は 141 まで要素の zoom を contentRect に反映していなかった）で、
@@ -1273,25 +1900,133 @@ function autoFitZoom(t) {
   const box = fitBox(t), con = fitContent(t);
   if (!box || !con) return;
 
+  // 署名。**測った px ではなく、木の素性（データ）で組む。**
+  // ここにはかつて con.w x con.h（fitContent() の戻り値＝木の中身のローカル実寸）を
+  // 使い、「con はローカル座標なので拡大率に依らない」とコメントしていた（頭のコメント
+  // 参照）。**その前提は実測で破れていた**：con.h が拡大率と同期して 374〜384px の
+  // あいだで動いた。原因は chooseWrap()（後述）が fitBox() のローカル寸法（＝物理 ÷
+  // 拡大率）で葉クラスタの折り返し本数 R を選び直すこと——拡大率が変わると枠のローカル
+  // 寸法が変わり、勝つ R が変われば木の形＝ contentH そのものが変わる。測った px を
+  // 署名にする限り、拡大率が動くたびに署名も動いてしまい、**この最後の止めが、止める
+  // べき唯一の相手にだけ発動できなかった**（往復のたびに resetFitTuning() が発火して
+  // 二分の区間が一度も蓄積されない。検証者の実測で確認済み）。
+  //
+  // 署名の役目は寸法の記録ではなく「同じ木が同じ枠に入っている」ことの同一視なので、
+  // 拡大率にはそもそも汚染されないデータ由来の量で組み直す：機体数・世代数・状態別の
+  // 機体数（running/done/standby、および running に重なる修飾である waiting を別枠で）。
+  // カード高は状態で変わりうる（完了で結果行が生える等）ので、数が同じでも状態が動いた
+  // ら別の木として扱う。枠側は変えない——.tree-scroll ではなく親の .tree-pane を測る
+  // （.tree-scroll の物理高さは区画の伸縮で拡大率ごとに動くが、.tree-pane は実測でも
+  // 不変だった。§6-3）。
+  const agentsList = (t.state && t.state.agents) || [];
+  let sigRun = 0, sigDone = 0, sigStandby = 0, sigWaiting = 0;
+  const sigGens = new Set();
+  for (const a of agentsList) {
+    sigGens.add(genOf(a));
+    if (a.status === 'running') sigRun++;
+    else if (a.status === 'done') sigDone++;
+    else sigStandby++;
+    if (a.waiting) sigWaiting++;
+  }
+  const pane = t.els.pane.getBoundingClientRect();
+  const sig = agentsList.length + 'n' + sigGens.size + 'g' +
+              sigRun + '.' + sigDone + '.' + sigStandby + '.' + sigWaiting + 'w/' +
+              Math.round(pane.width) + 'x' + Math.round(pane.height);
+  if (sig !== fitSig) resetFitTuning(sig);   // 木の形か枠が変わった＝挟み直す
+
+  const now = performance.now();
+
+  // 区間の有効期限（安全弁。定数は上で定義）。**素性の署名は「顔ぶれと状態が同じまま
+  // 木の形だけ変わる」場合を捉えられない**（例: 任務の文言が伸びてカードが1行高くなる）。
+  // 捉えられないまま区間（fitLo/fitHi）を持ち続けると、「形は変わっているのに署名は
+  // 同じなので区間の外へ出られず、ずれたまま直せない」という新しい不具合になる——これは
+  // 作ってはいけない。だから区間を作ってから FIT_BRACKET_MS を超えたら区間だけを手放す。
+  // **署名と手数（fitSig/fitSteps）は捨てない**——「この木で往復した実績」なので、直後に
+  // また反転したら同じ手数の続きとして新しい区間を作ればよい。手放したら必ず
+  // laterAutoFit() で測り直しを予約する：完了して毎秒の再描画が止まった画面では、
+  // 予約しない限り誰も測り直さない。
+  if (fitHi && now - fitBracketAt > FIT_BRACKET_MS) {
+    clearBracket();
+    laterAutoFit(FIT_MIN_GAP_MS);
+  }
+
+  // 最後の止め。上の層が全部破れても、ここで必ず有限回で終わる。
+  // **固定先は fitLo。** そこでは「まだ余っている＝拡大したい」と出ていた拡大率なので、
+  // 収まることが実測で裏付けられている。ただ小さいだけの値ではなく、収まると分かって
+  // いる中で一番大きい値なので、必要以上に縮めない。
+  if (fitSteps >= FIT_MAX_STEPS) {
+    if (fitSteps === FIT_MAX_STEPS) {
+      fitSteps++;                                    // 言うのも直すのも1回だけ
+      console.warn(tr('console.fit_stopped'), sig);
+      if (fitLo && zoomLevel !== fitLo) {
+        fitLastAt = now;
+        setZoom(fitLo, { auto: true });
+        scheduleLayout(t);
+      }
+    }
+    return;   // 署名が変わるまで手を引く
+  }
+
   // 横と縦の両方を収める。列幅は 330px 固定で世代ぶんしか増えないが、縦は機体が増えるたび
   // 約152px ずつ伸びる。実測では縦が6体で溢れるのに対し、横は5世代必要——つまり普段
   // 効くのは縦のほう。横だけを見ていた旧実装は、最も起きる過密に何もしていなかった。
   const f = Math.min(box.w / con.w, box.h / con.h) * FIT_MARGIN;
   if (!Number.isFinite(f) || f <= 0) return;
 
-  const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(zoomLevel * f)));
+  const raw = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(zoomLevel * f)));
 
   // 不感帯は現在値に対する割合で見る。1%刻みなので、絶対値で置くと 500% では緩すぎ、
   // 5% では厳しすぎる。丸めの ±0.5 を必ず吸えるように最低 1%pt は確保する。
+  // **判定するのは生の目標値。** 二分の中点で判定すると、いまが正しい位置なのに
+  // 区間の反対側へ引っ張られて動いてしまう。
   const dead = Math.max(1, Math.round(zoomLevel * FIT_DEADBAND));
-  if (Math.abs(next - zoomLevel) < dead) { fitGrowSince = 0; return; }
+  if (Math.abs(raw - zoomLevel) < dead) {
+    // 落ち着いた。ただし **区間（fitLo/fitHi）と署名は捨てない**。捨てると次のフレームで
+    // 生の目標値がそのまま戻ってきて往復が再開する（生の目標値は、往復しているあいだ
+    // ずっと遠くを指し続ける。落ち着いたのは二分で詰めた結果であって、生の目標値が
+    // 近づいたからではない）。捨ててよいのは resetFitTuning() を呼ぶ3つの場面だけ。
+    fitGrowSince = 0;
+    return;
+  }
 
-  const now = performance.now();
-  if (next > zoomLevel) {
+  // 反転したら答えを挟む。以後はその区間を二分で詰める（頭のコメントの挟み撃ち）。
+  const dir = raw > zoomLevel ? 1 : -1;
+  if (!fitHi && fitDir && dir !== fitDir) {
+    fitLo = Math.min(fitPrev, zoomLevel);
+    fitHi = Math.max(fitPrev, zoomLevel);
+    fitBracketAt = now;   // 区間ができた時刻。有効期限はここから数える（上のコメント参照）
+  }
+  let next = raw;
+  if (fitHi) {
+    // いまの位置が区間のどちら側かは、目標の向きが教えてくれる（向きは常に答えの側を
+    // 指す）。その側の境界をいまの位置まで寄せてから中点を取る。
+    if (dir > 0) fitLo = Math.max(fitLo, zoomLevel);
+    else         fitHi = Math.min(fitHi, zoomLevel);
+    // **中点は必ず切り捨てる（fitLo 側へ寄せる）。** Math.round だと .5 は上（fitHi 側）
+    // へ丸まる（JS の仕様）。fitLo は「まだ余っていた＝収まると実測できた」側、fitHi は
+    // 「収まらなかった」側（上のコメントの narrowing がそう作っている）ので、区間が
+    // 隣り合う整数2つ（fitHi === fitLo + 1）まで詰まったとき、Math.round では中点 0.5 が
+    // fitHi へ丸まり、**収まらない側で確定して return してしまう**。49体の木・1600x1000
+    // で実際に踏んだ（fitLo:16 fitHi:17 のまま zoomLevel が17に固定され、49体中4体が
+    // 46px はみ出し続けた。壊していないことの確認テストで発見）。切り捨てれば同じ場面で
+    // 必ず fitLo（収まる側）に着地する。「切れているのを直すのは急ぐ」という設計の
+    // 非対称性（頭のコメント参照）と向きが一致するので、最後の1手に限らず常に切り捨てる。
+    next = Math.floor((fitLo + fitHi) / 2);
+    if (next === zoomLevel) return;   // 区間が 1 未満に詰んだ＝ここが答え
+  }
+
+  // now はここより上（署名の直後）で1回だけ取っている——区間の有効期限判定と同じ
+  // 時刻を使うため。
+  if (next > zoomLevel && !fitHi) {
     // 拡大は急がない。機体は毎秒1体ずつ増えるので、空いた瞬間に戻すと画面が脈打つ。
     // 「切れているのを直す」は急ぎ、「余白を詰める」は急がない——利用者の損得が非対称。
     // 待つときは必ず「あとで測り直す」を予約する。予約しないと、完了して再描画が
     // 止まったミッションでは誰も測り直さず、待ちに入ったまま永久に拡大しなくなる。
+    //
+    // **区間を詰めている最中（fitHi あり）は待たない。** 区間があるということは署名＝
+    // 木の形が変わっていないということで、この待ちが守ろうとしている「毎秒増える機体」
+    // がそもそも居ない。しかも各手は必ず前の手より小さいので、待たなくても脈にならない。
+    // 待たせると1手ごとに 500ms かかり、詰め切るまで数秒も画面が動き続けることになる。
     if (f < FIT_GROW_GAIN) { fitGrowSince = 0; return; }
     if (!fitGrowSince)     { fitGrowSince = now; laterAutoFit(FIT_GROW_MS); return; }
     if (now - fitGrowSince < FIT_GROW_MS) {
@@ -1307,16 +2042,9 @@ function autoFitZoom(t) {
     return;
   }
 
-  // 最後の止め。上の層が全部破れても、ここで必ず有限回で終わる。
-  // 木の形か枠が変われば署名も変わるので、正当な再フィットは妨げない。
-  const sig = con.w + 'x' + con.h + '/' + box.w + 'x' + box.h;
-  if (sig === fitBurstSig) {
-    if (++fitBurst > FIT_MAX_BURST) {
-      console.warn(tr('console.fit_stopped'), sig);
-      return;
-    }
-  } else { fitBurstSig = sig; fitBurst = 1; }
-
+  fitSteps++;
+  fitDir  = next > zoomLevel ? 1 : -1;   // 次の反転判定はこの向きと比べる
+  fitPrev = zoomLevel;                    // 反転したとき、答えを挟む相手になる
   fitLastAt = now;
   setZoom(next, { auto: true });
   // 枠のローカル高さが変わったので縦の中央寄せを取り直す。ResizeObserver の発火に
@@ -1456,10 +2184,24 @@ function switchTab(key) {
   // 完全な状態を読み込むことになるし、もう変わらないので取り直す意味も無い。
   if (t.loadState === 'idle') loadRun(t, tb);
 
+  // 別の木に移った。前の木で挟んだ区間は意味を持たないので捨てる。**署名が偶然一致する
+  // ことがある**（同じミッションの「進行中」タブと、その記録タブは木の形も枠も同じ）ので、
+  // 署名の変化に任せず、ここで明示的に捨てる。
+  resetFitTuning();
   // 隠れている間は clientHeight が 0 なので縦の中央寄せが決まらない。出した直後に
   // 測り直す（lastAvailH を無効化しておけば ResizeObserver 側とも二重にならない）。
   t.lastAvailH = -1;
+  // 隠れている間に置かれた位置から目標へ**滑らせない**。縦は元からこの合図で守られて
+  // いたが、横（レーン）も同じ扱いが要る。付けないと、タブを開いた瞬間にクラスタの
+  // カードだけが横滑りする。
+  t.snapNext = true;
   if (t.state) scheduleLayout(t);
+  // **ここで付いていかないと、初回に引いた線が古い座標のまま残る。**
+  // 隠れていた器を出した直後は、カードの寸法と位置が 600ms ほど動き続ける（実測：親カードの
+  // 右端が 193.7 → 397 → 408 → 330）。1フレームだけ引いても、その1フレームが動いている
+  // 途中なら線はそこで固まる。ResizeObserver では足りない：寸法しか見ないので、中のロボが
+  // 遅れて現れてカードが右へずれる動きを拾えず、実測でも発火が止まったあとにまだ動いていた。
+  followMoves(t, 1200);
 }
 
 function markTabActive(key) {
@@ -1618,7 +2360,7 @@ async function loadRun(t, tb) {
     const res = await fetch(url, { cache: 'no-store' });
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
-    data = normalizeState(body);
+    data = withPlacedOrphans(normalizeState(body));
     if (!data) throw new Error(tr('run.bad_shape'));
   } catch (e) {
     if (!teams.has(t.key)) return;      // 読み込んでいる間に消された記録
@@ -1644,6 +2386,13 @@ async function loadRun(t, tb) {
 function showRunNote(t, text, retry) {
   t.els.links.innerHTML = '';
   t.els.gens.innerHTML = '';
+  // 木の DOM を丸ごと捨てるので、その木を指していた記録も一緒に捨てる。残すと、
+  // 外された要素を指したまま clusters が生き延び、次の layoutTree までのあいだに
+  // drawLinks が全部 0 になった矩形を測って、左上に潰れた線と枠を描く。
+  t.clusters = [];
+  t.clusteredIds.clear();
+  t.contentW = 0;
+  t.laneSig = null;
   const note = document.createElement('div');
   note.className = 'empty-note run-note';
   note.textContent = text;
@@ -1677,6 +2426,95 @@ function freezeRef(s, tb) {
 
 /** /api/run の応答を render() が触る形にそろえる。1件ずつの読み込みでしか通らないので、
  *  ここは毎秒の負荷にならない。壊れた記録1件で画面全体が落ちないようにするための保険。 */
+/** 焼き付けた孤児の実測値を、完了したカードが読む形にする。
+ *
+ *  **測った値だけを写す。** 見出しは持たせない——記録が無い機体には完了の合図も
+ *  無いので、名乗れる一行がそもそも存在しない。
+ *
+ *  ここを null のままにすると、締めた瞬間にトークンとツール回数が「—」に戻る。
+ *  締める前は確かに測れて画面に出ていた数字なので、捨てるほうが嘘に近い。
+ */
+function frozenResult(o) {
+  if (!o || !o.frozen) return null;
+  const num = (v) => (v === undefined ? null : v);
+  return {
+    elapsedSec: num(o.elapsedSec), tokens: num(o.tokens),
+    toolCalls: num(o.toolCalls), headline: '',
+  };
+}
+
+/** 系統樹に置いた孤児のカードIDの頭。記録のIDと混ざらないように分ける。 */
+const ORPHAN_ID_PREFIX = 'LIVE:';
+
+/** 記録に無い稼働中の機体のうち、**起動元が実測で分かっていて、その親が画面にいる**
+ *  ものだけを、木に置ける形にして返す。
+ *
+ *  **ここで推測はしない。** 親は「その機体を起動した Agent 呼び出しのID
+ *  （meta.json の toolUseId）が、親のログの tool_use と一致した相手」で、
+ *  サーバーが実測で辿ったものしか渡ってこない。その親が記録と結ばれているときだけ
+ *  記録上のID（parentRecordId）が分かり、置き場所が一意に決まる。
+ *
+ *  親が分からない機体は置かない。「たぶん指令塔の下」で線を引いた瞬間、この画面は
+ *  実測を出す道具ではなくなる。それらは今までどおり木の下の一覧に並ぶ。
+ *
+ *  孤児の下にさらに孤児がぶら下がることがあるので、置けなくなるまで繰り返す
+ *  （親が置かれて初めて子の置き場所が決まる）。
+ */
+function placedOrphans(agents, sources) {
+  const list = (sources && Array.isArray(sources.liveOrphans)) ? sources.liveOrphans : [];
+  if (!list.length) return [];
+  const gen = new Map(agents.map((a) => [a.id, a.generation]));
+  const out = [];
+  let rest = list.slice();
+  for (let pass = 0; pass < 8 && rest.length; pass++) {
+    const left = [];
+    for (const o of rest) {
+      // 親が記録と結ばれていればその記録ID、結ばれていなくても親自身が既に
+      // 置かれていればそのカードID。どちらも実測で辿った相手なので推測は入らない。
+      let pid = o.parentRecordId || '';
+      if (!gen.has(pid) && o.parentAgentId) pid = ORPHAN_ID_PREFIX + o.parentAgentId;
+      if (!gen.has(pid)) { left.push(o); continue; }
+      const id = ORPHAN_ID_PREFIX + o.agentId;
+      gen.set(id, (gen.get(pid) || 0) + 1);
+      out.push({
+        id: id,
+        name: o.description || o.agentId,
+        parentId: pid,
+        generation: gen.get(id),
+        model: o.model || '',
+        mission: '',
+        // 記録が無い＝完了の合図も来ないので、動いているあいだは「稼働中」しか名乗れない。
+        // 実際に終わっているかは沈黙の長さでしか読めない（カードの b-idle に出る）。
+        // 締めるときに焼き付けたもの（frozen）だけは別で、そのミッションはもう
+        // 終わっている——完了した記録の中で稼働中の顔をしていたら、それは嘘になる。
+        status: o.frozen ? 'done' : 'running',
+        waiting: false,
+        live: o,
+        startedAt: null, finishedAt: null, result: frozenResult(o),
+        // **数えない印。** 記録に無いものを「機体数」や「完了数」に混ぜると、
+        // 締め忘れの判定（全機帰還したか）が狂う。
+        source: 'orphan',
+      });
+    }
+    if (left.length === rest.length) break;   // 1体も置けなかった。これ以上は決まらない
+    rest = left;
+  }
+  return out;
+}
+
+/** 木に置ける孤児を混ぜた状態を返す。元の状態は変えない。
+ *
+ *  **呼び出し口は2つある。** 過去の記録は normalizeState を通って入り、稼働中の
+ *  チームは毎秒の一覧からそのまま入る。片方だけに掛けると、片方の画面でだけ
+ *  孤児が木に出ない——しかもエラーにはならないので気づけない。
+ */
+function withPlacedOrphans(s) {
+  if (!s || !Array.isArray(s.agents)) return s;
+  const extra = placedOrphans(s.agents, s.sources);
+  if (!extra.length) return s;
+  return Object.assign({}, s, { agents: s.agents.concat(extra) });
+}
+
 function normalizeState(s) {
   if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
   const mission = Object.assign({}, (s.mission && typeof s.mission === 'object') ? s.mission : {});
@@ -1693,12 +2531,13 @@ function normalizeState(s) {
                 ? a : Object.assign({}, a, { status: 'standby' }))
     .map((a) => (typeof a.waiting === 'boolean' && a.status === 'running')
                 ? a : Object.assign({}, a, { waiting: false }));
+  const sources = (s.sources && typeof s.sources === 'object') ? s.sources : null;
   return {
     runId:   s.runId || null,
     project: (s.project && typeof s.project === 'object') ? s.project : {},
     mission, agents,
     log:     (Array.isArray(s.log) ? s.log : []).filter((e) => e && typeof e === 'object'),
-    sources: (s.sources && typeof s.sources === 'object') ? s.sources : null,
+    sources: sources,
   };
 }
 
@@ -1888,6 +2727,7 @@ bindZoomHold(elZoomOut, -1);
 bindZoomHold(elZoomIn, 1);
 
 bind(elZoomAuto, 'click', () => setAutoFit(!autoFitOn));
+bind(elLogToggle, 'click', () => setLogPanel(!logPanelOpen));
 
 // 表示部をクリックすると数値入力に変わる。1%刻みで目的の値へ一発で行ける唯一の手段。
 function beginZoomEdit() {
@@ -1989,6 +2829,10 @@ function createTeam(slug, runId, live) {
       elapsed:  q('.m-elapsed'),
       agents:   q('.m-agents'),
       tokens:   q('.m-tokens'),
+      // 自動フォーカスの署名を取る相手。**.tree-scroll ではなく、その親を測る。**
+      // .tree-scroll の物理寸法は下の区画（.orphan-bay）の伸縮で拡大率ごとに動くが、
+      // .tree-pane は flex:1（basis 0）なので寸法が上から降ってきて、拡大率に依らない。
+      pane:     q('.tree-pane'),
       scroll:   q('.tree-scroll'),
       canvas:   q('.tree-canvas'),
       links:    q('.links'),
@@ -1997,14 +2841,31 @@ function createTeam(slug, runId, live) {
       log:      q('.log'),
       logCount: q('.log-count'),
       warnings: q('.warnings'),
+      bay:       q('.orphan-bay'),
+      bayTitle:  q('.bay-title'),
+      bayToggle: q('.bay-toggle'),
+      bayNote:   q('.bay-note'),
+      bayBody:   q('.bay-body'),
     },
     cards:   new Map(),   // id -> { root, card, metrics..., status }
+    // 下部区画のカード。**t.cards とは別に持つ。** 同じ入れ物に入れると、
+    // render() の刈り取り（s.agents に居ない id を消す）で毎回消され、
+    // drawLinks が「そこにカードがある」と読んで系統樹の線の経路まで曲がる。
+    orphanCards: new Map(),   // LIVE:<agentId> -> entry
     cols:    new Map(),   // generation -> { col, body }
     logKeys: new Set(),   // 重複排除キーは at|who|text。チームごとに分けるので衝突しない
     layoutOrder:  [],     // 深さ優先順の機体。縦順の決定はこれが基準
     // 木の実際の高さ。DOM から測ると .gen-body が max(木の高さ, 枠の高さ) で底上げされて
     // いて「枠より小さい」ことが分からなくなるので、layoutTree が計った値を別に持つ。
     contentH:     0,
+    // 木の実際の幅。バンドが多レーンになると .gen-col の宣言幅とレーンに置いたカードの
+    // 実際の右端がずれうるので、fitContent は両方の大きいほうを見る。過小評価すると
+    // 「もっと拡大してよい」と読まれて右端の機体が黙って枠の外へ出る。
+    contentW:     0,
+    wrapMap:      null,   // 親id → その束の1列あたりの行数。null＝未決定（次の start で戻る）
+    laneSig:      null,   // バンドごとのレーン本数の署名。変わったフレームは一括着地させる
+    clusters:     [],     // layoutTree が確定させた葉クラスタ。drawLinks がこれだけを見る
+    clusteredIds: new Set(), // クラスタに属する機体の id。既存のベジェから除外する
     layoutRaf:    0,
     followRaf:    0,
     followUntil:  0,
@@ -2020,9 +2881,26 @@ function createTeam(slug, runId, live) {
     archiveAt:    null,   // 記録された時刻（バーの「過去の記録」札に出す）
   };
   teams.set(key, t);
+  bind(t.els.bayToggle, 'click', () => setBayPanel(!bayOpen));
+  applyBayPanel();          // 生まれたばかりのボタンに、いまの状態の文言を入れる
   elTeams.appendChild(root);
   boxOwner.set(t.els.canvas, t);
   boxOwner.set(t.els.scroll, t);
+  // カードの移動が**終わった時点**で線を引き直す。followMoves は「動き始めた時刻＋540ms」で
+  // 切るタイマーなので、自動フォーカスが拡大率を決め直して2度目の移動が始まると、その終わりを
+  // 取りこぼす。実測（dummy-deep-tree・幅2100）では、カードは 500ms 付近まで横に動き続けるのに
+  // 線は 8.84 ローカルpx 左の位置で固まったまま静止し、以後どのイベントでも直らなかった
+  // ——親カードの右端から出るはずの線がカードの内側から出て、フックはロボの左端に届かない。
+  // 終わりのイベントで締めれば、何度移動が重なっても最後の1回で必ず正しい位置に戻る。
+  t.els.canvas.addEventListener('transitionend', (e) => {
+    if (e.propertyName !== 'top' && e.propertyName !== 'left') return;
+    if (!e.target || !e.target.classList || !e.target.classList.contains('agent')) return;
+    // 1フレームだけ引き直しても足りない。トランジションが終わったあとも、拡大率の
+    // 決め直しに伴う再レイアウトで座標が実測 110ms ほど動き続ける（機体の top は
+    // 3692ms で止まったのに、カードの右端は 3800ms 付近まで動いていた）。
+    // followMoves の有限ループをもう一度回して、止まりきるまで付いていく。
+    followMoves(t);
+  });
   sizeWatch.observe(t.els.canvas);
   sizeWatch.observe(t.els.scroll);
   applyZoom();   // あとから増えた器にも今の拡大率を効かせる
@@ -2085,6 +2963,32 @@ function elapsedFrom(iso, refMs) {
 }
 
 // ------------------------------------------------------------------ ロボット
+
+/** モデル名からボディ色のトーンを決める。'' は既定の白。
+ *
+ *  記録側は "claude-opus-5"、実機の meta.json は "opus" と、同じモデルが別表記で入る
+ *  （livefeed.model_key と同じ事情）。そのため部分一致で拾う。
+ *  **知らない表記は必ず '' に落とす。** 推測して別の色で塗ると、画面が黙って嘘をつく。
+ *  空文字を先に弾くのは「モデル名が無い＝判定できない」ので白のまま、という別の理由。
+ *  Gemini をその次に見ているのは、全モデル水色と決まっているため。将来 "sol" を含む
+ *  Gemini のモデル名が出ても、下の表（Opus/Sol 用の正規表現）に吸われないようにする。 */
+const MODEL_TONES = [
+  [/fable/,                     'red'],
+  [/opus/,                      'orange'],
+  [/haiku/,                     'green'],
+  [/sonnet/,                    ''],
+  [/(^|[^a-z])sol([^a-z]|$)/,   'orange'],
+  [/(^|[^a-z])luna([^a-z]|$)/,  'green'],
+  [/(^|[^a-z])terra([^a-z]|$)/, ''],
+];
+
+function modelTone(model) {
+  const low = String(model || '').toLowerCase();
+  if (!low) return '';
+  if (low.includes('gemini')) return 'aqua';
+  for (const [re, tone] of MODEL_TONES) if (re.test(low)) return tone;
+  return '';
+}
 
 function robotSvg() {
   // viewBox 120x166 は .robot の 94x130 と同じ縦横比。倍率 0.783 でレターボックスが出ない。
@@ -2211,7 +3115,11 @@ function ensureColumn(t, g) {
 
 // ------------------------------------------------------------------ カード生成・更新
 
-function createAgent(t, a) {
+/** カード1枚ぶんの DOM を組んで、参照をまとめた entry を返す。
+ *
+ *  **どこに置くかは決めない。** 系統樹のカードはここで作ってから t.cards に登録し、
+ *  下部区画のカードは登録せずに区画へ入れる（登録すると render の刈り取りで消える）。 */
+function buildAgentDom(a) {
   const root = document.createElement('div');
   root.className = 'agent ' + a.status + ' born';
   root.dataset.id = a.id;
@@ -2230,13 +3138,19 @@ function createAgent(t, a) {
     '<div class="c-top"><span class="c-name"></span><span class="c-id"></span></div>' +
     '<div class="c-badges"><span class="badge b-model"></span>' +
       '<span class="badge b-src self" hidden data-i18n="card.self_reported"></span>' +
-      '<span class="badge b-wait" hidden data-i18n="card.awaiting"></span></div>' +
+      '<span class="badge b-orphan" hidden data-i18n="card.orphan"></span>' +
+      '<span class="badge b-wait" hidden data-i18n="card.awaiting"></span>' +
+      '<span class="badge b-idle" hidden></span></div>' +
     '<div class="c-mission"></div>' +
     '<div class="c-metrics">' +
       '<div class="metric"><span class="mk" data-i18n="stat.elapsed"></span><span class="mv m-time">—</span></div>' +
       '<div class="metric"><span class="mk" data-i18n="stat.tokens"></span><span class="mv m-tok">—</span></div>' +
       '<div class="metric"><span class="mk" data-i18n="stat.tools"></span><span class="mv m-tool">—</span></div>' +
     '</div>' +
+    // 稼働中の実測は .c-metrics の中ではなく後ろに置く。中に足すと
+    // entry.timeK（.metric .mk の1つ目）が別の見出しを掴んで、言語を切り替えたときに
+    // 「経過／所要」の訳が当たらなくなる（切り替えるまで表に出ない壊れ方をする）。
+    '<div class="c-live" hidden><span class="lv-tool"></span><span class="lv-num"></span></div>' +
     '<div class="c-result" hidden></div>';
   if (i18nOk) window.I18N.apply(card);
 
@@ -2249,8 +3163,13 @@ function createAgent(t, a) {
     id:     card.querySelector('.c-id'),
     model:  card.querySelector('.b-model'),
     src:    card.querySelector('.b-src'),
+    orphan: card.querySelector('.b-orphan'),
     mission:card.querySelector('.c-mission'),
     wait:   card.querySelector('.b-wait'),
+    idle:   card.querySelector('.b-idle'),
+    live:   card.querySelector('.c-live'),
+    lvTool: card.querySelector('.lv-tool'),
+    lvNum:  card.querySelector('.lv-num'),
     time:   card.querySelector('.m-time'),
     timeK:  card.querySelector('.metric .mk'),
     tok:    card.querySelector('.m-tok'),
@@ -2258,12 +3177,19 @@ function createAgent(t, a) {
     result: card.querySelector('.c-result'),
     status: null,
     waiting: null,
+    tone:   null,
     top:    null,   // layoutTree が入れた縦位置（px、.gen-body 基準）。null は未配置
+    left:   null,   // layoutTree が入れた横位置（px、バンドの左端基準）。null は未配置
     h:      0,      // layoutTree が実測した高さ
   };
   root.addEventListener('animationend', function once(e) {
     if (e.animationName === 'pop') root.classList.remove('born');
   });
+  return entry;
+}
+
+function createAgent(t, a) {
+  const entry = buildAgentDom(a);
   t.cards.set(a.id, entry);
   return entry;
 }
@@ -2285,7 +3211,17 @@ function updateAgent(t, entry, a) {
   entry.id.textContent = a.id;
   // 空 = モデル未指定。サーバーは言語に依存しない空文字で寄こすので、訳すのはここ。
   entry.model.textContent = a.model || tr('card.unknown_model');
+  const tone = modelTone(a.model);
+  if (entry.tone !== tone) {
+    entry.root.classList.remove('mdl-red', 'mdl-orange', 'mdl-green', 'mdl-aqua');
+    if (tone) entry.root.classList.add('mdl-' + tone);
+    entry.tone = tone;
+  }
   entry.src.hidden = a.source !== 'self';
+  // 記録に無い機体。線は実測で引いているが、**記録としては存在しない**ことを
+  // カード自身に言わせる。ここを出さないと、add を打ち忘れたことに気づけない。
+  if (entry.orphan) entry.orphan.hidden = a.source !== 'orphan';
+  entry.root.classList.toggle('orphan', a.source === 'orphan');
   entry.mission.textContent = a.mission || tr('card.no_mission');
   entry.mission.title = a.mission || '';
 
@@ -2312,11 +3248,60 @@ function setMetric(el, text, hasValue) {
   el.classList.toggle('none', !hasValue);
 }
 
+// 稼働中の実測を1行に描く。値の出所は Claude Code がその機体について書いている記録で、
+// ツール回数と経過秒は数え上げた実数、トークンだけは最後の行のコンテキスト長という
+// 近似なので ≈ を付ける。記録された実測値（.c-metrics）とは混ぜない——同じ枠に出すと、
+// 完了通知として受け取った値と見分けが付かなくなる。
+function paintLive(entry, a) {
+  const lv = a.status === 'running' ? a.live : null;
+  entry.live.hidden = !lv;
+  entry.idle.hidden = !(lv && lv.state !== 'active');
+  if (!lv) { entry.live.className = 'c-live'; return; }
+
+  entry.live.className = 'c-live' + (lv.state === 'active' ? '' : ' ' + lv.state);
+
+  const label = lv.toolLabel || '';
+  entry.lvTool.textContent = '';
+  const name = document.createElement('b');
+  name.textContent = lv.tool || tr('live.unknown_tool');
+  entry.lvTool.appendChild(name);
+  if (label) entry.lvTool.appendChild(document.createTextNode(' ' + label));
+  entry.lvTool.title = (lv.tool || '') + (label ? ' ' + label : '');
+
+  const parts = [];
+  if (lv.toolCalls !== null && lv.toolCalls !== undefined) {
+    parts.push(tr('live.tools_n', { n: fmtNum(lv.toolCalls) }));
+  }
+  if (lv.tokens !== null && lv.tokens !== undefined) parts.push('≈' + fmtTokens(lv.tokens));
+  entry.lvNum.textContent = parts.join('   ');
+
+  if (lv.state !== 'active') {
+    entry.idle.classList.toggle('stalled', lv.state === 'stalled');
+    entry.idle.textContent = tr(lv.state === 'stalled' ? 'live.stalled' : 'live.quiet',
+                                { s: fmtSec(lv.idleSec) });
+  }
+}
+
 function updateAgentClock(entry, a, refNow) {
   let sec = null;
   if (a.status === 'running') sec = elapsedFrom(a.startedAt, refNow);
   else if (a.status === 'done') sec = a.result ? a.result.elapsedSec : null;
+  // 記録に無い機体は開始時刻を名乗れない（add が打たれていないので記録が無い）。
+  // 代わりに出すのは実測のログの幅（最初の行から最後の行まで）で、start からの
+  // 壁時計ではない。黙っている機体ではその差が開くが、同じカードに沈黙の長さも
+  // 出ているので、両方を並べて読める。
+  //
+  // **記録のある機体には使わない。** sec === null だけを条件にすると、記録はあるが
+  // startedAt が欠けている機体（孫の自己申告は書かないことがある）にも効いてしまい、
+  // 「経過」という同じ見出しで、壁時計と、黙ると増えない値が並ぶことになる。
+  if (sec === null && a.source === 'orphan'
+      && a.live && a.live.elapsedSec !== null && a.live.elapsedSec !== undefined) {
+    sec = a.live.elapsedSec;
+  }
   setMetric(entry.time, fmtSec(sec), sec !== null);
+  // live は毎秒変わる。sig（再描画の判定）には数値を入れていないので、
+  // 経過時間と同じこの経路で塗る。ここを通さないと値が固まったままになる。
+  paintLive(entry, a);
 }
 
 /** そのチームの枠で次のミッションが始まったら、前のミッションの表示を完全に捨てる。
@@ -2329,6 +3314,11 @@ function resetView(t) {
   if (t.followRaf) { cancelAnimationFrame(t.followRaf); t.followRaf = 0; }
   for (const [, entry] of t.cards) entry.root.remove();
   t.cards.clear();
+  // 下部区画のカードは render() の刈り取りを通らない（t.cards に居ないため）。
+  // ここで片付けないと、前のミッションの機体が区画に残り続ける。
+  for (const [, entry] of t.orphanCards) entry.root.remove();
+  t.orphanCards.clear();
+  if (t.els.bay) t.els.bay.hidden = true;
   for (const [, entry] of t.cols) { entry.body.style.removeProperty('height'); entry.col.remove(); }
   t.cols.clear();
   t.layoutOrder = [];
@@ -2343,6 +3333,14 @@ function resetView(t) {
   t.recenterOnce = true;
   t.lastAvailH = -1;
   t.contentH = 0;
+  t.contentW = 0;
+  // 折り返しの状態も落とす。clusters は消えた機体の id を指したまま残ると、次の
+  // layoutTree まで drawLinks が死んだ id を引いて線を描こうとする。
+  // wrapMap を null に戻すのがラチェットの唯一の完全リセット点（＝ミッションの start）。
+  t.wrapMap = null;
+  t.laneSig = null;
+  t.clusters = [];
+  t.clusteredIds.clear();
   t.els.summary.hidden = true;
   delete t.els.summary.dataset.key;
   t.prevSig = null;
@@ -2359,7 +3357,9 @@ function render(t, s) {
   // --- ミッションバー
   const isHist = t.runId !== null;      // 過去の記録（history/<runId>）
   const frozen = !t.live;               // もう更新されない画面（記録、または流れてこなくなったもの）
-  const workers = s.agents.filter((a) => a.id !== COMMAND_ID);
+  // 木に置いた孤児は数えない。記録に無いものを機体数や完了数に混ぜると、
+  // 「全機帰還したのに締められていない」の判定が狂う。
+  const workers = s.agents.filter((a) => a.id !== COMMAND_ID && a.source !== 'orphan');
   const doneCount = workers.filter((a) => a.status === 'done').length;
 
   // 全機帰還したのに締められていない状態。動いている画面のときだけ言う
@@ -2376,7 +3376,15 @@ function render(t, s) {
       : { standby: 'phase.standby', running: 'phase.running', done: 'phase.done' }[s.mission.phase];
   phaseEl.textContent = phaseKey ? tr(phaseKey) : tr('value.none');
   phaseEl.className = 'phase ' + (unfinished ? 'unfinished' : s.mission.phase);
-  phaseEl.title = unfinished ? tr('phase.unfinished_tip') : '';
+  // 止まった記録が「未完」なのは、締め忘れか、次の start に打ち切られたかのどちらか。
+  // 後者は state に理由が残っているので、そこを読んで言い分ける。**札の文字は変えない**
+  // ——「未完」は両方に当たっている。変えるのは、その上に出す説明だけ。
+  const cut = frozen && s.mission.interruptedBy;
+  phaseEl.title = unfinished ? tr('phase.unfinished_tip')
+                : cut ? tr('phase.interrupted_tip', {
+                          when:  fmtStamp(cut.at) || tr('value.none'),
+                          title: cut.title || tr('run.untitled') })
+                : '';
   if (frozen) t.root.dataset.frozen = '';
   else delete t.root.dataset.frozen;
   t.els.title.textContent = s.mission.title;
@@ -2469,7 +3477,10 @@ function render(t, s) {
     const target = ensureColumn(t, a.generation).body;
     if (entry.root.parentNode !== target) {
       target.appendChild(entry.root);
-      entry.top = null;  // 列が変わった機体は滑らせずに置き直す
+      // 列が変わった機体は滑らせずに置き直す。left も一緒に落とす：残すと
+      // 別のバンドのレーン座標を持ったまま新しい列に着地して、横に滑って見える。
+      entry.top = null;
+      entry.left = null;
     }
   }
   for (const [id, entry] of [...t.cards]) {
@@ -2568,6 +3579,571 @@ const GAP_SIB      = 20;   // 同じ親から生まれた機体どうしの縦�
 const GAP_FAMILY   = 34;   // 親が違う機体どうしの間隔（家族の境目を広く取る）
 const MAX_ANIMATED = 60;   // これより多い機体数では移動を滑らせない
 const MOVE_MS      = 460;  // .agent の top トランジションと同じ長さ
+
+// ---------------------------------------------------------------- 葉の折り返し
+// 世代は増えにくく（1世代ぶんの横幅だけ）、兄弟は増えやすい（1体ぶんの縦幅ずつ）。
+// 中身のアスペクト比が枠と真逆になるので、autoFitZoom の min() の縦側だけが効いて
+// 全体が縮む。指令塔＋第1世代10体は実測で拡大率 47%——ロボの表情が読めない。
+// そこで「子を持たない機体（葉）」を複数レーンのグリッドに折り返し、中身の形を
+// 枠の形へ寄せる。同じ条件で 95〜98% まで戻る。
+//
+// 定数はここ1ブロックだけに置く。この画面は body 末尾の単一インラインスクリプトなので、
+// 同じ名前を2箇所で const 宣言すると SyntaxError で初期化が丸ごと死に、画面が
+// 「接続中…」のまま固まる（設計時に2班が独立に WRAP_MIN を置いて衝突した）。
+const WRAP_MIN      = 4;    // 葉がこの数以上のときだけクラスタにする
+const MIN_WRAP_COLS = 2;    // 列が1本にしかならないならクラスタにしない（畳む意味がない）
+const R_GAIN        = 1.05; // 折り返し方を変えるのは fit がこの倍率より良くなるときだけ
+const WRAP_MAX_EVAL = 160;  // クラスタ別 R の探索で settleWrap を回してよい回数の上限
+const BUS_PAD_R     = 12;   // クラスタが最終カードの右へ持つ余白（中身の幅の計算用）
+const BUS_PAD_B     = 10;   // 同、最終行の下へ持つ余白
+// 配線は Mermaid のフローチャートと同じ「1辺＝1本の独立した線」で引く。共有のバス
+// （幹線・送り線・レール）は持たない。共有線があると、そこを複数の機体が通るので状態色を
+// 載せられず（4体中1体の稼働で列の全長がシアンに見える）、分岐点で別の色・別の破線位相の
+// 線が重なる。1辺1本にすれば、その2つは構造ごと消える。
+// 代わりに要るのが「線を通すための余白」で、dagre がランクを空けるのと同じ役割を、
+// クラスタの下に予約する帯（flowBandPad）と列と列のあいだの隙間（BAND_GAP）が担う。
+const FLOW_PITCH   = 8;   // トラックの間隔。1本の辺が占める幅／高さ。
+const FLOW_EDGE    = 8;   // 通り道の端に残す余白。カードや隣の帯に触れないための下駄。
+const FLOW_R       = 14;  // 直交する曲がり角の半径。
+const FLOW_PAD_MAX = 110; // 帯の高さの上限。葉が多いクラスタでは間隔のほうを詰める。
+const EXIT_PITCH   = 14;  // 親カードの右辺で、子ごとの出口をどれだけ離すか（上限）。
+const EXIT_MARGIN  = 10;  // 出口をカードの上下端から離す量。
+const LEFT_PAD_MAX = 140; // 左回廊の予約量の上限。超える扇では間隔のほうを詰める。
+/** 帯（クラスタの真下に予約する空き）の高さ。辺1本につきトラック1本ぶん取る。
+ *  ここが返すのは**厚みだけ**で、上に置くか下に置くかは呼ぶ側が決める。いまは下に置く。
+ *  通すのはレーン1以降へ向かう辺だけ（レーン0は左回廊からまっすぐ届く）。親から斜めに
+ *  直接ぶら下げる案は捨てた：親とクラスタのあいだに居る別レーンのカードを貫くため
+ *  （実測：ALPHA-1 → 測定子d の線が 解析機ブラボー5 を 189点貫通）。
+ *  m=0 のとき 0 を返すのが要点で、これで1列に畳んだクラスタは折り返さない場合と1pxも変わらない
+ *  （gate5 がそれを常設で見ている）。 */
+function flowBandPad(m) {
+  return m > 0 ? Math.min(FLOW_PAD_MAX, 2 * FLOW_EDGE + m * FLOW_PITCH) : 0;
+}
+
+/** 左回廊（親のすぐ右、辺が縦に走る帯）に要る幅。子が n 体の扇1つぶん。
+ *
+ *  数えるのが n ではなく ceil(n/2) なのは、**上向きの辺と下向きの辺が同じ x を共有できる**
+ *  ため。両者の縦の区間は出口を挟んで反対側にあり、決して重ならない。整形木は親を子の
+ *  中央に置くので、扇はおおむね半々に割れる。片側へ寄った扇では下の間隔の頭打ちが効く。
+ *  2*FLOW_R は、最初と最後の角が半径いっぱいに丸くなるための脚の長さ。 */
+function flowLeftPad(n) {
+  return Math.min(LEFT_PAD_MAX, 4 * FLOW_R + Math.max(0, Math.ceil(n / 2) - 1) * FLOW_PITCH);
+}
+
+/** クラスタのレーンとレーンのあいだの幅。ここを辺が縦に降りる。
+ *  帯の隙間（BAND_GAP=38）を使い回すと、カードへ入る最後の脚が 8px しか取れず、
+ *  角の半径が 4px で頭打ちになる（実測。角ひとつが半径 R まで丸くなるには、その両側の脚が
+ *  それぞれ 2R 要る）。行の数だけトラックが要るので、行数で決める。 */
+function flowLaneGap(rows) {
+  return Math.max(BAND_GAP, 2 * FLOW_R + FLOW_EDGE + Math.max(0, rows - 1) * FLOW_PITCH);
+}
+// 線が使ってよい通り道は2つだけ。どちらも実測で裏を取ってある。
+//   ・列と列のあいだの隙間 38px …… カードが1枚も無く、位置が left = 列 × (330+38) の固定式で
+//     決まるのでカード高が変わっても潰れない（幅900〜6000の51サンプルで 37.93〜38.10px、侵入0件、
+//     460ms のトランジション中も 38.04px で不動）。ここを縦に降りる。
+//   ・クラスタの下に予約した帯（flowBandPad）…… 列を横切ってよい唯一の高さ。ここを横に走る。
+// **予約は gridSlots が入れる。** 入れないと、同じ親が内部節点と葉クラスタの両方を持つとき
+// DFS 順で内部節点が真上に来て、線とその真上のカードの下端との隙間が 7.69px（幅900〜2700を
+// 100px刻みで測った最小値）まで詰まり、460ms のトランジション中は -4.43px まで食い込む。
+const FORK_K        = 0.5523; // 四分円を3次ベジェで近似するときの制御点の距離（半径に対する比）。
+// 制御点を角そのものに重ねる書き方（P1=P2=角）でも接線は繋がるが、曲線が角に張り付いて
+// 実効半径が 0.414R→ 約 0.18R まで落ちる。同じ脚の長さで最も大きな丸みになるのは真円の近似。
+/** レーン1本の幅。CSS の --agent-w と同じ式をここで組み直している。
+ *  --agent-w は calc() なので getPropertyValue は計算前の文字列を返し、数値として読めない。
+ *  足している 4 は .agent の gap:4px（ロボとカードの間）。CSS 側の calc と対で直すこと。 */
+const AGENT_W = (() => {
+  const cs = getComputedStyle(document.documentElement);
+  const rb = parseFloat(cs.getPropertyValue('--robot-w'));
+  const cd = parseFloat(cs.getPropertyValue('--card-w'));
+  return (Number.isFinite(rb) && Number.isFinite(cd)) ? rb + 4 + cd : 330;
+})();
+
+/** computeTidyY が世代を読むときと同じ規則。合成ノードにも同じものを使う。 */
+function genOf(a) {
+  return Number.isFinite(a.generation) ? Math.max(0, a.generation) : 0;
+}
+
+/**
+ * 葉を列優先のグリッドに並べたときの寸法とスロットを返す。
+ *
+ * 列優先（col = floor(i/rows), row = i % rows）にするのは、機体が末尾に足されても
+ * 既存カードの (row, col) が変わらないため。列数 cols を固定して rows を
+ * ceil(n/cols) で出す作り方だと、1体増えるたびに全員の行が組み替わる——毎秒1体ずつ
+ * 増えるこの画面では、それは常時カードが踊り続けることを意味する。
+ *
+ * 行の高さは**その行の最大カード高**にする。列ごとに揃えると、完了で結果行が生えて
+ * 1枚だけ高くなったときに格子が崩れる。
+ * なお「機体が増えても既存カードは1pxも動かない」は厳密には成り立たない：新しい機体が
+ * 行 r に入って rowH[r] を更新すると、行 r+1 以降が下へずれる。動かないのは
+ * 「同じ行の既存カード」と「列の組み替えが起きないこと」の2つ。
+ */
+function gridSlots(members, hById, R) {
+  const n = members.length;
+  const rows = Math.max(1, Math.min(R, n));
+  const cols = Math.ceil(n / rows);
+  const rowH = new Array(rows).fill(0);
+  for (let i = 0; i < n; i++) {
+    const h = hById.get(members[i].id) || 0;
+    const r = i % rows;
+    if (h > rowH[r]) rowH[r] = h;
+  }
+  const rowTop = new Array(rows);
+  // 列が2本以上になるとき（＝実際にクラスタになるとき）だけ、送り線を通すぶんの空きを
+  // **下に**予約する。cols===1 では 0 のままにする：1列に畳んだときレイアウトが1pxも
+  // 変わらないことを gate5 が要求しており、そこは折り返さない場合と同じでなければならない。
+  // 予約は h の末尾に足す。第1行の dy は 0 で箱の上端に一致するので、h に足した分は
+  // そのままいちばん下に付く（＝欲しい形）。**箱の高さ h 自体は上に取っていたときと同じ**
+  // なので、computeTidyY が見る寸法も、兄弟との間隔も、キャンバスの高さも動かない。
+  // 空きが箱の中で上から下へ移るだけ。
+  const laneGap = flowLaneGap(rows);
+  const bandPad = (cols > 1 ? flowBandPad(n) : 0);
+  let y = 0;
+  for (let r = 0; r < rows; r++) { rowTop[r] = y; y += rowH[r] + GAP_SIB; }
+  const slots = [];
+  for (let i = 0; i < n; i++) {
+    slots.push({
+      id:   members[i].id,
+      lane: Math.floor(i / rows),
+      row:  i % rows,
+      dy:   rowTop[i % rows],          // クラスタ上端からの相対Y
+      h:    hById.get(members[i].id) || 0,
+    });
+  }
+  return {
+    rows, cols, rowH, rowTop, slots,
+    laneGap,
+    w: cols * AGENT_W + (cols - 1) * laneGap,
+    // 最後に足した GAP_SIB は行間ではないので戻し、代わりに下の帯ぶんを足す。
+    h: Math.max(0, y - GAP_SIB) + bandPad,
+  };
+}
+
+/**
+ * computeTidyY へ渡すノード配列を組む。実機体はそのまま、葉クラスタは合成ノード1個に畳む。
+ *
+ * computeTidyY は要素から `.id` / `.parentId`（effectiveParentId 経由）/ `.generation` の
+ * 3つしか読まない。だから同じ形のオブジェクトを混ぜれば、あの関数には**1行も触れずに**
+ * 合成ノードを通せる。「非再帰である性質を壊さない」を最も確実に守れるのが、触らないこと。
+ *
+ * 走査は明示スタックの反復DFS。新しい再帰を持ち込まない（循環データで落ちないため）。
+ *
+ * クラスタにしてよいのは、次の4条件をすべて満たす葉だけ。
+ *   1. 親が実在する（孤児でない・自己参照でない）——幹線の起点になるカードが要る
+ *   2. 世代が親より**真に大きい**——親が add される前に子が add されると、サーバー側の
+ *      generation_of が親不在で 1 を返すため、親子とも generation 1 の実データが作れる。
+ *      これを畳むとクラスタが親と同じバンドに入り、バンドの意味が壊れる
+ *   3. DFS で到達済み——循環で取りこぼした機体は深さ優先順の連続性を持たない。
+ *      畳むと pushDown が依拠する「部分木は添字上で連続」が破れ、無関係なカードが動く
+ *   4. 列が2本以上になる——1列に畳んでも見た目は変わらないので、機構だけ増える
+ */
+function buildLayoutNodes(agents, hById, R, banned) {
+  const ids = new Set(agents.map((a) => a.id));
+  const kids = new Map();
+  const roots = [];
+  for (const a of agents) {
+    const p = effectiveParentId(a, ids);
+    if (p === null) { roots.push(a); continue; }
+    if (!kids.has(p)) kids.set(p, []);
+    kids.get(p).push(a);
+  }
+  const hasKids = (id) => (kids.get(id) || []).length > 0;
+
+  const nodes = [], nodeH = [], clusters = [], clusteredIds = new Set();
+  const seen = new Set();
+  const stack = [];
+  for (let i = roots.length - 1; i >= 0; i--) stack.push(roots[i]);
+
+  while (stack.length) {
+    const node = stack.pop();
+
+    if (node.__cluster) {                 // 合成ノード。子を持たないのでここで終わり
+      nodes.push(node);
+      nodeH.push(node.__cluster.grid.h);
+      continue;
+    }
+    if (seen.has(node.id)) continue;      // 循環しても必ず止まる
+    seen.add(node.id);
+    nodes.push(node);
+    nodeH.push(hById.get(node.id) || 0);
+
+    const list = kids.get(node.id) || [];
+    if (!list.length) continue;
+
+    // 内部節点を先、葉を後。この並びが「子を持つ枝が上、葉のグリッドが下」を作る。
+    // 並べ替えるのはここだけ。orderAgents(2456) には手を入れない——同じ規則を2箇所に
+    // 書くと、必ず片方だけが直される。
+    const internals = [], leaves = [];
+    for (const c of list) (hasKids(c.id) ? internals : leaves).push(c);
+
+    const gp = genOf(node);
+    const eligible = leaves.filter((c) => genOf(c) > gp);   // 条件2
+    const key = 'cluster:' + node.id;
+    let grid = null;
+    // banned は「そのバンドで折り返すと線がカードを貫くと実測された世代」。
+    // ids.has(key) は、たまたま "cluster:XXX" という id の機体が実在した場合の逃げ道
+    // （衝突すると computeTidyY の index Map が壊れて木が崩れる）。
+    if (eligible.length >= WRAP_MIN && !ids.has(key) &&
+        !(banned && banned.has(genOf(eligible[0])))) {
+      // R は数値（木ぜんぶで同じ折り返し）でも Map（親id → その親のクラスタだけの折り返し）
+      // でもよい。Map に無い親は「折り返さない」に倒す（rows=n → cols=1 → 条件4で落ちる）。
+      const rr = (R instanceof Map) ? (R.get(node.id) || Number.MAX_SAFE_INTEGER) : R;
+      const g = gridSlots(eligible, hById, rr);
+      if (g.cols >= MIN_WRAP_COLS) grid = g;                // 条件4
+    }
+
+    const tail = [];
+    for (const c of internals) tail.push(c);
+    if (grid) {
+      for (const c of leaves) if (genOf(c) <= gp) tail.push(c);   // 畳めなかった葉は素で置く
+      const cl = {
+        key,
+        parentId: node.id,
+        generation: genOf(eligible[0]),
+        grid,
+        top: 0, left: 0,                 // layoutTree が確定させる（.gen-body 基準・pad 込み）
+      };
+      clusters.push(cl);
+      // クラスタに入れた葉は「訪問済み」にする。入れ忘れると、末尾の救済ループが
+      // 「到達していない機体」と見なして全員をもう一度ノード配列へ積み、木の高さが
+      // そのまま2倍になる（葉はグリッドの中と列の中の両方に置かれる）。
+      for (const c of eligible) { seen.add(c.id); clusteredIds.add(c.id); }
+      tail.push({
+        // computeTidyY から見える顔。id はクラスタ専用の名前空間にする。
+        id: cl.key, parentId: node.id, generation: cl.generation, __cluster: cl,
+      });
+    } else {
+      for (const c of leaves) tail.push(c);
+    }
+    for (let i = tail.length - 1; i >= 0; i--) stack.push(tail[i]);
+  }
+
+  // 循環などで到達できなかった機体の救済（orderAgents 2476 と同じ扱い）。
+  // 連続性を持たないので、クラスタ化の対象にはしない。
+  for (const a of agents) {
+    if (seen.has(a.id)) continue;
+    seen.add(a.id);
+    nodes.push(a);
+    nodeH.push(hById.get(a.id) || 0);
+  }
+  return { nodes, nodeH, clusters, clusteredIds };
+}
+
+/** --band-gap の実数値。CSS を真実の源にして、起動時に1回だけ読む。
+ *  毎フレーム getComputedStyle を呼ぶとレイアウトが同期的に確定させられる。 */
+const BAND_GAP = (() => {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--band-gap'));
+  return Number.isFinite(v) && v > 0 ? v : 38;
+})();
+
+/** バンドごとのレーン本数。クラスタが無いバンドは 1（＝従来の1列）。 */
+function lanesByGen(built) {
+  const lanes = new Map();
+  for (const n of built.nodes) if (!lanes.has(genOf(n))) lanes.set(genOf(n), 1);
+  for (const c of built.clusters) {
+    lanes.set(c.generation, Math.max(lanes.get(c.generation) || 1, c.grid.cols));
+  }
+  return lanes;
+}
+
+/**
+ * 「線がカードを貫くバンド」を実測して返す。折り返しの安全性はここだけが保証している。
+ *
+ * 当初の仕様は「同じ親の内部節点の系統と葉クラスタはY帯を分ける」で交差が原理的に
+ * 起きないと論じていたが、これは**成立しない**。computeTidyY が分離するのは同世代の
+ * ノード自身の矩形だけで、内部節点の扇——親から複数の子へ広がる線の束——は自分の矩形より
+ * ずっと縦に広い。しかも扇の端は既に確定した子のYに固定されているので、親を動かしても
+ * 逃げられない（扇の外接区間で場所取りする案は、縦が Ω(内部節点数 × 子バンド高) に
+ * 膨らんで「縦を縮める」という目的と正面衝突するため棄却した）。
+ *
+ * よって配置で保証するのをやめ、**置いてから測る**。
+ *   - 線が横切りうるのは多レーンのバンドのレーン1以降だけ（1レーンなら 38px の溝しか
+ *     通らず、そこには何も無い＝現行が安全な理由）
+ *   - そこに居るのはクラスタのカードだけ
+ *   - どの線も、その親の扇のY区間の内側にしか無い
+ * だから「扇の区間」と「クラスタ矩形の区間」が重ならなければ、線はカードを貫かない。
+ *
+ * 重なったバンドは折り返しをやめて 1 レーンへ戻す。L=1 は常に安全で、レーン数は
+ * 単調減少しかしないので、この繰り返しはバンド数回で必ず止まる。
+ */
+/**
+ * 各内部節点の「扇」＝親の中心Yと全ての子の中心Yの外接区間を返す（親の添字 -> [lo, hi]）。
+ * クラスタも子の1つとして数える（親からクラスタへ向かう幹線も、親のバンドのレーンを横切るため）。
+ *
+ * findFanCollisions と reserveFanSpace の両方がこれを読む。同じ「扇とは何か」を2箇所に
+ * 書くと、必ず片方だけが直される——衝突を検出する側と、その衝突を避けるために場所を空ける側で
+ * 定義がずれたら、空けたのに衝突が消えないという最悪の壊れ方をする。
+ */
+function computeFans(built) {
+  const { nodes, laid } = built;
+  const idx = new Map();
+  for (let i = 0; i < nodes.length; i++) idx.set(nodes[i].id, i);
+  const ids = new Set(idx.keys());
+  const fan = new Map();            // 親の添字 -> [lo, hi]
+  for (let i = 0; i < nodes.length; i++) {
+    const p = effectiveParentId(nodes[i], ids);
+    if (p === null) continue;
+    const pi = idx.get(p);
+    if (pi === undefined || pi === i) continue;
+    if (genOf(nodes[i]) <= genOf(nodes[pi])) continue;   // 同世代・逆行は位置決めの材料にしない
+    let r = fan.get(pi);
+    if (!r) { r = [laid.y[pi], laid.y[pi]]; fan.set(pi, r); }
+    if (laid.y[i] < r[0]) r[0] = laid.y[i];
+    if (laid.y[i] > r[1]) r[1] = laid.y[i];
+  }
+  return fan;
+}
+
+function findFanCollisions(built) {
+  const { nodes, nodeH, clusters, laid } = built;
+  if (!clusters.length) return null;
+  const idx = new Map();
+  for (let i = 0; i < nodes.length; i++) idx.set(nodes[i].id, i);
+  const ids = new Set(idx.keys());
+  const lanes = lanesByGen(built);
+
+  const rects = new Map();          // 世代 -> [[上端, 下端], ...]（クラスタ矩形）
+  for (const c of clusters) {
+    const i = idx.get(c.key);
+    if (i === undefined) continue;
+    const top = laid.y[i] - nodeH[i] / 2;
+    if (!rects.has(c.generation)) rects.set(c.generation, []);
+    rects.get(c.generation).push([top, top + nodeH[i]]);
+  }
+
+  const fan = computeFans(built);
+
+  const bad = new Set();
+  for (const [pi, r] of fan) {
+    const g = genOf(nodes[pi]);
+    if ((lanes.get(g) || 1) < 2) continue;               // 1レーンのバンドは横切られない
+    for (const [lo, hi] of (rects.get(g) || [])) {
+      if (r[1] > lo && r[0] < hi) { bad.add(g); break; }
+    }
+  }
+  return bad.size ? bad : null;
+}
+
+/** 予約の打ち切り回数。実測では dummy 2件が 3pass / 2pass で固定点に達した。
+ *  上げても得は無い——下の settle が「1列化より低いときだけ採る」ので、収束しなかった形は
+ *  そのまま1列化に落ちる。上限は「諦めるまでの時間」であって、正しさの条件ではない。 */
+const RESERVE_MAX_PASS = 4;
+
+/**
+ * 内部節点の扇が通る縦幅を、そのバンドの中で場所取りさせる。
+ *
+ * 衝突の正体は「computeTidyY がクラスタを内部節点の**本体**の直下に置く」ことにある。
+ * 内部節点の子は次のバンドに居るので同じバンドの縦の場所取りに参加せず、扇だけが下へはみ出す。
+ * そこで computeTidyY へ渡す高さだけを扇の外接区間まで膨らませ、クラスタを扇の下へ押し下げる。
+ * 扇は「親が子の中点に来る」ため y について対称なので、対称に膨らませれば覆える。
+ *
+ * 守っている約束が3つある。どれも実測で裏を取った上での判断で、外すと静かに壊れる。
+ *
+ *   1. **b.nodeH は1バイトも書き換えない。** 膨らませるのは computeTidyY へ渡すコピーだけ。
+ *      nodeH を直接書き換えると layoutTree の `top = laid.y[i] - nodeH[i]/2` がずれて、
+ *      カードの実位置が壊れる（線だけが正しい位置に残る）。
+ *   2. **多レーンのバンドの内部節点だけ膨らませる。** 1レーンのバンドは横切られようがない。
+ *      無条件に膨らませると、クラスタも衝突も無い普通の木で高さが 594→679(+14%) と
+ *      無駄に伸びる（実測）。
+ *   3. **「いま衝突しているノードだけ」に絞らない。** 絞ると
+ *      衝突解消 → 膨張解除 → 再衝突 → 再膨張 を繰り返して収束しない（実測で8passまで振動）。
+ *      「衝突が消えたこと」を「膨張が要らなかったこと」の証拠に使う自己参照になるため。
+ *
+ * 返すのは同じ b。b.laid だけが差し替わる。
+ */
+function reserveFanSpace(b) {
+  const lanes = lanesByGen(b);
+  let spacingH = b.nodeH.slice();
+  for (let pass = 0; pass < RESERVE_MAX_PASS; pass++) {
+    b.laid = computeTidyY(b.nodes, spacingH);
+    const next = b.nodeH.slice();          // 毎回実寸から作り直す（約束3）
+    for (const [pi, r] of computeFans(b)) {
+      const g = genOf(b.nodes[pi]);
+      if ((lanes.get(g) || 1) < 2) continue;                       // 約束2
+      const y = b.laid.y[pi];
+      next[pi] = Math.max(b.nodeH[pi], 2 * Math.max(y - r[0], r[1] - y));
+    }
+    let same = true;
+    for (let i = 0; i < next.length; i++) if (next[i] !== spacingH[i]) { same = false; break; }
+    if (same) break;
+    spacingH = next;
+  }
+  return b;
+}
+
+/**
+ * 与えられた R で、衝突が無い配置を1つ確定させる。
+ *
+ * 衝突したバンドの収め方は2つあり、**安いほうを実測で選ぶ**。
+ *   予約 …… 扇の縦幅を場所取りして、クラスタを扇の下へ押し下げる（折り返しは保つ）
+ *   1列化 …… そのバンドの折り返しをやめる（従来の手）
+ *
+ * 「衝突が消えたら予約を採る」にしてはいけない。予約が2passで収束して「衝突なし」を返す
+ * **成功経路そのもの**で、1列化より高くなる形が実在する。子の1体がさらに深い部分木を持つと、
+ * 親がその巨大な部分木の中心へ引かれて扇が 4197px まで開き、その全幅が実効高として要求される
+ * （実測: deepchain D=8 で 4328 → 4863px、現行比 +12.4%）。しかもこれは「衝突は解消された」
+ * という正常な信号の下に隠れる。だから高さで直接比べる。
+ *
+ * 比較相手は「このバンドを1列化した直後の高さ」。それ以降のパスで別のバンドがさらに1列化
+ * されれば1列化側はもっと高くなるだけなので、ここで予約が勝てば最終結果にも勝つ。
+ * これで「予約は現行より絶対に高くならない」が構造的に保証される。
+ *
+ * chooseWrap の中の入れ子ではなくトップレベルに置いてあるのは、回帰ゲートが
+ * **この関数そのもの**を index.html から抜き出して回せるようにするため。同じ手順を
+ * テスト側に書き写すと、写した側だけが正しいという状態を検出できない。
+ *
+ * 衝突が無いミッションでは1周目で return するので、予約の費用は 0。
+ */
+function settleWrap(agents, hById, R) {
+  const build = (banned) => {
+    const b = buildLayoutNodes(agents, hById, R, banned);
+    b.laid = computeTidyY(b.nodes, b.nodeH);
+    b.R = R;
+    return b;
+  };
+  let banned = null;
+  for (let pass = 0; pass < 8; pass++) {
+    const b = build(banned);
+    const bad = findFanCollisions(b);
+    if (!bad) return b;
+    const next = banned ? new Set([...banned, ...bad]) : bad;
+    const bBan = build(next);                        // 1列化した場合
+    const bRes = reserveFanSpace(build(banned));     // 予約した場合
+    if (!findFanCollisions(bRes) && bRes.laid.height < bBan.laid.height) return bRes;
+    banned = next;
+  }
+  return build(banned);
+}
+
+/**
+ * 折り返し方（R）を決めて、確定した配置を返す。
+ *
+ * R は「1列あたりの行数」で、**クラスタ（＝同じ親の葉の束）ごとに別々に持てる**。
+ * fit = min(枠W / 中身W, 枠H / 中身H) が最大になる組み合わせを選ぶ。autoFitZoom が使うのと
+ * **同じ式**で、あちらが「与えられた中身に拡大率を合わせる」のに対し、こちらは
+ * 「拡大率が最大になる中身の形を選ぶ」。
+ *
+ * 木ぜんぶで R を1つにしていたときは、葉12体の束と葉7体の束が同じ折り返しを強いられ、
+ * どちらにとっても最良でない形で釣り合っていた。クラスタごとに選べるようにすると、
+ * 実測で 6通りの枠すべてで拡大率が上がった（+10.1% 〜 +41.8%）。
+ *
+ * 見積り式ではなく computeTidyY を実回しして測る。高さは本質的にあの関数の出力そのもので、
+ * 別式で近似すると「収まるはずの R」で収まらない。DOM には一切触らないので reflow は 0 回。
+ *
+ * **拡大率との相互誘発は起きない。** min(a/W, b/H) の argmax は (a,b) を同時にスカラー倍
+ * しても変わらない。枠のローカル寸法は 物理 ÷ 拡大率 なので、拡大率が動いても勝つ R は
+ * 変わらない（当初この輪を最大の危険と見ていたが、成立しないことが分かった）。
+ * 揺れるのはカード高が変わったときだけなので、そこにヒステリシスを置く。
+ */
+function chooseWrap(t, agents, hById) {
+  const settle = (R) => settleWrap(agents, hById, R);
+
+  // 折り返さない基準形。R が大きいほど列数は減り、葉の数以上では必ず1列＝クラスタ無し。
+  const flat = settle(Number.MAX_SAFE_INTEGER);
+  const box = fitBox(t);
+  // 隠れているチーム（clientWidth が 0）では測れない。前回の折り返し方を保って何もしない。
+  if (!box) return t.wrapMap ? settle(new Map(t.wrapMap)) : flat;
+
+  // クラスタになりうる葉の束を、親ごとに数える。R=1 は必ず全部を列に開くので、ここに
+  // 出る一覧が「折り返し方を選べる場所」のすべて。大きい束から先に見る（効きが大きく、
+  // 打ち切りが起きても損が小さい）。同数のときは id 順にして探索を決定論的にする。
+  const cls = [];
+  let maxLeaves = 0;
+  for (const c of buildLayoutNodes(agents, hById, 1, null).clusters) {
+    cls.push({ pid: c.parentId, n: c.grid.slots.length });
+    maxLeaves = Math.max(maxLeaves, c.grid.slots.length);
+  }
+  cls.sort((a, b) => (b.n - a.n) || (a.pid < b.pid ? -1 : a.pid > b.pid ? 1 : 0));
+  if (maxLeaves < WRAP_MIN) { t.wrapMap = null; return flat; }
+
+  const headH = bodyOffsetTop(t);
+  const fitOf = (b) => {
+    let w = 0, bands = 0;
+    // レーン間隔はクラスタごとに違う（flowLaneGap は行数で決まる）。ここで固定の BAND_GAP を
+    // 使うと見積り幅が実際より狭くなり、R の選び方が実際の見た目とずれる。
+    const lg = new Map();
+    for (const c of b.clusters) {
+      if (c.grid.laneGap > (lg.get(c.generation) || BAND_GAP)) lg.set(c.generation, c.grid.laneGap);
+    }
+    for (const [g, L] of lanesByGen(b)) { w += L * AGENT_W + (L - 1) * (lg.get(g) || BAND_GAP); bands++; }
+    if (bands > 1) w += (bands - 1) * BAND_GAP;
+    const h = headH + b.laid.height;
+    return { w, h, fit: (w > 0 && h > 0) ? Math.min(box.w / w, box.h / h) : 0 };
+  };
+
+  // 出発点は「木ぜんぶで同じ R」の中の最良。ここまでは従来と同じ探索で、座標降下は
+  // その上から始める。だからクラスタ別にしても従来の答えより悪くなることは無い。
+  let seed = flat, seedFit = fitOf(flat).fit;
+  for (let R = 1; R <= maxLeaves; R++) {
+    const b = settle(R);
+    const f = fitOf(b).fit;
+    if (f > seedFit) { seed = b; seedFit = f; }   // 同点なら小さい R を採らない（決定論的）
+  }
+
+  // 候補は「列数が変わる R」だけ。同じ列数になる R のうち行が多いほうは、幅が同じで
+  // 高さだけ増えるので必ず負ける（実測: 葉12の2列は R=6..11 の6通りで fit が単調に低下）。
+  const cand = (n) => {
+    const set = new Set();
+    for (let c = 1; c <= n; c++) set.add(Math.ceil(n / c));
+    return [...set].sort((a, b) => a - b);
+  };
+
+  // 同じ形を二度測らない。署名はクラスタの並び順に固定した R の列。
+  const memo = new Map();
+  const evalOf = (m) => {
+    const sig = cls.map((c) => m.get(c.pid)).join(',');
+    let e = memo.get(sig);
+    if (!e) {
+      const b = settle(new Map(m));               // settleWrap は R を持ち帰るので複製を渡す
+      const f = fitOf(b);
+      e = { b, fit: f.fit, w: f.w };
+      memo.set(sig, e);
+    }
+    return e;
+  };
+
+  const cur = new Map();
+  for (const c of cls) {
+    const R = (seed.R === Number.MAX_SAFE_INTEGER) ? c.n : seed.R;
+    cur.set(c.pid, Math.max(1, Math.min(R, c.n)));
+  }
+  let bestE = evalOf(cur);
+  for (let pass = 0; pass < 2; pass++) {
+    let moved = false;
+    for (const c of cls) {
+      if (memo.size >= WRAP_MAX_EVAL) break;
+      const keep = cur.get(c.pid);
+      let bR = keep, bF = bestE.fit, bW = bestE.w;
+      for (const R of cand(c.n)) {
+        if (R === keep || memo.size >= WRAP_MAX_EVAL) continue;
+        cur.set(c.pid, R);
+        const e = evalOf(cur);
+        // 拡大率が上がるなら採る。**同点なら幅の狭いほうを採る**——縦で効いている枠では
+        // 列を1本減らしても fit が動かないことがあり（クラスタが背を伸ばしても木全体の
+        // 高さが変わらない）、そこはただで幅が縮む。厳密な改善しか見ないと取りこぼす。
+        const tie = Math.abs(e.fit - bF) <= bF * 1e-9;
+        if (e.fit > bF * (1 + 1e-9) || (tie && e.w < bW - 0.5)) { bF = e.fit; bW = e.w; bR = R; }
+      }
+      cur.set(c.pid, bR);
+      if (bR !== keep) { moved = true; bestE = evalOf(cur); }
+    }
+    if (!moved) break;                             // 1周まわして誰も動かなければ止まる
+  }
+  let best = bestE.b, bestFit = bestE.fit;
+  if (seedFit > bestFit) { best = seed; bestFit = seedFit; }   // 起こらないはずの向きの保険
+
+  // いま採用中の折り返し方から乗り換えるのは、fit が R_GAIN 倍より良くなるときだけ。
+  // 判定を fit の**比**で見るのが要：fit の絶対値は 1/拡大率でまるごとスケールするので、
+  // 絶対値を閾値と比べると 47% では常に成立し 300% では永久に成立しなくなる。
+  // 比べられるのはクラスタの顔ぶれが同じときだけ。機体が増減して束が変わったフレームは、
+  // 前回の形を持ち越さずに新しい最良を採る（持ち越すと消えた親の R を引きずる）。
+  if (t.wrapMap && t.wrapMap.size === cls.length && cls.every((c) => t.wrapMap.has(c.pid))) {
+    const prev = settle(new Map(t.wrapMap));
+    const prevFit = fitOf(prev).fit;
+    if (!(prevFit > 0 && bestFit / prevFit >= R_GAIN)) return prev;
+  }
+  t.wrapMap = new Map(cur);
+  return best;
+}
 
 /** そのチームの .tree-canvas から見た .gen-body の上端（＝世代見出しの高さ）。全列で同じ。 */
 function bodyOffsetTop(t) {
@@ -2678,13 +4254,24 @@ function computeTidyY(agents, heights) {
 /** 実測して縦位置を決め、top で反映する。戻り値は滑らせるべき移動があった機体の数。 */
 function layoutTree(t) {
   const agents = t.layoutOrder.filter((a) => t.cards.has(a.id));
-  if (!agents.length) { t.contentH = 0; return 0; }   // 前のミッションの高さを居座らせない
+  if (!agents.length) {
+    // 前のミッションの高さ・幅・折り返しを居座らせない。clusters を残すと、消えた
+    // 機体の id を指したまま drawLinks が線を引こうとする。
+    t.contentH = 0; t.contentW = 0;
+    t.clusters = []; t.clusteredIds.clear();
+    return 0;
+  }
 
   // 高さは実測する。完了で結果行が増え、モデル名が長いと札が折り返すので一定ではない。
   // getBoundingClientRect ではなく offsetHeight を使う：rect は .agent.born の
   // pop（transform: scale(1.18)）を拾い、生まれた瞬間だけ 1.18 倍の高さを返す。
-  const heights = agents.map((a) => t.cards.get(a.id).root.offsetHeight);
-  const laid = computeTidyY(agents, heights);
+  const hById = new Map();
+  for (const a of agents) hById.set(a.id, t.cards.get(a.id).root.offsetHeight);
+
+  // 折り返し方を決める。クラスタが1つも立たないときは、渡ってくるノード配列が
+  // 機体そのものの並びになるので、以下は従来と完全に同じ計算になる。
+  const built  = chooseWrap(t, agents, hById);
+  const nodes  = built.nodes, nodeH = built.nodeH, laid = built.laid;
   t.contentH = laid.height;   // 自動フォーカスが縦を測るのに使う（DOM は底上げされていて使えない）
 
   // 縦の中央寄せ。木が枠に収まるときだけ中央へ寄せ、はみ出すときは上寄せにする
@@ -2695,42 +4282,156 @@ function layoutTree(t) {
   const pad    = Math.max(0, Math.floor((availH - laid.height) / 2));
   const boxH   = Math.ceil(Math.max(laid.height, availH)) + 'px';
 
+  // バンドのレーン本数を CSS 変数で渡す。非数値を書くと calc が無効になって width:auto に
+  // 落ち、列が潰れる。Number() を通してから整数に丸めるのはそのため。
+  const lanes = lanesByGen(built);
+  const laneSig = [...lanes.keys()].sort((a, b) => a - b).map((g) => g + ':' + lanes.get(g)).join(',');
+
+  // 左回廊の予約量を帯ごとに出す。その帯へ入ってくる扇（同じ親から出る辺の束）のうち
+  // いちばん大きいものが必要とする幅から、もともと有る列と列の隙間（BAND_GAP）を引いた残り。
+  // 扇の大きさは「子の数」であって「その帯の機体数」ではない。別の親から来た辺どうしは
+  // 高さが違うので同じ x を使ってよく、まとめて数えると要らない幅まで取ってしまう。
+  const idSet = new Set(agents.map((a) => a.id));
+  const kidsPerParent = new Map();
+  for (const a of agents) {
+    const pid = effectiveParentId(a, idSet);
+    if (!pid || !t.cards.has(pid)) continue;
+    const g = genOf(a);
+    const k = pid + '@' + g;
+    kidsPerParent.set(k, (kidsPerParent.get(k) || 0) + 1);
+  }
+  const padByGen = new Map();
+  for (const [k, cnt] of kidsPerParent) {
+    const g = Number(k.slice(k.lastIndexOf('@') + 1));
+    const need = Math.max(0, flowLeftPad(cnt) - BAND_GAP);
+    if (need > (padByGen.get(g) || 0)) padByGen.set(g, need);
+  }
+
+  for (const [g, c] of t.cols) {
+    const L = Math.max(1, Math.round(Number(lanes.get(g))) || 1);
+    if (c.col.style.getPropertyValue('--band-lanes') !== String(L)) {
+      c.col.style.setProperty('--band-lanes', String(L));
+    }
+    // 非数値を書くと calc が無効になって列が潰れるのは --band-lanes と同じ。px を必ず付ける。
+    const PL = Math.max(0, Math.round(Number(padByGen.get(g)) || 0)) + 'px';
+    if (c.col.style.getPropertyValue('--band-pad-l') !== PL) {
+      c.col.style.setProperty('--band-pad-l', PL);
+    }
+    // レーン間隔。クラスタが無い帯は BAND_GAP のまま（レーンが1本なので幅にも効かない）。
+    let LG = BAND_GAP;
+    for (const cl of built.clusters) if (cl.generation === g && cl.grid.laneGap > LG) LG = cl.grid.laneGap;
+    const LGs = Math.max(1, Math.round(LG)) + 'px';
+    if (c.col.style.getPropertyValue('--band-lane-gap') !== LGs) {
+      c.col.style.setProperty('--band-lane-gap', LGs);
+    }
+  }
+  // レーンの本数が変わったフレームは、全機を一括で着地させる（下の animate で使う）。
+  // .gen-col の幅にはトランジションを掛けられない（fitContent が offsetWidth を測って
+  // いるので、460ms のあいだ autoFitZoom が中間幅を追いかけて拡大率が脈打つ）。
+  // 幅が瞬間で変わる横で、カードだけが 0.46 秒かけて滑ると、動きが分裂して見える。
+  const lanesChanged = t.laneSig !== null && t.laneSig !== laneSig;
+  t.laneSig = laneSig;
+
   // 絶対配置の子は高さを作らないので、列の高さは明示的に入れる。
   // 入れないと .tree-canvas.scrollHeight まで潰れて親子線が消え、スクロールも効かない。
   for (const [, c] of t.cols) if (c.body.style.height !== boxH) c.body.style.height = boxH;
 
-  const animate = agents.length <= MAX_ANIMATED;
+  // ノードの位置を、機体ごとの (top, left) に展開する。合成ノードはここで葉に開く。
+  // 置く値と drawLinks へ渡す値は、必ずこの1回の計算から出す（二度計算すると
+  // 丸めの差でカードと線がずれる）。
+  const place = new Map();
+  const clusters = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const top = laid.y[i] - nodeH[i] / 2 + pad;
+    const cl  = nodes[i].__cluster;
+    if (!cl) { place.set(nodes[i].id, { top: Math.round(top), left: 0 }); continue; }
+    cl.top  = top;
+    cl.left = 0;
+    cl.generation = nodes[i].generation;
+    for (const s of cl.grid.slots) {
+      place.set(s.id, {
+        top:  Math.round(top + s.dy),
+        left: s.lane * (AGENT_W + cl.grid.laneGap),
+      });
+    }
+    clusters.push(cl);
+  }
+  t.clusters = clusters;
+  t.clusteredIds = built.clusteredIds;
+
+  // 中身の実際の右端。バンドの宣言幅とレーンに置いたカードの右端がずれたとき、
+  // 小さいほうを信じると「もっと拡大してよい」と読まれて右端の機体が枠の外へ出る。
+  // クラスタは最終カードより右へ BUS_PAD_R、下へ BUS_PAD_B の余白を持つので、それも足す。
+  let contentW = 0, contentH = laid.height;
+  for (const c of t.cols) {
+    const col = c[1].col;
+    contentW = Math.max(contentW, col.offsetLeft + col.offsetWidth);
+  }
+  for (const cl of clusters) {
+    const colEl = t.cols.get(cl.generation);
+    const base  = colEl ? colEl.col.offsetLeft : 0;
+    // 左回廊のぶんを足す。cl.grid.w は回廊を含まない「カードだけの幅」なので、
+    // 足さないと右端を狭く見積もり、「もっと拡大してよい」と読まれて右端の機体が枠から出る。
+    const padL  = Math.max(0, Number(padByGen.get(cl.generation)) || 0);
+    contentW = Math.max(contentW, base + padL + cl.grid.w + BUS_PAD_R);
+    contentH = Math.max(contentH, cl.top - pad + cl.grid.h + BUS_PAD_B);
+  }
+  t.contentW = contentW;
+  t.contentH = contentH;
+
+  // t.snapNext は「今回だけ滑らせない」の合図。隠れていた画面を出し直したときに立てる。
+  // 隠れている間は clientHeight が 0 で、木は詰まった位置に置かれている。出した瞬間に
+  // 正しい位置へ**滑らせる**と、木が動いたわけでもないのに毎回カードが 0.5 秒かけて
+  // 移動する。動いたように見せてよいのは、本当に木が変わったときだけ。
+  const animate = agents.length <= MAX_ANIMATED && !t.snapNext && !lanesChanged;
   const snapped = [];
   let moved = 0;
   for (let i = 0; i < agents.length; i++) {
     const e = t.cards.get(agents[i].id);
-    e.h = heights[i];
-    const top = Math.round(laid.y[i] - heights[i] / 2) + pad;
-    if (e.top === top) continue;
-    if (e.top === null || !animate) { e.root.classList.add('snap'); snapped.push(e.root); }
-    else moved++;
-    e.top = top;
-    e.root.style.top = top + 'px';
+    e.h = hById.get(agents[i].id) || 0;
+    const p = place.get(agents[i].id);
+    if (!p) continue;          // ノード配列に載らなかった機体（起こらない想定の保険）
+    const top  = p.top;
+    const left = p.left;
+    // 判定は (top, left) の組で行う。top だけを見ていると、縦が動かず横だけ動く機体
+    // ——レーンの本数が変わっただけのクラスタの1行目——に left が一度も書かれない。
+    if (e.top === top && e.left === left) continue;
+    if (e.top === null || e.left === null || !animate) {
+      e.root.classList.add('snap'); snapped.push(e.root);
+    } else moved++;
+    if (e.top !== top)   { e.top = top;   e.root.style.top = top + 'px'; }
+    if (e.left !== left) { e.left = left; e.root.style.left = left + 'px'; }
   }
   if (snapped.length) {
     void t.els.gens.offsetHeight;                      // 新しい top を確定させてから
     for (const el of snapped) el.classList.remove('snap');  // トランジションを戻す
   }
+  t.snapNext = false;
   return moved;
 }
 
 /** レイアウト前に「画面の上端に一番近い機体」を覚える。実測値ではなく layoutTree が
  *  入れた top を使う。トランジション中でも値がぶれないため。 */
 function pickAnchor(t) {
-  if (t.els.scroll.scrollTop <= 0) return null;   // 一番上を見ているなら補正は要らない
-  const view = t.els.scroll.scrollTop - scrollPad(t, 'paddingTop') - bodyOffsetTop(t);
+  const top = t.els.scroll.scrollTop, left = t.els.scroll.scrollLeft;
+  if (top <= 0 && left <= 0) return null;   // 左上を見ているなら補正は要らない
+  const view = top - scrollPad(t, 'paddingTop') - bodyOffsetTop(t);
   let best = null, bestD = Infinity;
   for (const [, e] of t.cards) {
     if (e.top === null) continue;
     const d = e.top - view;
     if (d >= -40 && d < bestD) { bestD = d; best = e; }
   }
-  return best ? { entry: best, before: best.top } : null;
+  return best ? { entry: best, before: best.top, beforeX: anchorX(best) } : null;
+}
+
+/** その機体の .tree-canvas から見た横位置。バンド幅が変わると列の offsetLeft が動くので、
+ *  レーン内の left だけでは足りず、列の位置と足して見る必要がある。 */
+function anchorX(e) {
+  const body = e.root.parentNode;
+  const col  = body && body.parentNode;
+  const base = (col && Number.isFinite(col.offsetLeft)) ? col.offsetLeft : 0;
+  return base + (e.left || 0);
 }
 
 /** 指令塔がそのチームの枠の縦中央に来るまでスクロールする（チームが現れた直後の1回だけ）。
@@ -2751,8 +4452,14 @@ function applyLayout(t) {
     t.recenterOnce = false;
     recenterOnCommand(t);
   } else if (anchor && anchor.entry.top !== null) {
-    // 木が伸び縮みしても、見ていた機体が画面上の同じ位置に留まるようにする
+    // 木が伸び縮みしても、見ていた機体が画面上の同じ位置に留まるようにする。
+    // 横も要る：レーンの本数が変わるとバンド幅が数百〜数千px動くので、右の世代を
+    // 見ている利用者の視点が横に飛ぶ（縦だけ直しても画面は別の場所を映している）。
     t.els.scroll.scrollTop += anchor.entry.top - anchor.before;
+    if (t.els.scroll.scrollLeft > 0) {
+      const dx = anchorX(anchor.entry) - anchor.beforeX;
+      if (dx) t.els.scroll.scrollLeft += dx;
+    }
   }
   if (moved > 0) followMoves(t);
   // 自動フォーカスの本流。「木の形が変わった瞬間」を正確に押さえられるのはここだけで、
@@ -2774,8 +4481,11 @@ function scheduleLayout(t) {
 }
 
 /** top のトランジション中だけ線を引き直す。有限ループで、木が動いたときしか走らない。 */
-function followMoves(t) {
-  t.followUntil = performance.now() + MOVE_MS + 80;
+function followMoves(t, ms) {
+  // ms を渡さなければ移動のトランジション1回ぶん。長く付いていきたい場面（タブを開いた
+  // 直後など、トランジションではない理由でカードが動き続ける場面）では明示して伸ばす。
+  const until = performance.now() + (ms || MOVE_MS + 80);
+  if (!(t.followUntil > until)) t.followUntil = until;
   if (t.followRaf) return;
   const step = () => {
     drawLinks(t);
@@ -2804,23 +4514,219 @@ function drawLinks(t) {
   const zf = (base.width > 0 && t.els.canvas.offsetWidth > 0)
              ? base.width / t.els.canvas.offsetWidth : 1;
   const ids = new Set(t.state.agents.map((a) => a.id));
+  const local = (r) => ({                      // 物理px の矩形をローカル座標へ戻す
+    l: (r.left  - base.left) / zf, r: (r.right - base.left) / zf,
+    t: (r.top   - base.top)  / zf, b: (r.bottom - base.top) / zf,
+  });
   let out = '';
   let running = 0;
+  const status = new Map(t.state.agents.map((a) => [a.id, a.status]));
+
+  // カード矩形を1回だけ集める。線が通ってよい場所かの判定に使う。
+  const cardRects = [];
+  for (const [cid, ce] of t.cards) cardRects.push({ id: cid, q: local(ce.card.getBoundingClientRect()) });
+  /** 軸に平行な線分がどれかのカードの中を通るか。両端のカード2枚は当然通るので除く。
+   *  矩形どうしの重なりで判定できる（線分が軸に平行なので、外接矩形＝線分そのもの）。 */
+  const segHitsCard = (x1, y1, x2, y2, skipA, skipB) => {
+    const lo = Math.min(x1, x2), hi = Math.max(x1, x2);
+    const up = Math.min(y1, y2), dn = Math.max(y1, y2);
+    for (const c of cardRects) {
+      if (c.id === skipA || c.id === skipB) continue;
+      if (hi > c.q.l + 2 && lo < c.q.r - 2 && dn > c.q.t + 2 && up < c.q.b - 2) return true;
+    }
+    return false;
+  };
+
+  /** 直交折れ線を1本組み立てる。角は真円の四分円（FORK_K は四分円を3次ベジェで近似する比）。
+   *  半径は隣り合う脚の長さの半分で頭打ちにするので、隣の角と食い合って線が後戻りすることはない。
+   *  **曲線を使うのは角の中だけ。** これが「線の書式は1種類」の実体で、クラスタの中も外も、
+   *  世代から世代への線も、全部この関数を通る。 */
+  const orthoPath = (pts) => {
+    const p = [];
+    for (const q of pts) {           // 同じ点が続くと向きが定義できないので先に潰す
+      const last = p[p.length - 1];
+      if (!last || Math.abs(q[0] - last[0]) + Math.abs(q[1] - last[1]) > 0.01) p.push(q);
+    }
+    if (p.length < 2) return '';
+    let d = 'M ' + p[0][0] + ' ' + p[0][1];
+    for (let k = 1; k < p.length - 1; k++) {
+      const a = p[k - 1], b = p[k], c = p[k + 1];
+      const inLen  = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const outLen = Math.hypot(c[0] - b[0], c[1] - b[1]);
+      const r = Math.min(FLOW_R, inLen / 2, outLen / 2);
+      if (r < 0.5) { d += ' L ' + b[0] + ' ' + b[1]; continue; }
+      const ux = (b[0] - a[0]) / inLen, uy = (b[1] - a[1]) / inLen;
+      const vx = (c[0] - b[0]) / outLen, vy = (c[1] - b[1]) / outLen;
+      const sx = b[0] - ux * r, sy = b[1] - uy * r;
+      const ex = b[0] + vx * r, ey = b[1] + vy * r;
+      d += ' L ' + sx + ' ' + sy +
+           ' C ' + (sx + ux * FORK_K * r) + ' ' + (sy + uy * FORK_K * r) +
+           ', ' + (ex - vx * FORK_K * r) + ' ' + (ey - vy * FORK_K * r) +
+           ', ' + ex + ' ' + ey;
+    }
+    const z = p[p.length - 1];
+    return d + ' L ' + z[0] + ' ' + z[1];
+  };
+
+  // 着地点はロボの左端・縦中央。ロボは align-self:flex-start でカード上端に張り付くので、
+  // ここはカード高が変わっても動かない。クラスタの中も外も同じ入り方にする。
+  const landing = (e) => {
+    const q  = local(e.root.getBoundingClientRect());
+    const sl = e.root.querySelector('.robot-slot');
+    const rs = sl ? local(sl.getBoundingClientRect()) : null;
+    return { lx: q.l, cy: rs ? (rs.t + rs.b) / 2 : (q.t + q.b) / 2, qt: q.t, qb: q.b };
+  };
+
+  const slotOf = new Map();
+  for (const cl of t.clusters) for (const sl of cl.grid.slots) slotOf.set(sl.id, { cl, s: sl });
+
+  // --- 扇（同じ親から出る辺の束）ごとにまとめる。クラスタも通常の親子も区別しない。
+  const fans = new Map();
   for (const a of t.state.agents) {
     const pid = effectiveParentId(a, ids);
     if (!pid) continue;
     const p = t.cards.get(pid), c = t.cards.get(a.id);
     if (!p || !c) continue;
-    const pr = p.card.getBoundingClientRect();
-    const cr = c.root.getBoundingClientRect();
-    const x1 = (pr.right - base.left) / zf;
-    const y1 = (pr.top + pr.height / 2 - base.top) / zf;
-    const x2 = (cr.left - base.left) / zf;
-    const y2 = (cr.top + cr.height / 2 - base.top) / zf;
-    const dx = Math.max(18, (x2 - x1) * 0.5);
-    if (a.status === 'running') running++;
-    out += '<path class="link ' + a.status + '" d="M ' + x1 + ' ' + y1 +
-           ' C ' + (x1 + dx) + ' ' + y1 + ', ' + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2 + '"/>';
+    let f = fans.get(pid);
+    if (!f) {
+      const pr = local(p.card.getBoundingClientRect());
+      f = { pid: pid, pt: pr.t, pb: pr.b, px: pr.r, py: (pr.t + pr.b) / 2, kids: [] };
+      fans.set(pid, f);
+    }
+    const g = slotOf.get(a.id);
+    f.kids.push(Object.assign({ id: a.id, st: status.get(a.id) || 'standby',
+                                lane: g ? g.s.lane : 0, row: g ? g.s.row : 0,
+                                cl: g ? g.cl : null }, landing(c)));
+  }
+
+  for (const [, f] of fans) {
+    const kids = f.kids;
+    if (!kids.length) continue;
+
+    // --- レーン1以降の辺は、クラスタの**下**に予約した帯を横に走ってから上がる。
+    //     レーン0とクラスタ外の辺は帯を使わない（左回廊から素直に届く）。
+    const over = kids.filter((k) => k.lane > 0 && k.cl);
+    if (over.length) {
+      const cl   = over[0].cl;
+      const mem  = kids.filter((k) => k.cl === cl);
+      const bot  = Math.max.apply(null, mem.map((k) => k.qb));
+      const pad  = flowBandPad(mem.length);
+      const tp   = (pad - 2 * FLOW_EDGE) / over.length;
+      // 帯のトラックは「遠いレーンほど下」。近いレーンの上り口は必ずその上で終わるので、
+      // 遠いレーンの横走りが近いレーンの縦線をまたがない。
+      // **同じレーンの中は行の逆順**（下の行ほど下のトラック）。ここが上に帯を置いていた
+      // ときの裏返しになる：上向きに変わった縦線は、どの行のものも自分より下を必ず通るので、
+      // 浅い行の縦線が深い行の入り脚にかぶさる。深い行を下・右に置くとその重なりが消える。
+      // 実測で確かめた壊れ方：行の順のままだと、行1の入り脚 (770,910)→(792,910) が
+      // 行0の縦線 x=764 を (764,912) で横切った（同じ形がレーン1・2・3の3か所）。
+      over.sort((a, b) => (b.lane - a.lane) || (b.row - a.row));
+      over.forEach((k, idx) => { k.ty = bot + pad - FLOW_EDGE - idx * tp; });
+
+      // 上り口の x。そのレーンのカード左端から左へ、**いちばん下の行を右端**にして
+      // 1本ずつずらす。下のトラックほど右で上がる入れ子になるので、横走りが上の行の
+      // 縦線を横切らず、入り脚も自分より右の縦線（＝自分より下の行）とだけ並ぶ。
+      const byLane = new Map();
+      for (const k of over) {
+        if (!byLane.has(k.lane)) byLane.set(k.lane, []);
+        byLane.get(k.lane).push(k);
+      }
+      for (const [lane, items] of byLane) {
+        let laneL = Infinity;
+        for (const k of mem) if (k.lane === lane && k.lx < laneL) laneL = k.lx;
+        items.sort((a, b) => b.row - a.row);
+        // カードへ入る最後の脚を 2R 確保する。ここを FLOW_EDGE(8) にすると角が半径 4 で
+        // 頭打ちになる。トラックはそこからさらに左へ、レーン間隔の残りに収まる間隔で並べる。
+        const gap = (over[0].cl.grid.laneGap || BAND_GAP);
+        const gp  = Math.min(FLOW_PITCH,
+                             Math.max(0, gap - 2 * FLOW_R - FLOW_EDGE) / Math.max(1, items.length - 1));
+        items.forEach((k, idx) => { k.dx = laneL - 2 * FLOW_R - idx * gp; });
+      }
+    }
+
+    // --- 回廊で曲がって向かう先の y。帯を回る辺は「帯の高さ」であって行き先のカードではない。
+    //     ここに行き先のカードの y を入れると、帯を右へ走る横線が、まっすぐ向かう辺の
+    //     縦線を横切る。ty はカードより**下**にあるので、帯を回る辺は扇の中で
+    //     「行き先がいちばん下」になり、出口はカード右辺の下側から出る。下の振り分けは
+    //     ct と ey の大小だけで決まる向きに依らない規則なので、式はそのままでよい。
+    for (const k of kids) k.ct = (k.ty !== undefined) ? k.ty : k.cy;
+
+    // --- 親カードの右辺に、子ごとの出口を割り当てる。ここを1点に集めると、扇の付け根で
+    //     全部の線が重なる（実測で、重なりの長さの 11.7% がパスの最初の 20% に集中していた）。
+    const n     = kids.length;
+    const usable = Math.max(0, (f.pb - f.pt) - 2 * EXIT_MARGIN);
+    const ep    = n > 1 ? Math.min(EXIT_PITCH, usable / (n - 1)) : 0;
+    kids.sort((a, b) => a.ct - b.ct);                       // 行き先が上のものほど出口も上
+    kids.forEach((k, idx) => { k.ey = f.py + (idx - (n - 1) / 2) * ep; });
+    // 出口と行き先の高さの差が 2R より小さいと、四分円が2つ背中合わせに並んで S 字の段差になり、
+    // 半径がその段差の半分（実測 2.1〜8.2px）で頭打ちになる。差が小さいときは段差を作らず、
+    // 出口を行き先の高さちょうどに合わせて水平1本で届かせる。
+    //
+    // **ただし隣の出口を追い越してはいけない。** 出口は ct の昇順に割り当ててあり、その順序
+    // そのものが交差ゼロの前提になっている。追い越すと、追い越された辺は反対側へ回ることに
+    // なり、その縦線を追い越した辺の水平線が必ず横切る。実測（dummy-multi-tier）:
+    //   走査子二番の出口が 363 から 336 へ動いて、走査子一番の出口 349 を追い越し、
+    //   一番の縦線 x=2316 を (2316,336) で横切った。高層計1号/2号にも同じ形が出た。
+    // 追い越しかけたときに寄せるのをやめるだけだと段差が 0 と 2R のあいだに残るので、
+    // そのときは**逆に 2R 以上まで離して**角の半径を確保する。どちらも入らないときは
+    // 割り当てられた出口のまま置く（残る段差は前後で向きが打ち消し合う S 字＝角ではない）。
+    // 隣と空ける量は出口の間隔 ep を超えない。超えると、扇が混んでいるときに何も寄せられなくなる。
+    const eg = n > 1 ? Math.max(1, Math.min(FLOW_PITCH, ep)) : 0;
+    let low = -Infinity;
+    kids.forEach((k, idx) => {
+      if (Math.abs(k.ct - k.ey) >= 2 * FLOW_R) { low = k.ey; return; }   // もともと十分離れている
+      const lo = low + eg;
+      const hi = (idx + 1 < n ? kids[idx + 1].ey : Infinity) - eg;
+      const fits = (y) => y >= lo && y <= hi && y >= f.pt && y <= f.pb;
+      if (fits(k.ct)) {                       // ① 高さをそろえて水平1本で届かせる
+        k.ey = k.ct;
+      } else {                                // ② そろえられないなら 2R 以上まで離す
+        const side = k.ey >= k.ct ? 1 : -1;
+        const away = k.ct + side * 2 * FLOW_R;
+        const back = k.ct - side * 2 * FLOW_R;
+        if (fits(away))      k.ey = away;
+        else if (fits(back)) k.ey = back;
+      }
+      low = k.ey;
+    });
+
+    // --- 左回廊のトラック。
+    //     交差ゼロの規則（崩すと必ず交差が出る）:
+    //       ・下向きの群（行き先が出口より下）は、行き先が上のものほど x を大きく（右で曲がる）
+    //       ・上向きの群は、行き先が上のものほど x を小さく（左で曲がる）
+    //       ・上下の群は x を共有してよい。縦の区間が出口を挟んで反対側にあり重ならないため。
+    //     だから要るトラックは max(上向き, 下向き) 本。gridSlots が予約する flowLeftPad の
+    //     ceil(n/2) はこの数のこと。
+    // いちばん右のトラックはカード左端から 2R、いちばん左は親の右端から 2R 離す。
+    // 角ひとつが半径 R まで丸くなるには、その両側の脚がそれぞれ 2R 必要なため。
+    // 予約（flowLeftPad）が 4R ベースなのはこの2つを足したもの。狭いときは間隔のほうを詰める。
+    let corridorR = Infinity;
+    for (const k of kids) if (k.lx < corridorR) corridorR = k.lx;
+    corridorR -= 2 * FLOW_R;
+    const up   = kids.filter((k) => k.ct <  k.ey);
+    const down = kids.filter((k) => k.ct >= k.ey);
+    const K    = Math.max(up.length, down.length);
+    const t0   = Math.min(corridorR,
+                          Math.max(f.px + 2 * FLOW_R, corridorR - Math.max(0, K - 1) * FLOW_PITCH));
+    const tp2  = K > 1 ? Math.min(FLOW_PITCH, Math.max(0, corridorR - t0) / (K - 1)) : 0;
+    const trk  = (idx) => t0 + idx * tp2;
+    up.forEach((k, idx)   => { k.cx = trk(idx); });
+    down.forEach((k, idx) => { k.cx = trk(K - 1 - idx); });
+
+    for (const k of kids) {
+      if (k.st === 'running') running++;
+      const pts = (k.ty !== undefined)
+        ? [[f.px, k.ey], [k.cx, k.ey], [k.cx, k.ty], [k.dx, k.ty], [k.dx, k.cy], [k.lx, k.cy]]
+        : [[f.px, k.ey], [k.cx, k.ey], [k.cx, k.cy], [k.lx, k.cy]];
+      // 親のすぐ右の横走りだけは、途中に別の帯のカードが居ることがある（親とクラスタの
+      // あいだに 9〜13枚あるケースが実在する）。当たるときは親の縦中央まで戻して逃がす：
+      // 扇の付け根が1点に寄るぶん重なりは増えるが、カードを貫くよりは軽い。
+      if (segHitsCard(f.px, k.ey, k.cx, k.ey, f.pid, k.id) &&
+          !segHitsCard(f.px, f.py, k.cx, f.py, f.pid, k.id)) {
+        pts[0] = [f.px, f.py];
+        pts[1] = [k.cx, f.py];
+      }
+      out += '<path class="link ' + k.st + '" d="' + orthoPath(pts) + '"/>';
+    }
   }
   t.els.links.innerHTML = out;
   // 流れる破線は stroke-dashoffset を動かすので合成できず、線の本数だけ毎フレーム再ペイントが走る。
@@ -2833,8 +4739,104 @@ function drawLinks(t) {
 /** 内容が変わっていなくても毎秒動かす部分（稼働中の経過時間）。
  *  過去の記録では tick() から呼ばれず、読み込み直後に1回だけ通る。
  *  そのとき t.refNow が入っているので、経過は記録された時点で止まる。 */
+// 再描画するかどうかの判定に使う指紋。
+// live の数値（トークン・ツール回数・経過秒・無風秒）は毎秒変わるので、ここには入れない。
+// 入れると毎秒 render() が走り、ログの作り直しと系統樹のレイアウト計算が1秒ごとに起きる。
+// 数値は updateClocks が塗るので、ここで見るのは構造だけ——どの機体に live が付いたか、
+// active から静／無風へ変わったか。孤児も同じ理由で id と状態だけを見る。
+function stateSig(ts) {
+  const src = ts.sources || {};
+  return JSON.stringify({
+    p: ts.project,
+    m: ts.mission,
+    a: ts.agents.map((a) => Object.assign({}, a, {
+      live: a.live ? { i: a.live.agentId, s: a.live.state } : null,
+    })),
+    l: ts.log.length,
+    s: Object.assign({}, src, {
+      liveOrphans: (src.liveOrphans || []).map(
+        (o) => [o.agentId, o.state, o.parentAgentId || '', o.parentRecordId || '']),
+    }),
+  });
+}
+
+/** 記録に無いのに動いている機体を、木と同じ姿のカードにして返す。
+ *
+ *  名乗れる状態は running だけ。記録が無い＝完了の合図も来ないので、
+ *  終わったかどうかは沈黙の長さ（live.state / live.idleSec）でしか読めない。 */
+function orphanAgent(o) {
+  return {
+    id: ORPHAN_ID_PREFIX + o.agentId,
+    name: o.description || o.agentId,
+    parentId: null, generation: 0,
+    model: o.model || '',
+    mission: '',                 // 記録が無いので任務は名乗れない（カードは「未記載」を出す）
+    status: o.frozen ? 'done' : 'running', waiting: false,
+    live: o,
+    startedAt: null, finishedAt: null, result: frozenResult(o),
+    source: 'orphan',
+  };
+}
+
+// 記録に無いのに動いている機体。add の打ち忘れがその場で見えるようにする。
+// **起動元が実測で分かったものは系統樹の中にいる**ので、ここには並べない。
+// ここに残るのは「誰が起動したのか分からない機体」だけ——親を推測して線を引いたら、
+// それは実測ではなくなるので、置き場所が決まらないものは木の下のこの区画に置く。
+//
+// 一覧の文字列ではなくカードにしているのは、木の中の機体と**同じ姿で見えること**に
+// 意味があるため。動いている以上どちらも同じ機体で、違うのは記録があるかどうかだけ。
+function paintOrphanBay(t) {
+  const bay = t.els.bay;
+  if (!bay) return;
+  const all = (t.state && t.state.sources && t.state.sources.liveOrphans) || [];
+  const placed = new Set(((t.state && t.state.agents) || [])
+    .filter((a) => a.source === 'orphan' && a.live)
+    .map((a) => a.live.agentId));
+  const list = all.filter((o) => !placed.has(o.agentId));
+
+  bay.hidden = !list.length;
+  if (t.els.bayTitle) t.els.bayTitle.textContent = tr('live.bay_title', { n: list.length });
+  // 締めたあとの記録では、これらはもう動いていない。現在形のままにすると、
+  // 完了した記録が「いま動いている機体がある」と言い続けることになる。
+  const frozen = list.length > 0 && list.every((o) => o.frozen);
+  if (t.els.bayNote) t.els.bayNote.textContent = tr(frozen ? 'live.bay_note_frozen' : 'live.bay_note');
+
+  // 要るぶんだけ作り、居なくなったぶんを片付ける。毎秒呼ばれる経路なので、
+  // 毎回作り直すとロボのアニメーションが1秒ごとに 0 から始まってしまう。
+  const alive = new Set();
+  for (const o of list) {
+    const a = orphanAgent(o);
+    alive.add(a.id);
+    let e = t.orphanCards.get(a.id);
+    if (!e) {
+      e = buildAgentDom(a);
+      // 起動元は実測。記録には無くても、親のログに残っていて名前だけ分かることがある。
+      // 分かったときだけ出す。分からない機体に「指令塔」などと補わないこと。
+      const cap = document.createElement('div');
+      cap.className = 'bay-parent';
+      e.root.appendChild(cap);
+      e.bayParent = cap;
+      t.orphanCards.set(a.id, e);
+      t.els.bayBody.appendChild(e.root);
+    }
+    updateAgent(t, e, a);
+    e.bayParent.hidden = !o.parentName;
+    e.bayParent.textContent = o.parentName ? tr('live.orphan_parent', { name: o.parentName }) : '';
+    e.bayParent.title = e.bayParent.textContent;
+    e.root.title = o.agentId;
+  }
+  for (const [id, e] of t.orphanCards) {
+    if (alive.has(id)) continue;
+    e.root.remove();
+    t.orphanCards.delete(id);
+  }
+}
+
 function updateClocks(t) {
   if (!t.state) return;
+  // 区画をここで描くのは、出す値（沈黙の長さ・ツール回数）が毎秒変わるのに
+  // stateSig がそれらを見ていない＝ render() が走らないため（stateSig のコメント参照）。
+  paintOrphanBay(t);
   if (t.state.mission.phase === 'running') {
     t.els.elapsed.textContent = fmtSec(elapsedFrom(t.state.mission.startedAt, t.refNow));
   } else if (t.state.mission.summary) {
@@ -2919,6 +4921,8 @@ function setupLang() {
 /** 言語が変わったあと、JS が入れた文字を全部入れ直す。 */
 function relabelAll() {
   applyZoom();                       // 「自動 100%」の接頭辞と +/− の説明
+  applyLogPanel();   // 開閉ボタンの title（表示/非表示）を今の言語で入れ直す
+  applyBayPanel();   // 下部区画の開閉ボタンの文言も同じ理由で入れ直す
 
   // タブは中身が同じなら組み直さない作りなので、署名を捨てて作り直させる
   tabsSig = null;
@@ -2938,6 +4942,13 @@ function relabelAll() {
       showRunNote(t, tr('run.loading'), null);
     }
   }
+
+  // 変更履歴画面も、JS が入れた文字（見出し・件数・折りたたみの札）を入れ直す。
+  // ここを忘れると、切り替えたのにカードの中だけ前の言語のまま残る——
+  // この画面は3〜4秒に1回しか描き直さないうえ、非表示のときは止まっているので、
+  // 「戻ってきたら前の言語のまま」が長く居座る。
+  try { clRenderProjectSelect(); clRenderFeed(); }
+  catch (e) { console.error('[dashboard] changelog relabel failed', e); }
 
   // まだ一度も通信していないなら触らない（「接続中…」を勝手に「接続中」にしない）
   if (lastConn.ok !== null) setConn(lastConn.ok, lastConn.msg);
@@ -3013,9 +5024,12 @@ async function tick() {
     }
 
     // --- 増えたチームの器を作り、内容が変わったチームだけ描き直す
-    for (const ts of list) {
-      const slug = slugOf(ts);
+    for (const raw of list) {
+      const slug = slugOf(raw);
       if (slug === null) continue;
+      // 木に置ける孤児をここで混ぜる。以降の sig 比較・描画・時計は、
+      // 混ぜたあとの状態を見る（タブの機体数は raw のままなので数は増えない）。
+      const ts = withPlacedOrphans(raw);
       const key = tabKey(slug, null);
       let t = teams.get(key);
       if (!t) t = createTeam(slug, null, true);
@@ -3031,11 +5045,12 @@ async function tick() {
 
       // sig はチームごとに持つ。1つにまとめると、どこか1チームが動いた拍子に
       // 全チームが再描画されて、動いていないチームのログも作り直される。
-      const sig = JSON.stringify({ p: ts.project, m: ts.mission, a: ts.agents,
-                                   l: ts.log.length, s: ts.sources });
+      const sig = stateSig(ts);
+      // 数値だけが動いたときも updateClocks が新しい値を塗れるように、state は毎回入れ替える。
+      // 描き直す（render）かどうかは sig で決める、という切り分けはそのまま。
+      t.state = ts;
       if (sig !== t.prevSig) {
         t.prevSig = sig;
-        t.state = ts;
         render(t, ts);
       }
     }
@@ -3072,6 +5087,348 @@ async function tick() {
   // 止まった画面（記録・流れてこなくなったミッション）は動かさない。
   // 時計は読み込んだときに1回入れて、そこで止める。
   for (const [, t] of teams) if (t.live) updateClocks(t);
+}
+
+// ================================================================ 変更履歴画面（Phase 3）
+//
+// ミッション管制室（#mission-screen、上の tick()/POLL_MS）とは完全に別系統のポーリング。
+// ここで使う名前は誰かと衝突しないよう cl* / CL_* に揃えてある（変数名を t にすると、
+// 上の方の「文言は tr、チームは t」の衝突をここでも起こしかねないため、この節に限り
+// チームの略称は使わない）。
+//
+// エンドポイントは3つ:
+//   GET /api/changelog/projects                   … 登録済みプロジェクトの軽い一覧
+//   GET /api/changelog/sessions?path=<projectPath> … 該当プロジェクトの index.json
+//   GET /api/changelog/session?path=&sessionId=    … 1セッションの完全な内容（body・
+//                                                     filesTouched・toolCallCounts を含む）
+// 画面のカードには本文・ファイル一覧・ツール内訳まで出したいが、一覧(index.json)には
+// 要約(headline)と件数しか無いので、表示するセッションぶんだけ session を追加で取りに行く
+// （build_tabs が軽い一覧に留める設計にならい、一度に取りに行くのは CL_DETAIL_PAGE 件まで。
+//  ただし**打ち切りではなく分割**で、下まで見た人にはその先も取りに行く。打ち切りにすると
+//  それを超えたカードだけ本文の無い顔で並び、「本文の無いセッション」と見分けが付かない）。
+
+const CL_POLL_MS = 4000;         // 3〜5秒の範囲。管制室の POLL_MS(1000)より緩める
+const CL_DETAIL_PAGE = 40;       // 詳細（本文・ファイル・内訳）を一度に取りに行く件数
+
+const elScreenBtnMission    = need('#screen-btn-mission');
+const elScreenBtnChangelog  = need('#screen-btn-changelog');
+const elMissionScreen       = need('#mission-screen');
+const elChangelogScreen     = need('#changelog-screen');
+const elClSelect  = need('#cl-project-select');
+const elClMeta    = need('#cl-project-meta');
+const elClConn    = need('#cl-conn');
+const elClFeed    = need('#cl-feed');
+const elClFeedWrap= need('#cl-feed-wrap');
+const elClEmpty   = need('#cl-empty');
+const clCardTpl   = need('#cl-card-tpl');
+
+let clProjects = [];             // 直近の /api/changelog/projects の結果
+let clSelectedPath = null;       // 選択中プロジェクトの絶対パス（サーバーの登録値そのまま）
+let clAutoPicked = false;        // workspace= からの自動選択（または既定選択）を済ませたか
+let clSessions = [];             // 選択中プロジェクトの index.json（新しい順）
+let clDetailCache = new Map();   // sessionId -> 完全な session（/api/changelog/session の応答）
+let clExpanded = new Set();      // 本文を展開中の sessionId
+let clPollTimer = null;
+let clLoading = false;           // 前回のポーリングがまだ終わっていなければ重ねて投げない
+/** いま何件目まで詳細を取りに行くか。**固定の上限ではなく、下まで見た人には伸びる。**
+ *  固定にすると、それを超えたカードは本文もファイル一覧も黙って出ず、
+ *  「本文の無いセッション」と見分けが付かない（別物を黙って見せることになる）。 */
+let clDetailLimit = CL_DETAIL_PAGE;
+
+/** iframe の src に extension.js が付けている ?workspace=<encodeURIComponent(path)> を読む。
+ *  一致するプロジェクトが見つかれば、それを最初の選択として使う（VS Code 側の
+ *  ワークスペースとの自動連携）。クエリが無い・一致しないときは先頭のプロジェクトに落ちる。 */
+function clWorkspaceParam() {
+  try {
+    return new URLSearchParams(window.location.search).get('workspace') || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * パスを「同じ場所を指しているか」の比較用に均す。**比較にだけ使う。**
+ * サーバーへ送る値はレジストリの登録値そのままでなければならない（server.py の
+ * ガードが登録値との完全一致で許可を出しているため）。
+ *
+ * 区切りと末尾を揃え、Windows のパス（`C:\…` と UNC）だけ大小を無視する
+ * ——extension.js の workspaceFolderHash() と同じ規則。画面は自分が
+ * どの OS で動いているかを知らないので、パスの形から判断する。
+ */
+function clNormPath(p) {
+  let s = String(p == null ? '' : p).trim().replace(/\\/g, '/');
+  // 区切りの重なりを1つに畳む（extension.js 側は path.resolve が同じことをしている）。
+  // 先頭の // だけは残す——UNC パス（//server/share）では意味のある2つ。
+  const unc = s.indexOf('//') === 0;
+  s = s.replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+  if (unc) s = '/' + s;
+  if (/^[a-zA-Z]:/.test(s) || unc) s = s.toLowerCase();
+  return s;
+}
+
+function clShowScreen(name) {
+  const mission = name !== 'changelog';
+  if (elMissionScreen)   elMissionScreen.hidden = !mission;
+  if (elChangelogScreen) elChangelogScreen.hidden = mission;
+  if (elScreenBtnMission)   elScreenBtnMission.classList.toggle('active', mission);
+  if (elScreenBtnChangelog) elScreenBtnChangelog.classList.toggle('active', !mission);
+  // ミッション管制室側のポーリングは変更しない。変更履歴側だけ、見えているときだけ回す
+  // （タブを閉じた画面を1秒ごとに叩き続ける既存動作はそのまま、こちらは新規なので絞る）。
+  if (mission) clStopPolling(); else clStartPolling();
+
+  // 隠れている間は clientHeight が 0 なので、縦の中央寄せが決まらないまま残る。
+  // タブ切り替え（showTab）が既にやっているのと同じ後始末をここでもやる。これが無いと
+  // 管制室へ戻った直後に系統樹が上寄りで出て、0.5秒かけて正しい位置へ滑る（実測）。
+  if (mission) {
+    for (const [, t] of teams) {
+      t.lastAvailH = -1;
+      // 木は変わっていないので、正しい位置へは**滑らせずに**着地させる（layoutTree 参照）
+      t.snapNext = true;
+      if (t.state) scheduleLayout(t);
+    }
+  }
+}
+
+bind(elScreenBtnMission,   'click', () => clShowScreen('mission'));
+bind(elScreenBtnChangelog, 'click', () => clShowScreen('changelog'));
+
+bind(elClSelect, 'change', () => {
+  clSelectedPath = elClSelect.value || null;
+  clAutoPicked = true;  // 手で選んだら、以後 workspace= や既定選択で上書きしない
+  clSessions = [];
+  clDetailCache = new Map();
+  clDetailLimit = CL_DETAIL_PAGE;
+  clRenderFeed();
+  clTick();
+});
+
+// 下まで見た人には、その先の詳細も取りに行く。上限に達したカードを黙って
+// 中身の無いカードに見せる代わりに、追い付ける道を用意しておく。
+bind(elClFeedWrap, 'scroll', () => {
+  if (!elClFeedWrap) return;
+  const rest = elClFeedWrap.scrollHeight - elClFeedWrap.scrollTop - elClFeedWrap.clientHeight;
+  if (rest > 240) return;
+  if (clDetailLimit >= clSessions.length) return;
+  clDetailLimit += CL_DETAIL_PAGE;
+  clTick();
+});
+
+function clStartPolling() {
+  clTick();
+  if (clPollTimer) clearInterval(clPollTimer);
+  clPollTimer = setInterval(clTick, CL_POLL_MS);
+}
+
+function clStopPolling() {
+  if (clPollTimer) { clearInterval(clPollTimer); clPollTimer = null; }
+}
+
+function clSetConn(msg) {
+  if (elClConn) elClConn.textContent = msg || '';
+}
+
+async function clTick() {
+  if (clLoading) return;  // 前回分がまだ飛んでいる間は重ねない（3〜5秒間隔なら通常起きない）
+  clLoading = true;
+  try {
+    await clLoadProjects();
+    if (clSelectedPath) await clLoadSessions(clSelectedPath);
+    clSetConn('');
+  } catch (e) {
+    clSetConn(tr('cl.conn_failed', { msg: (e && e.message) || e }));
+  } finally {
+    clLoading = false;
+  }
+}
+
+async function clLoadProjects() {
+  const res = await fetch('/api/changelog/projects', { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  clProjects = Array.isArray(data.projects) ? data.projects : [];
+  clRenderProjectSelect();
+}
+
+function clRenderProjectSelect() {
+  if (!elClSelect) return;
+
+  // workspace= との自動選択、または（一致しないときの）先頭プロジェクトへの既定選択は
+  // 一度だけ行う。以後は利用者がドロップダウンで選んだものを尊重する。
+  if (!clAutoPicked && clProjects.length) {
+    // **完全一致では当たらない。** VS Code が渡してくるのは workspaceFolder の fsPath で、
+    // レジストリに入っているのは changelog_setup.py が見たパス。Windows では大小や
+    // 末尾の区切りが1文字違うだけで別物になり、黙って先頭のプロジェクトが選ばれる
+    // （利用者から見ると「連携していない」ではなく「関係ないプロジェクトが出ている」）。
+    const ws = clNormPath(clWorkspaceParam());
+    const hit = ws ? clProjects.find((p) => clNormPath(p.path) === ws) : null;
+    // 送る値は登録値そのまま（hit.path）。均したほうを送るとサーバーのガードに弾かれる。
+    clSelectedPath = hit ? hit.path : clProjects[0].path;
+    clAutoPicked = true;
+  }
+  // 選択中のものが一覧から消えていたら（記録削除・レジストリ更新等）先頭へ落とす
+  if (clSelectedPath && !clProjects.some((p) => p.path === clSelectedPath)) {
+    clSelectedPath = clProjects.length ? clProjects[0].path : null;
+    clSessions = [];
+    clDetailCache = new Map();
+    clDetailLimit = CL_DETAIL_PAGE;
+  }
+
+  // 同じ並びなら <option> を作り直さない（作り直すとフォーカス・スクロール位置が飛ぶ）。
+  // 署名に言語を混ぜてあるのは、切り替えたときに「◯件」の言い回しを作り直させるため。
+  const sig = JSON.stringify([clProjects.map((p) => [p.path, p.sessionCount]),
+                              i18nOk ? window.I18N.getLang() : '']);
+  if (elClSelect.dataset.sig !== sig) {
+    elClSelect.dataset.sig = sig;
+    elClSelect.innerHTML = '';
+    for (const p of clProjects) {
+      const opt = document.createElement('option');
+      opt.value = p.path;
+      opt.textContent = (p.slug || p.path)
+        + (p.sessionCount ? tr('cl.option_count', { n: fmtLocaleNum(p.sessionCount) }) : '');
+      elClSelect.appendChild(opt);
+    }
+  }
+  if (clSelectedPath) elClSelect.value = clSelectedPath;
+
+  const meta = clProjects.find((p) => p.path === clSelectedPath);
+  if (elClMeta) {
+    elClMeta.textContent = meta
+      ? meta.path + (meta.lastEventAt ? tr('cl.last_update', { time: clFmtTime(meta.lastEventAt) }) : '')
+      : (clProjects.length ? '' : tr('cl.no_projects'));
+  }
+}
+
+async function clLoadSessions(path) {
+  const res = await fetch('/api/changelog/sessions?path=' + encodeURIComponent(path), { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const list = Array.isArray(data.sessions) ? data.sessions : [];
+  clSessions = list;
+  await clLoadDetails(path, list.slice(0, clDetailLimit));
+  clRenderFeed();
+}
+
+/** 表示ぶんの完全な session を取りに行く。すでに持っていて endedAt が同じ（＝未変更）なら
+ *  取り直さない。1件の失敗（消えた・壊れた等）で他のカードまで諦めない。 */
+async function clLoadDetails(path, wanted) {
+  const jobs = wanted.map(async (s) => {
+    const sid = s && s.sessionId;
+    if (!sid) return;
+    const cached = clDetailCache.get(sid);
+    if (cached && cached.endedAt === s.endedAt) return;
+    try {
+      const res = await fetch(
+        '/api/changelog/session?path=' + encodeURIComponent(path) + '&sessionId=' + encodeURIComponent(sid),
+        { cache: 'no-store' }
+      );
+      if (!res.ok) return;
+      clDetailCache.set(sid, await res.json());
+    } catch (e) { /* 1件落ちても他は続ける */ }
+  });
+  await Promise.all(jobs);
+}
+
+function clFmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' '
+       + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
+}
+
+function clRenderFeed() {
+  if (!elClFeed || !clCardTpl) return;
+  if (elClEmpty) elClEmpty.hidden = clSessions.length > 0;
+  elClFeed.innerHTML = '';
+
+  for (const s of clSessions) {
+    const sid = s && s.sessionId;
+    const detail = sid ? clDetailCache.get(sid) : null;
+    // 「まだ取りに行っていない」と「取ったが空だった」は別のこと。前者を黙って
+    // 後者の顔で出すと、本文のあるセッションが本文の無いセッションに見える。
+    const fetched = !!(sid && clDetailCache.has(sid));
+    const node = clCardTpl.content.firstElementChild.cloneNode(true);
+    // <template> の中身は document のツリーに居ないので I18N.apply(document) が届かない。
+    // 複製した直後にここで1回訳す（createTeam() と同じ規約）。
+    if (i18nOk) window.I18N.apply(node);
+
+    node.querySelector('.cl-time').textContent = clFmtTime(s.endedAt || s.startedAt);
+
+    const badge = node.querySelector('.cl-auto-badge');
+    if (badge) badge.hidden = !s.auto;
+
+    node.querySelector('.cl-headline').textContent = s.headline || tr('cl.no_headline');
+
+    // 本文は既定で折りたたむ。展開状態は sessionId 単位で覚えておき、フィードを
+    // 作り直しても（毎ポーリング）開いたカードが勝手に閉じないようにする。
+    const bodyEl = node.querySelector('.cl-body');
+    const toggleBtn = node.querySelector('.cl-toggle');
+    const pendingEl = node.querySelector('.cl-pending');
+    const body = detail && typeof detail.body === 'string' && detail.body ? detail.body : null;
+    if (body) {
+      bodyEl.textContent = body;
+      const open = clExpanded.has(sid);
+      bodyEl.hidden = !open;
+      toggleBtn.hidden = false;
+      toggleBtn.textContent = tr(open ? 'cl.body_hide' : 'cl.body_show');
+      toggleBtn.addEventListener('click', () => {
+        if (clExpanded.has(sid)) clExpanded.delete(sid); else clExpanded.add(sid);
+        clRenderFeed();
+      });
+    } else {
+      bodyEl.hidden = true;
+      toggleBtn.hidden = true;
+    }
+    // 詳細が来ていないカードには、そう書く。スクロールで先へ進めば取りに行く
+    // （clDetailLimit が伸びる）ので、この札は待っている間だけ出る。
+    if (pendingEl) pendingEl.hidden = fetched;
+
+    const filesWrap = node.querySelector('.cl-files');
+    const filesLabel = node.querySelector('.cl-files-label');
+    const filesList = node.querySelector('.cl-files-list');
+    const files = detail && Array.isArray(detail.filesTouched) ? detail.filesTouched : null;
+    if (files && files.length) {
+      filesWrap.hidden = false;
+      // 件数を見出しに出す。一覧は CSS で高さを止めてスクロールさせるので、
+      // 何件あるのかが枠の中の見た目から分からなくなる。
+      if (filesLabel) filesLabel.textContent = tr('cl.files_n', { n: fmtLocaleNum(files.length) });
+      filesList.innerHTML = '';
+      for (const f of files) {
+        const li = document.createElement('li');
+        li.textContent = f;
+        li.title = f;
+        filesList.appendChild(li);
+      }
+    } else {
+      filesWrap.hidden = true;
+    }
+
+    // 詳細をまだ取れていないときも、一覧(index.json)にある toolCallCount だけで
+    // 「◯件」を出す（内訳が要るのは detail が来てから）。
+    const toolsEl = node.querySelector('.cl-tools');
+    const counts = detail && detail.toolCallCounts && typeof detail.toolCallCounts === 'object'
+      ? detail.toolCallCounts : null;
+    if (counts && Object.keys(counts).length) {
+      toolsEl.hidden = false;
+      toolsEl.textContent = Object.entries(counts).map(([k, v]) => k + ' ×' + v).join('   ');
+    } else if (s.toolCallCount) {
+      toolsEl.hidden = false;
+      toolsEl.textContent = tr('cl.tools_count', { n: fmtLocaleNum(s.toolCallCount) });
+    } else {
+      toolsEl.hidden = true;
+    }
+
+    node.querySelector('.cl-sessionid').textContent = sid ? tr('cl.session', { id: sid }) : '';
+    elClFeed.appendChild(node);
+  }
+}
+
+/** boot() から1回だけ呼ぶ。要素が欠けていても（need() が既に控えている）ここでは
+ *  落とさず、画面が来ていれば動くところまでは動かす。実際のポーリング開始は
+ *  clShowScreen() 経由（初期表示はミッション管制室なので、ここでは始めない）。 */
+function initChangelog() {
+  clRenderFeed();
 }
 
 // 寸法の監視は上の sizeWatch（チームごとに observe する1つの ResizeObserver）が行う。

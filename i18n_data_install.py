@@ -29,10 +29,13 @@ The target project is detected automatically from the current directory, so the 
 
 ```bash
 # once, before the mission starts
-{py} {us} start --title "<name of the work>"
+{py} {us} start --title "<name of the work>" --model <your own model ID>
 
 # right after you launch each subagent, one at a time
 {py} {us} add --id SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
+
+# a unit that a subagent launched, not you: name its parent
+{py} {us} add --id SCOUT-A-1 --parent SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
 
 # every time you receive a completion report
 {py} {us} done --id SCOUT-A --sec <seconds> --tokens <number> --tools <number> --headline "<one-line result summary>"
@@ -42,25 +45,42 @@ The target project is detected automatically from the current directory, so the 
 ```
 
 - **Do not forget `finish`.** Nothing breaks when you forget, which is exactly why nobody notices. The screen keeps saying "running", and the next time you `start`, that record is left behind as "unfinished" - **it can never be marked complete afterwards**. A reminder to run `finish` appears the moment you mark the last unit `done`, so close the mission when you see it.
+- **There is also a safety net: the `autofinish` subcommand.** Wire it into a SessionEnd hook and it closes whatever mission is still running the moment the session ends:
+  ```json
+  "SessionEnd": [
+    {{
+      "matcher": "",
+      "hooks": [
+        {{ "type": "command", "command": "python '<absolute path to update_state.py>' autofinish; exit 0" }}
+      ]
+    }}
+  ]
+  ```
+  This does not mean you can skip `finish`. Only the person who did the work can judge where it ends, and the automatic close can only write a mechanical one-line headline, "closed automatically when the session ended." Run `finish --headline "..."` yourself whenever you want a real one-line summary on the record. With no mission running, `autofinish` does nothing. When you split records apart with `--project` to run several missions in this directory at once, it closes every one still running here — it never touches a mission in a different folder.
 - **Leave out any number that was not in the completion report (`--tokens` / `--tools` / `--sec`); do not estimate it.** Leaving it out shows "—" on the screen, and that is the correct state. Writing an estimate defeats the whole purpose of this dashboard.
+- **Name each unit after wording that actually appears in the instructions you gave it.** The screen then reads that unit's own live record and shows what it is doing right now, plus its measured tool count and tokens. When the name matches nothing, the unit still shows up - listed separately as running but unrecorded - it just is not tied to its card. Before `finish` or `autofinish` closes the mission, whatever is still shown this way gets frozen into the record as it was — it stays there afterward, on screen and in history, but is never counted toward the unit total.
+- **`--parent` is what draws the tree.** Leave it out and the unit is filed directly under Command, so the screen shows a single column however deep the team really goes. Pass the parent's `--id` for every unit that a subagent launched rather than you.
+- **Run `add` once per unit; never fold several into one entry.** An entry like "scout team (6)" loses the six members and everything they launched below them, and it cannot be recovered afterwards. When a subagent launches children of its own, put this in that subagent's own instructions: one JSON file per child, carrying **that subagent's own ID as `parentId`**, written into the grandchild self-report directory that `{py} {us} status` prints - `{op}` has the format.
 - **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you write it and shown on the screen exactly as recorded - nothing is translated afterwards. Follow the language of these instructions, not the language of the conversation.
 - To watch the screen, start one `{py} {sv}` and open <http://127.0.0.1:3939/>. Every `start` adds one tab, and **past work stays viewable as tabs** (the 20 most recent per project; older ones move to the trash automatically). Finished tabs can be deleted from the screen.
 - **Use the `update_state.py` at the path above.** If a copy sits somewhere else, running that one splits the `missions/` that gets written, and nothing appears on the screen.
 - For the details (grandchild agents, `--project`, helper commands), see `{op}`.
 
-### When you run two or more missions at once in the same directory (required)
+### When you run two or more missions at once in the same directory
 
-Mission records are kept **one per project (= per working directory)**. If you type a second
-`start` in the same directory, the first one is pushed into the history tabs while it is still
-running, and every `done` for that first one after that fails with "does not exist". **There is
-no way to mark a pushed-out record as finished later on.** Separating the records in advance is
-the only remedy.
-
-When you run missions in parallel in the same directory, give each `start` a unique name with
+Mission records are kept **one per project (= per working directory)**. If a second `start` (or
+`add` / `done` / `finish` / `log` / `demo`) would touch a record another session still has running, it is
+refused (exit code 1) instead of silently pushing it out or mixing the two records — the error
+prints a ready-to-paste `--project` command with a unique name already filled in, so you do not
+have to invent one yourself. `--force` pushes through anyway, the same as before: the old record
+is pushed into the history tabs while it stays marked running, and it can never be marked finished
+afterward. This protection only works when both sides carry a session ID; without one it silently
+falls back to the old, unprotected behavior. When you already know missions will overlap here,
+splitting them in advance is still the smoothest path: give each `start` a unique name with
 `--project` (passing a name that does not exist creates a new project under that name).
 
 ```bash
-{py} {us} start --project <a unique name> --title "<name of the work>"
+{py} {us} start --project <a unique name> --title "<name of the work>" --model <your own model ID>
 {py} {us} add --project <a unique name> --id SCOUT-A --name "<a readable name>" --model <model ID> --mission "<the task>"
 {py} {us} done --project <a unique name> --id SCOUT-A --headline "<one-line result summary>"
 {py} {us} finish --project <a unique name> --headline "<one-line overall summary>"
@@ -79,10 +99,13 @@ BLOCK_JA = """## Subagent Dashboard
 
 ```bash
 # ミッション開始前に1回
-{py} {us} start --title "<作業の名前>"
+{py} {us} start --title "<作業の名前>" --model <自分のモデル ID>
 
 # サブエージェントを起動した直後に、1体ずつ
 {py} {us} add --id SCOUT-A --name "<読みやすい名前>" --model <モデルID> --mission "<任務内容>"
+
+# サブエージェントが起動した機体は、親のIDを付ける
+{py} {us} add --id SCOUT-A-1 --parent SCOUT-A --name "<読みやすい名前>" --model <モデルID> --mission "<任務内容>"
 
 # 完了通知を受け取ったら、その都度
 {py} {us} done --id SCOUT-A --sec <秒> --tokens <数> --tools <数> --headline "<結果の一行要約>"
@@ -92,24 +115,42 @@ BLOCK_JA = """## Subagent Dashboard
 ```
 
 - **`finish` を忘れないでください。** 打ち忘れても何も壊れないので気づけません。画面には「稼働中」と出続け、次に `start` したときその記録は「未完」として残り、**あとから完了にはできません**。最後の1体を `done` にした時点で `finish` の催促が出るので、それを見たら締めてください。
+- **安全網もあります。`autofinish` というサブコマンドです。** SessionEnd hook に配線しておくと、セッションが終わった瞬間に、そのとき稼働中のミッションを自動で締めます:
+  ```json
+  "SessionEnd": [
+    {{
+      "matcher": "",
+      "hooks": [
+        {{ "type": "command", "command": "python '<update_state.py への絶対パス>' autofinish; exit 0" }}
+      ]
+    }}
+  ]
+  ```
+  だからといって `finish` を打たなくてよいわけではありません。どこが作業の区切りかを決められるのは作業した本人だけで、自動締めの見出しは「セッション終了により自動で締めました」という機械的な一行にしかなりません。結果の一行要約を残したいときは、自分で `finish --headline "..."` を打ってください。稼働中のミッションが無ければ、`autofinish` は何もしません。`--project` で記録先を分けて同じディレクトリで並行させているときも、そのディレクトリで稼働中のものは全部締まります——別のフォルダのミッションは巻き込みません。
 - **完了通知に含まれていなかった数値（`--tokens` / `--tools` / `--sec`）は推定せず省略してください。** 省略すれば画面に「—」と表示され、それが正しい状態です。推定値を書くのはこのダッシュボードの目的を壊す行為です。
+- **`--name` には、その機体へ渡した指示文に実際に出てくる語句を使ってください。** そうすると画面がその機体の記録を読み、いま何をしているか・ツール回数・トークンを実測で出せます。名前がどれにも当たらない機体も消えはしませんが、カードには紐づかず「記録に無い稼働中の機体」として別に並びます。`finish` や `autofinish` でミッションを締める前に、その時点でこう表示されている機体は記録へそのまま焼き付けられます。締めたあとも画面や履歴の同じ場所に残りますが、機体数には数えられません。
+- **系統樹を描いているのは `--parent` です。** 付けないとその機体は指令塔の直下に置かれ、実際は何世代に展開していても画面は1列のままになります。自分ではなくサブエージェントが起動した機体には、必ず親の `--id` を渡してください。
+- **`add` は1体につき1回で、複数体を1件にまとめないでください。** 「調査班（6名）」のような1件は、6体とその配下に展開した機体を丸ごと失い、**あとから復元できません**。サブエージェント自身に子を起動させる場合は、**そのサブエージェント自身のIDを `parentId` にした**JSONを子1体につき1ファイル、`{py} {us} status` が表示する孫の自己申告フォルダへ書き出すよう、起動時の指示文に含めてください（形式は `{op}`）。
 - **自由記述は日本語で書いてください**（`--title` / `--name` / `--mission` / `--headline`）。書いたとおりに記録され、記録したとおりに画面へ出ます——あとから翻訳はされません。会話の言語ではなく、この指示の言語に合わせてください。
 - 画面は `{py} {sv}` を1つ起動して <http://127.0.0.1:3939/> で見ます。`start` するたびに1タブ増え、**過去の作業もタブで見返せます**（プロジェクトごとに直近20件。古いものから自動でゴミ箱へ移ります）。完了したタブは画面から削除できます。
 - **`update_state.py` は上のパスのものを使ってください。** 別の場所にコピーがある場合、そちらを実行すると書き込み先の `missions/` が分かれてしまい、画面に何も出ません。
 - 詳細（孫エージェントの扱い、`--project` 指定、補助コマンド）は `{op}` を参照してください。
 
-### 同じディレクトリで2本以上を同時に走らせるとき（必須）
+### 同じディレクトリで2本以上を同時に走らせるとき
 
-ミッションの記録先は**プロジェクト（＝作業ディレクトリ）ごとに1つ**です。同じディレクトリで
-2本目の `start` を打つと、1本目は稼働中のまま履歴タブへ押し出され、以後その1本目に対する
-`done` は「存在しません」というエラーになります。**押し出された記録をあとから完了に直す手段は
-ありません。** 事前に記録先を分けることが唯一の対策です。
-
-同じディレクトリで並行させるときは、`start` に `--project` で一意な名前を付けて分けてください
-（存在しない名前を渡せば、その名前で新しいプロジェクトが作られます）。
+ミッションの記録先は**プロジェクト（＝作業ディレクトリ）ごとに1つ**です。2本目の `start`
+（や `add` / `done` / `finish` / `log` / `demo`）が、別のセッションがまだ稼働中の記録に触れようと
+すると、黙って押し出したり記録を混ぜたりする代わりに**拒否されます**（終了コード 1）。
+エラーには、一意な名前が入った、貼るだけで使える `--project` 付きのコマンドが表示されるので、
+自分で名前を考える必要はありません。`--force` を付ければいままでどおり押し通せます——
+古い記録は稼働中のまま履歴タブへ押し出され、あとから完了にすることはできません。この保護は
+両側にセッション ID がある場合だけ働き、無い場合は黙って以前の無防備な挙動に戻ります。
+同じディレクトリで並行させると分かっているなら、`start` に `--project` で一意な名前を付けて
+事前に分けておくのがいちばん摩擦がありません（存在しない名前を渡せば、その名前で新しい
+プロジェクトが作られます）。
 
 ```bash
-{py} {us} start --project <一意な名前> --title "<作業の名前>"
+{py} {us} start --project <一意な名前> --title "<作業の名前>" --model <自分のモデル ID>
 {py} {us} add --project <一意な名前> --id SCOUT-A --name "<読みやすい名前>" --model <モデルID> --mission "<任務内容>"
 {py} {us} done --project <一意な名前> --id SCOUT-A --headline "<結果の一行要約>"
 {py} {us} finish --project <一意な名前> --headline "<全体の一行要約>"
@@ -127,10 +168,13 @@ BLOCK_ZH = """## Subagent Dashboard
 
 ```bash
 # 任务开始前执行一次
-{py} {us} start --title "<工作的名称>"
+{py} {us} start --title "<工作的名称>" --model <你自己的模型 ID>
 
 # 启动子代理之后立刻，一体一体地登记
 {py} {us} add --id SCOUT-A --name "<好读的名字>" --model <模型ID> --mission "<任务内容>"
+
+# 由子代理启动、而非由你启动的一体：注明其父级
+{py} {us} add --id SCOUT-A-1 --parent SCOUT-A --name "<好读的名字>" --model <模型ID> --mission "<任务内容>"
 
 # 每次收到完成通知时
 {py} {us} done --id SCOUT-A --sec <秒> --tokens <数> --tools <数> --headline "<结果的一行摘要>"
@@ -140,24 +184,40 @@ BLOCK_ZH = """## Subagent Dashboard
 ```
 
 - **请不要忘记 `finish`。** 忘了敲也不会坏掉任何东西，所以察觉不到。画面上会一直显示「运行中」，下次 `start` 时那条记录会作为「未完成」留下，**事后无法再改成完成**。把最后一体置为 `done` 的时点会出现 `finish` 的催促，看到它就请收尾。
+- **还有一张安全网：`autofinish` 子命令。** 把它配线到 SessionEnd hook，会话一结束就会自动收尾那一刻仍在运行的任务:
+  ```json
+  "SessionEnd": [
+    {{
+      "matcher": "",
+      "hooks": [
+        {{ "type": "command", "command": "python '<update_state.py 的绝对路径>' autofinish; exit 0" }}
+      ]
+    }}
+  ]
+  ```
+  这不代表可以不打 `finish`。只有做这项工作的本人才能判断在哪里收尾，自动收尾写下的只是一句机械式的「因会话结束而自动收尾」。想在记录上留下真正的一行摘要时，请自己执行 `finish --headline "..."`。没有正在运行的任务时，`autofinish` 什么也不做。用 `--project` 分开记录、在同一目录并行跑多个任务时，那个目录下所有正在运行的任务也都会被收尾——不会牵连别的文件夹里的任务。
 - **完成通知里没有的数值（`--tokens` / `--tools` / `--sec`）请不要估算，直接省略。** 省略后画面上会显示「—」，那才是正确的状态。写上估算值是破坏这个面板目的的行为。
+- **`--name` 请使用该机体所收到的指令文中实际出现的词句。** 这样画面就能读取该机体自己的记录，实测显示它此刻在做什么、工具次数和词元数。名字对不上的机体也不会消失，只是不与卡片绑定，而是另外列为「未记录但在运行的机体」。在 `finish` 或 `autofinish` 收尾任务之前，那一刻仍以这种方式显示的机体会被原样固化进记录。收尾后仍留在画面和历史的同一位置，但不计入机体数。
+- **绘制树状结构的是 `--parent`。** 不加的话，那一体会直接归在指挥部之下，无论团队实际展开到多深，画面都会显示为一列。不是由你而是由子代理启动的每一体，都请传入其父级的 `--id`。
+- **每一体运行一次 `add`，绝不要把多体合并为一条记录。** 像「侦察小队（6名）」这样的条目会丢失那6体及其下方启动的所有单位，而且事后无法恢复。当子代理自行启动子级时，请在该子代理的启动指示中包含以下内容：为每个子级写入一个 JSON 文件，**将该子代理自身的 ID 作为 `parentId`**，写入 `{py} {us} status` 显示的孙级自我报告目录——格式见 `{op}`。
 - **自由文本请用中文书写**（`--title` / `--name` / `--mission` / `--headline`）。会照你写下的样子记录，照记录的样子显示在画面上——事后不会翻译。请对齐这份指示的语言，而不是对话的语言。
 - 画面是启动一个 `{py} {sv}`，然后在 <http://127.0.0.1:3939/> 上看。每 `start` 一次就多一个标签页，**过去的工作也能用标签页回看**（每个项目保留最近 20 条。旧的会自动移入回收站）。已完成的标签页可以从画面上删除。
 - **请使用上面那个路径的 `update_state.py`。** 如果别的地方有副本，执行那一个会让写入的 `missions/` 分家，画面上就什么都不出现。
 - 详细内容（孙代理的处理、`--project` 指定、辅助命令）请参照 `{op}`。
 
-### 在同一个目录里同时跑两个以上时（必须）
+### 在同一个目录里同时跑两个以上时
 
-任务的记录位置是**每个项目（＝工作目录）一个**。在同一个目录里敲第二个
-`start`，第一个就会在运行中的状态下被挤进历史标签页，此后针对第一个的
-`done` 会报「不存在」的错误。**被挤出去的记录事后没有办法改成完成。**
-事先把记录位置分开是唯一的对策。
-
-在同一个目录里并行时，请给 `start` 加上 `--project` 起一个唯一的名字来区分
-（传一个不存在的名字，就会用那个名字新建一个项目）。
+任务的记录位置是**每个项目（＝工作目录）一个**。当第二个 `start`（或 `add` / `done` /
+`finish` / `log` / `demo`）想要触碰另一个会话仍在运行的记录时，不会再默默把它挤出去或把两份记录
+混在一起，而是会**被拒绝**（退出码 1）——错误信息里会给出一条贴上就能用、已经填好唯一
+名字的 `--project` 命令，不需要自己再想名字。加上 `--force` 就能像以前一样强行推进：旧的
+记录会在运行中的状态下被挤进历史标签页，事后无法改成完成。这层防护只在两边都带有会话 ID
+时才起作用，没有的话就会默默退回到以前没有防护的老样子。如果已经知道要在这里并行，事先给
+每个 `start` 用 `--project` 起一个唯一的名字分开，仍然是摩擦最小的做法（传一个不存在的
+名字，就会用那个名字新建一个项目）。
 
 ```bash
-{py} {us} start --project <唯一的名字> --title "<工作的名称>"
+{py} {us} start --project <唯一的名字> --title "<工作的名称>" --model <你自己的模型 ID>
 {py} {us} add --project <唯一的名字> --id SCOUT-A --name "<好读的名字>" --model <模型ID> --mission "<任务内容>"
 {py} {us} done --project <唯一的名字> --id SCOUT-A --headline "<结果的一行摘要>"
 {py} {us} finish --project <唯一的名字> --headline "<整体的一行摘要>"
@@ -175,10 +235,13 @@ BLOCK_KO = """## Subagent Dashboard
 
 ```bash
 # 미션 시작 전에 한 번
-{py} {us} start --title "<작업의 이름>"
+{py} {us} start --title "<작업의 이름>" --model <자신의 모델 ID>
 
 # 서브에이전트를 띄운 직후에, 한 대씩
 {py} {us} add --id SCOUT-A --name "<읽기 쉬운 이름>" --model <모델ID> --mission "<임무 내용>"
+
+# 서브에이전트가 띄운 기체에는 부모의 ID를 붙이기
+{py} {us} add --id SCOUT-A-1 --parent SCOUT-A --name "<읽기 쉬운 이름>" --model <모델ID> --mission "<임무 내용>"
 
 # 완료 보고를 받을 때마다
 {py} {us} done --id SCOUT-A --sec <초> --tokens <수> --tools <수> --headline "<결과의 한 줄 요약>"
@@ -188,24 +251,42 @@ BLOCK_KO = """## Subagent Dashboard
 ```
 
 - **`finish` 를 잊지 마세요.** 잊고 치지 않아도 아무것도 망가지지 않기 때문에 알아챌 수 없습니다. 화면에는 계속 「가동 중」이라고 나오고, 다음에 `start` 했을 때 그 기록은 「미완」으로 남으며, **나중에 완료로 만들 수는 없습니다**. 마지막 한 대를 `done` 으로 만든 시점에 `finish` 를 재촉하는 안내가 나오므로, 그것을 보면 마무리하세요.
+- **안전망도 있습니다. `autofinish` 서브커맨드입니다.** SessionEnd hook 에 연결해 두면, 세션이 끝나는 순간 그때 가동 중이던 미션을 자동으로 마감합니다:
+  ```json
+  "SessionEnd": [
+    {{
+      "matcher": "",
+      "hooks": [
+        {{ "type": "command", "command": "python '<update_state.py 의 절대 경로>' autofinish; exit 0" }}
+      ]
+    }}
+  ]
+  ```
+  그렇다고 `finish` 를 치지 않아도 되는 것은 아닙니다. 작업이 어디서 끝나는지는 작업한 본인만 판단할 수 있고, 자동 마감의 헤드라인은 「세션 종료로 자동으로 마감했습니다」라는 기계적인 한 줄일 뿐입니다. 결과의 한 줄 요약을 남기고 싶다면 직접 `finish --headline "..."` 를 실행하세요. 가동 중인 미션이 없으면 `autofinish` 는 아무것도 하지 않습니다. `--project` 로 기록 위치를 나눠 같은 디렉터리에서 병렬로 돌리고 있을 때도, 그 디렉터리에서 가동 중인 것은 전부 마감됩니다——다른 폴더의 미션은 끌어들이지 않습니다.
 - **완료 보고에 들어 있지 않던 수치(`--tokens` / `--tools` / `--sec`)는 추정하지 말고 생략하세요.** 생략하면 화면에 「—」로 표시되며, 그것이 올바른 상태입니다. 추정값을 적는 것은 이 대시보드의 목적을 망가뜨리는 행위입니다.
+- **`--name` 에는 그 기체에 준 지시문에 실제로 나오는 어구를 쓰세요.** 그러면 화면이 그 기체의 기록을 읽어 지금 무엇을 하고 있는지, 도구 횟수와 토큰을 실측으로 보여줍니다. 이름이 어디에도 맞지 않는 기체도 사라지지는 않지만 카드에 연결되지 않고 「기록에 없는 가동 중인 기체」로 따로 표시됩니다. `finish` 나 `autofinish` 로 미션을 마감하기 전에, 그 시점에 이렇게 표시되고 있는 기체는 그대로 기록에 새겨 넣습니다. 마감한 뒤에도 화면과 이력의 같은 자리에 남지만, 기체 수에는 세지 않습니다.
+- **계통도를 그리는 것은 `--parent` 입니다.** 붙이지 않으면 그 기체는 지령탑 바로 아래에 놓이며, 실제로는 몇 세대까지 전개되어 있어도 화면에는 한 열로만 표시됩니다. 자신이 아니라 서브에이전트가 띄운 기체에는 반드시 부모의 `--id` 를 넘겨주세요.
+- **`add` 는 한 대마다 한 번 실행하고, 여러 대를 한 건으로 합치지 마세요.** 「조사반(6명)」 같은 한 건은 여섯 대와 그 아래에 띄운 기체를 전부 잃게 만들며, 나중에 복원할 수 없습니다. 서브에이전트가 자신의 자식을 띄우는 경우에는, 자식 한 대마다 **그 서브에이전트 자신의 ID를 `parentId`로 넣은** JSON 파일 하나를 `{py} {us} status`가 표시하는 손자 자체 보고 폴더에 쓰도록 띄울 때의 지시문에 포함하세요(형식은 `{op}`).
 - **자유 기술은 한국어로 쓰세요**(`--title` / `--name` / `--mission` / `--headline`). 적은 그대로 기록되고, 기록된 그대로 화면에 나옵니다——나중에 번역되지 않습니다. 대화의 언어가 아니라 이 지시의 언어에 맞추세요.
 - 화면은 `{py} {sv}` 를 하나 띄우고 <http://127.0.0.1:3939/> 에서 봅니다. `start` 할 때마다 탭이 하나 늘고, **지난 작업도 탭으로 되돌아볼 수 있습니다**(프로젝트마다 최근 20건. 오래된 것부터 자동으로 휴지통으로 옮겨집니다). 완료된 탭은 화면에서 삭제할 수 있습니다.
 - **`update_state.py` 는 위 경로의 것을 쓰세요.** 다른 곳에 복사본이 있는 경우, 그쪽을 실행하면 기록되는 `missions/` 가 갈라져 화면에 아무것도 나오지 않습니다.
 - 자세한 내용(손자 에이전트의 취급, `--project` 지정, 보조 명령)은 `{op}` 를 참조하세요.
 
-### 같은 디렉터리에서 두 개 이상을 동시에 돌릴 때 (필수)
+### 같은 디렉터리에서 두 개 이상을 동시에 돌릴 때
 
-미션의 기록 위치는 **프로젝트(= 작업 디렉터리)마다 하나**입니다. 같은 디렉터리에서
-두 번째 `start` 를 치면, 첫 번째는 가동 중인 채로 이력 탭으로 밀려나고, 이후 그 첫 번째에 대한
-`done` 은 「존재하지 않습니다」라는 오류가 됩니다. **밀려난 기록을 나중에 완료로 고치는 수단은
-없습니다.** 미리 기록 위치를 나누는 것이 유일한 대책입니다.
-
-같은 디렉터리에서 병행할 때는 `start` 에 `--project` 로 고유한 이름을 붙여 나누세요
-(존재하지 않는 이름을 넘기면 그 이름으로 새 프로젝트가 만들어집니다).
+미션의 기록 위치는 **프로젝트(= 작업 디렉터리)마다 하나**입니다. 두 번째 `start`(또는
+`add` / `done` / `finish` / `log` / `demo`)가 다른 세션이 아직 가동 중인 기록을 건드리려 하면,
+조용히 밀어내거나 두 기록을 섞는 대신 **거부됩니다**(종료 코드 1). 오류에는 고유한
+이름이 이미 채워진, 붙여넣기만 하면 되는 `--project` 명령이 함께 나오므로 직접 이름을
+생각할 필요는 없습니다. `--force` 를 붙이면 지금까지처럼 밀어붙일 수 있습니다——오래된
+기록은 가동 중인 채로 이력 탭으로 밀려나고, 나중에 완료로 만들 수는 없습니다. 이 보호는
+양쪽 모두에 세션 ID 가 있을 때만 작동하며, 없으면 조용히 예전의 무방비했던 동작으로
+돌아갑니다. 여기서 병행하게 될 걸 이미 알고 있다면, `start` 에 `--project` 로 고유한
+이름을 붙여 미리 나눠두는 편이 가장 마찰이 적습니다(존재하지 않는 이름을 넘기면 그
+이름으로 새 프로젝트가 만들어집니다).
 
 ```bash
-{py} {us} start --project <고유한 이름> --title "<작업의 이름>"
+{py} {us} start --project <고유한 이름> --title "<작업의 이름>" --model <자신의 모델 ID>
 {py} {us} add --project <고유한 이름> --id SCOUT-A --name "<읽기 쉬운 이름>" --model <모델ID> --mission "<임무 내용>"
 {py} {us} done --project <고유한 이름> --id SCOUT-A --headline "<결과의 한 줄 요약>"
 {py} {us} finish --project <고유한 이름> --headline "<전체의 한 줄 요약>"
@@ -216,21 +297,174 @@ BLOCK_KO = """## Subagent Dashboard
 - 서로 다른 디렉터리에서 도는 미션끼리는 기록 위치가 원래 다르므로 `--project` 는 필요 없습니다.
 """
 
+# ------------------------------------------------------------ CLAUDE.md 本文（変更履歴トラッキング）
+#
+# install.build_changelog_block() が書き込む第2のブロックの本文。Subagent Dashboard
+# のブロック（上）とは独立していて、書き先は CLAUDE.md だけ。
+# 差し込み {py} {cli} は install.py 側で .format() する。
+
+AUTOREG_BLOCK_EN = '''## Subagent Dashboard — automatic registration is on in this project
+
+The hooks in this project's `.claude/settings.local.json` record every subagent for you: one entry the moment you launch it, and the measured totals when it comes back.
+
+- **Do not run `add` or `done` yourself here.** The hook has already written that record; running them again puts a second card on the screen for a unit that is already there.
+- **You still open and close the mission by hand**, because where the work begins and ends is a judgement only you can make:
+  ```
+  {py} {us} start --title "<name of the work>" --model <your own model ID>
+  {py} {us} finish --headline "<one-line summary of the whole thing>"
+  ```
+- **The name on the card is the Agent call's `description`, and the mission text is the beginning of the prompt you sent.** Write the description you would want to read on the screen.
+- **No headline is recorded when a unit comes back**, because the completion signal carries no one-line summary. If you want one on a card, add it afterwards with `done --id <the AUTO- id> --headline "..."` — that is the one time `done` is yours to run.
+- **If two missions are running in this same folder at once** (you split them with `start --project <name>`), a unit you launch yourself cannot be placed — nothing in the call says which team it belongs to, so the hook records nothing and it shows up as a running unit that is not in the records. Register those by hand with `add --project <name>`. Units that a subagent launches are placed correctly on their own, from the parent's record.
+- Free text you do write (`--title` / `--headline`) goes in the language these instructions are written in.
+'''
+
+AUTOREG_BLOCK_JA = '''## Subagent Dashboard — このプロジェクトでは自動登録が入っています
+
+このプロジェクトの `.claude/settings.local.json` の hook が、サブエージェントを1体ずつ記録します。起動した瞬間に1件、帰ってきたときに実測値が入ります。
+
+- **ここでは `add` と `done` を自分で打たないでください。** その記録は hook が既に書いています。打つと、すでに画面にある機体のカードがもう1枚増えます。
+- **ミッションの開始と締めだけは手で打ってください。** どこが作業の区切りかは、あなたにしか決められないからです:
+  ```
+  {py} {us} start --title "<作業の名前>" --model <自分のモデル ID>
+  {py} {us} finish --headline "<全体の一行要約>"
+  ```
+- **カードに出る名前は Agent 呼び出しの `description`、任務はあなたが渡した指示文の冒頭がそのまま入ります。** 画面で読みたい名前を description に書いてください。
+- **帰ってきたときの見出しは記録されません。** 完了の合図に一行要約が入っていないからです。カードに見出しを出したいときは、あとから `done --id <自動で付いた AUTO- のID> --headline "..."` で足してください——`done` を打ってよいのはこのときだけです。
+- **同じフォルダで2本のミッションを同時に走らせているとき**（`start --project <名前>` で分けたとき）、あなた自身が起動した機体は置き場所を決められません。どちらのチームのものかが呼び出しのどこにも書かれていないので、hook は何も記録せず、その機体は「記録に無い稼働中の機体」として出ます。そのときだけ `add --project <名前>` で手で登録してください。下請けが起動した機体は、親の記録から自動で正しい側に入ります。
+- 自分で書く自由記述（`--title` / `--headline`）は、この運用ルールが書かれている言語で書いてください。
+'''
+
+AUTOREG_BLOCK_ZH = '''## Subagent Dashboard — 本项目已启用自动登记
+
+本项目 `.claude/settings.local.json` 中的 hook 会逐个记录子代理：启动的那一刻写入一条，返回时写入实测值。
+
+- **在这里不要自己运行 `add` 和 `done`。** 那条记录 hook 已经写好了。再运行一次，会让画面上已有的机体多出一张卡片。
+- **只有任务的开始和收尾需要手动执行**，因为工作从哪里开始、到哪里结束，只有你能判断:
+  ```
+  {py} {us} start --title "<工作的名称>" --model <你自己的模型 ID>
+  {py} {us} finish --headline "<整体的一行摘要>"
+  ```
+- **卡片上的名字来自 Agent 调用的 `description`，任务内容取自你发出的指示文开头。** 请把你希望在画面上读到的名字写进 description。
+- **返回时不会记录一行摘要**，因为完成信号里没有这样的内容。若想让卡片上出现摘要，请事后用 `done --id <自动生成的 AUTO- 开头的ID> --headline "..."` 补上——这是唯一该由你运行 `done` 的时候。
+- **在同一个文件夹里同时跑两条任务时**（用 `start --project <名字>` 分开的情况），你自己启动的机体无法确定归属。调用里没有任何地方写着它属于哪一队，因此 hook 不会记录，它会显示为「记录中没有的运行中机体」。这种时候请用 `add --project <名字>` 手动登记。由子代理启动的机体会依据父级的记录自动进入正确的一侧。
+- 你自己写的自由文本（`--title` / `--headline`）请使用这份运用规则所写的语言。
+'''
+
+AUTOREG_BLOCK_KO = '''## Subagent Dashboard — 이 프로젝트에서는 자동 등록이 켜져 있습니다
+
+이 프로젝트의 `.claude/settings.local.json` 에 있는 hook 이 서브에이전트를 한 대씩 기록합니다. 기동한 순간에 한 건, 돌아왔을 때 실측값이 들어갑니다.
+
+- **여기서는 `add` 와 `done` 을 직접 실행하지 마세요.** 그 기록은 hook 이 이미 썼습니다. 다시 실행하면 화면에 이미 있는 기체의 카드가 한 장 더 늘어납니다.
+- **임무의 시작과 마무리만 손으로 실행하세요.** 작업이 어디서 시작하고 어디서 끝나는지는 당신만 판단할 수 있기 때문입니다:
+  ```
+  {py} {us} start --title "<작업의 이름>" --model <자신의 모델 ID>
+  {py} {us} finish --headline "<전체의 한 줄 요약>"
+  ```
+- **카드에 나오는 이름은 Agent 호출의 `description`, 임무는 당신이 건넨 지시문의 앞부분이 그대로 들어갑니다.** 화면에서 읽고 싶은 이름을 description 에 쓰세요.
+- **돌아왔을 때의 한 줄 요약은 기록되지 않습니다.** 완료 신호에 한 줄 요약이 들어 있지 않기 때문입니다. 카드에 요약을 내고 싶다면 나중에 `done --id <자동으로 붙은 AUTO- 로 시작하는 ID> --headline "..."` 으로 더하세요 — `done` 을 실행해도 되는 것은 이때뿐입니다.
+- **같은 폴더에서 두 개의 임무를 동시에 돌리고 있을 때** (`start --project <이름>` 으로 나눈 경우), 당신이 직접 기동한 기체는 어느 쪽인지 정할 수 없습니다. 호출 어디에도 어느 팀의 것인지 쓰여 있지 않기 때문에 hook 은 아무것도 기록하지 않고, 그 기체는 「기록에 없는 가동 중인 기체」로 나옵니다. 그때만 `add --project <이름>` 으로 직접 등록해 주세요. 서브에이전트가 기동한 기체는 부모의 기록에서 자동으로 올바른 쪽에 들어갑니다.
+- 직접 쓰는 자유 기술 (`--title` / `--headline`) 은 이 운용 규칙이 쓰인 언어로 써 주세요.
+'''
+
+CHANGELOG_BLOCK_EN = """## Claude Code Changelog Tracking
+
+Some projects have Claude Code changelog tracking configured (project-local, under `.claude/changelog/` in that project). It is a separate feature from Subagent Dashboard above: it records what *you* changed in that project and why, not subagent missions. If `.claude/changelog/` does not exist in the current project, none of this applies to you here.
+
+When it is configured for the current project:
+
+- **Recording itself is fully automatic. You never have to run anything to make an entry exist.** A hook already logs every Edit/Write/NotebookEdit/Bash call to a raw log as you work — that part needs no action from you.
+- **At a natural breakpoint in the session, proactively call `summarize` yourself, on your own judgement, rather than waiting to be forced:**
+  ```
+  {py} {cli} summarize --session <id> --headline "<what changed and why, one line>" --body "<details, optional>"
+  ```
+  Run `{py} {cli} status` first if you need the current session's id — it lists any session for this project that still has unsummarized entries. A Stop hook exists as a safety net that blocks the end of a session if nothing has been summarized yet; treat hitting that as a fallback you would rather avoid, not the normal way this gets done.
+- **Write only what you can actually back up from the raw log. Never invent a headline or body.** If you are not sure what happened in the session, run `{py} {cli} status --session <id>` (or `list`) first and summarize from what it shows — do not guess or pad the description to sound more complete than it is.
+"""
+
+CHANGELOG_BLOCK_JA = """## Claude Code 変更履歴トラッキング
+
+プロジェクトによっては、Claude Code の変更履歴トラッキングが設定されています（プロジェクトローカル。そのプロジェクトの `.claude/changelog/` 配下）。上の Subagent Dashboard とは別の機能で、記録するのはサブエージェントの編成ではなく、**あなた自身がそのプロジェクトで何を・なぜ変更したか**です。いま作業しているプロジェクトに `.claude/changelog/` が無ければ、ここでは関係ありません。
+
+いま作業しているプロジェクトで設定されている場合:
+
+- **記録そのものは完全に自動です。記録を残すために何かを実行する必要はありません。** 作業中の Edit/Write/NotebookEdit/Bash はすべて hook が生ログへ書いています——その部分であなたがすることは何もありません。
+- **セッションの区切りがついたところで、強制されるのを待たず、自分の判断で `summarize` を呼んでください:**
+  ```
+  {py} {cli} summarize --session <id> --headline "<何を・なぜ変えたか、一行で>" --body "<詳細（任意）>"
+  ```
+  いまのセッションIDが必要なら、先に `{py} {cli} status` を実行してください——このプロジェクトで未要約の記録が残っているセッションが出ます。何も要約されないままセッションが終わろうとすると Stop hook が安全網として止めますが、それは避けたい最後の受け皿であって、通常の書き方ではありません。
+- **生ログから裏付けられることだけを書いてください。見出しや本文を捏造しないこと。** そのセッションで何があったか自信が持てないときは、先に `{py} {cli} status --session <id>`（または `list`）を実行し、出てきたものだけを踏まえて要約してください——推測で埋めたり、実際より充実して見えるように盛ったりしないこと。
+"""
+
+CHANGELOG_BLOCK_ZH = """## Claude Code 变更历史追踪
+
+有些项目配置了 Claude Code 的变更历史追踪（保存在项目本地，即该项目的 `.claude/changelog/` 下）。它与上面的 Subagent Dashboard 是两个功能：记录的不是子代理的编成，而是**你自己在那个项目里改了什么、为什么改**。如果当前项目里没有 `.claude/changelog/`，这一节在这里就与你无关。
+
+当前项目配置了它时:
+
+- **记录本身完全自动。为了留下一条记录，你不需要执行任何命令。** 你工作中的每一次 Edit/Write/NotebookEdit/Bash 都已由 hook 写入原始日志——这部分不需要你动手。
+- **在会话告一段落时，不要等着被强制，自己判断并主动调用 `summarize`:**
+  ```
+  {py} {cli} summarize --session <id> --headline "<改了什么、为什么，一行>" --body "<详情（可选）>"
+  ```
+  如果需要当前会话的 id，先执行 `{py} {cli} status`——它会列出这个项目里仍有未汇总记录的会话。若什么都没汇总就想结束会话，Stop hook 会作为安全网拦下来；但那是你宁可避免的兜底，不是正常的写法。
+- **只写你能从原始日志中确认的内容。绝不要编造标题或正文。** 如果你不确定这次会话里发生了什么，先执行 `{py} {cli} status --session <id>`（或 `list`），只根据它显示的内容来汇总——不要靠猜测填补，也不要把描述写得比实际更充实。
+"""
+
+CHANGELOG_BLOCK_KO = """## Claude Code 변경 이력 추적
+
+일부 프로젝트에는 Claude Code 변경 이력 추적이 설정되어 있습니다(프로젝트 로컬. 해당 프로젝트의 `.claude/changelog/` 아래). 위의 Subagent Dashboard 와는 별개의 기능으로, 기록하는 것은 서브에이전트의 편성이 아니라 **당신 자신이 그 프로젝트에서 무엇을 왜 바꿨는지**입니다. 지금 작업 중인 프로젝트에 `.claude/changelog/` 가 없다면 여기서는 해당되지 않습니다.
+
+지금 작업 중인 프로젝트에 설정되어 있는 경우:
+
+- **기록 자체는 완전히 자동입니다. 기록을 남기기 위해 무언가를 실행할 필요는 없습니다.** 작업 중의 Edit/Write/NotebookEdit/Bash 는 모두 hook 이 원본 로그에 쓰고 있습니다——그 부분에서 당신이 할 일은 없습니다.
+- **세션이 한 단락 지어지는 지점에서, 강제되기를 기다리지 말고 스스로 판단해 `summarize` 를 호출하세요:**
+  ```
+  {py} {cli} summarize --session <id> --headline "<무엇을 왜 바꿨는지, 한 줄로>" --body "<상세(선택)>"
+  ```
+  지금 세션의 id 가 필요하면 먼저 `{py} {cli} status` 를 실행하세요——이 프로젝트에서 아직 요약되지 않은 기록이 남아 있는 세션이 나옵니다. 아무것도 요약되지 않은 채 세션이 끝나려 하면 Stop hook 이 안전망으로 막지만, 그것은 피하고 싶은 최후의 받침이지 평소의 방식이 아닙니다.
+- **원본 로그로 뒷받침할 수 있는 것만 쓰세요. 제목이나 본문을 지어내지 마세요.** 그 세션에서 무슨 일이 있었는지 확신이 서지 않으면 먼저 `{py} {cli} status --session <id>`(또는 `list`)를 실행하고, 거기 나온 것만을 근거로 요약하세요——추측으로 메우거나 실제보다 충실해 보이도록 부풀리지 마세요.
+"""
+
 CATALOG: dict[str, dict[str, str]] = {}
 
 # ============================================================ 日本語
 CATALOG["ja"] = {
+    # ---- install: CLAUDE.md に書き込む本文（変更履歴トラッキングのブロック）
+    AUTOREG_BLOCK_EN: AUTOREG_BLOCK_JA,
+    CHANGELOG_BLOCK_EN: CHANGELOG_BLOCK_JA,
+
+    '    (only the marked block is updated; anything already there is kept — including the Subagent Dashboard block above)':
+        '    （マーカーで囲まれた範囲のみ更新。既存の記述は保持されます——上の Subagent Dashboard のブロックも含めて）',
+    'What will be added to {name} ({path}) (changelog tracking block):':
+        '{name}（{path}）に追記される内容（変更履歴トラッキングのブロック）:',
+    '  ✓ {name} (changelog tracking block) is already up to date (no change)':
+        '  ✓ {name} は最新です（変更履歴トラッキングのブロック。変更なし）',
+    '  ✓ {name} was created (changelog tracking block).':
+        '  ✓ {name} を新規作成しました（変更履歴トラッキングのブロック）',
+    '  ✓ The changelog tracking block was appended to {name}.':
+        '  ✓ {name} に変更履歴トラッキングのブロックを追記しました',
+    '  ✓ {name} was updated (changelog tracking block; also tidied up {n} duplicated old blocks).':
+        '  ✓ {name} を更新しました（変更履歴トラッキングのブロック。重複していた古いブロック {n} 個も整理）',
+    '  ✓ {name} was updated (changelog tracking block).':
+        '  ✓ {name} を更新しました（変更履歴トラッキングのブロック）',
+    '  Removed the Subagent Dashboard and changelog tracking settings from {name} (anything else was left alone).':
+        '  {name} から Subagent Dashboard と変更履歴トラッキングの設定を削除しました（他の記述はそのままです）',
+    '  Removed the changelog tracking settings from {name} (anything else was left alone).':
+        '  {name} から変更履歴トラッキングの設定を削除しました（他の記述はそのままです）',
+
     # ---- install: CLAUDE.md に書き込む本文
     BLOCK_EN: BLOCK_JA,
 
     # ---- install: CLAUDE.md の差し替え
     "the markers ({begin} / {end}) are not paired":
         "マーカー（{begin} / {end}）が対になっていません",
-    "  ✓ CLAUDE.md was created.": "  ✓ CLAUDE.md を新規作成しました",
-    "  ✓ The settings were appended to CLAUDE.md.": "  ✓ CLAUDE.md に追記しました",
-    "  ✓ CLAUDE.md was updated.": "  ✓ CLAUDE.md を更新しました",
-    "  ✓ CLAUDE.md was updated (also tidied up {n} duplicated old blocks).":
-        "  ✓ CLAUDE.md を更新しました（重複していた古いブロック {n} 個も整理）",
+    "  ✓ {name} was created.": "  ✓ {name} を新規作成しました",
+    "  ✓ The settings were appended to {name}.": "  ✓ {name} に追記しました",
+    "  ✓ {name} was updated.": "  ✓ {name} を更新しました",
+    "  ✓ {name} was updated (also tidied up {n} duplicated old blocks).":
+        "  ✓ {name} を更新しました（重複していた古いブロック {n} 個も整理）",
     "    (only the marked block is updated; anything already there is kept)":
         "    （マーカーで囲まれた範囲のみ更新。既存の記述は保持されます）",
 
@@ -283,16 +517,16 @@ CATALOG["ja"] = {
         "次のファイルが見つかりません（ファイルが揃っていない可能性があります）: {list}",
     "cannot write to the mission storage ({path} / {reason})":
         "ミッション保存先に書き込めません（{path} / {reason}）",
-    "cannot write to Claude's config folder ({path} / {reason})":
-        "Claude の設定フォルダに書き込めません（{path} / {reason}）",
+    "cannot write to the config folder of {name} ({path} / {reason})":
+        "{name} の設定フォルダに書き込めません（{path} / {reason}）",
 
     # ---- install: 見出しと --print
     "  Subagent Dashboard — installer":
         "  Subagent Dashboard — インストーラー",
     "  What would be written (--print, so nothing is actually changed)":
         "  書き込む内容（--print なので実際には変更しません）",
-    "What will be added to CLAUDE.md ({path}):":
-        "CLAUDE.md（{path}）に追記する内容:",
+    "What will be added to {name} ({path}):":
+        "{name}（{path}）に追記する内容:",
     "The entry that will be added to keybindings.json ({path}):":
         "keybindings.json（{path}）に追加するエントリ:",
     "* The old location ({path}) still holds":
@@ -311,7 +545,7 @@ CATALOG["ja"] = {
     "Tool location": "ツールの場所",
     "VSCode keybinding": "VSCode キーバインド",
     "OK ({n} files, all present)": "OK（{n} 件すべて確認）",
-    "OK ({missions} / {claude})": "OK（{missions} / {claude}）",
+    "OK ({missions} / {config})": "OK（{missions} / {config}）",
     "OK ({path})": "OK（{path}）",
     "cannot write ({reason})": "書き込めません（{reason}）",
     "the settings folder was not found ({path})":
@@ -328,7 +562,7 @@ CATALOG["ja"] = {
         "ステップ 2/4: 環境の自動検出",
     "Dashboard location": "ダッシュボードの場所",
     "Python command": "Python 実行コマンド",
-    "Claude config file": "Claude 設定ファイル",
+    "Config file ({name})": "設定ファイル（{name}）",
     "  (leftovers in the old location: {path} / {n})":
         "  （古い場所に残骸あり: {path} / {n} 個）",
 
@@ -344,8 +578,8 @@ CATALOG["ja"] = {
         "    {path} のマーカーを対にしてから、もう一度実行してください。",
     "  ✗ Error: cannot write to {path} ({err})":
         "  ✗ エラー: {path} に書き込めません（{err}）",
-    "  ✓ CLAUDE.md is already up to date (no change)":
-        "  ✓ CLAUDE.md は既に最新です（変更なし）",
+    "  ✓ {name} is already up to date (no change)":
+        "  ✓ {name} は既に最新です（変更なし）",
     "  ✓ keybindings.json was updated ({msg})":
         "  ✓ keybindings.json を更新しました（{msg}）",
     "    (Ctrl+Shift+D → agentDashboard.open. "
@@ -408,13 +642,13 @@ CATALOG["ja"] = {
     "Config file": "設定ファイル",
     "Keybinding settings": "キーバインド設定",
     "(the old location)": "（古い場所）",
-    "  CLAUDE.md does not exist.": "  CLAUDE.md がありません。",
+    "  {name} does not exist.": "  {name} がありません。",
     "Error: cannot read {path} ({err})": "エラー: {path} を読めません（{err}）",
     "Error: cannot write to {path} ({err})": "エラー: {path} に書き込めません（{err}）",
-    "  Removed the settings from CLAUDE.md (anything else was left alone).":
-        "  CLAUDE.md から設定を削除しました（他の記述は残しています）。",
-    "  CLAUDE.md has no settings from this tool.":
-        "  CLAUDE.md にはこのツールの設定がありません。",
+    "  Removed the settings from {name} (anything else was left alone).":
+        "  {name} から設定を削除しました（他の記述は残しています）。",
+    "  {name} has no settings from this tool.":
+        "  {name} にはこのツールの設定がありません。",
     "the keybindings.json in the old location": "古い場所の keybindings.json",
     "  Removed the settings from {label} ({msg}).":
         "  {label} から設定を削除しました（{msg}）。",
@@ -426,27 +660,72 @@ CATALOG["ja"] = {
     "  The mission records are still there: {path}":
         "  ミッションの記録は残っています: {path}",
 
+    # ---- install: CLI の検出と一覧
+    "The CLIs this tool knows about:": "このツール対応の CLI:",
+    "For a CLI that is not on this list, point at its file directly:":
+        "リストにない CLI を指す場合は、そのファイルを直接指定してください:",
+    "--agent-file needs a path to a file, not a folder":
+        "--agent-file はファイルのパスが必要です（フォルダではなく）",
+    " (added by you)": "（ユーザーが追加）",
+    "write to this file as well, for a CLI that is not in the list "
+    "(it gets remembered)":
+        "リストにない CLI 用に、このファイルにも書き込む（記憶されます）",
+    "show the CLIs this tool knows about, and stop":
+        "このツール対応の CLI を表示して終了する",
+    "written": "書き込み済み",
+    "Entries you add are remembered in {path}":
+        "追加したエントリは {path} に記録されます",
+    "installed, not written yet": "インストール済みですが、未書き込み",
+    "not found on this machine": "このマシンに見つかりません",
+    "Error: {err}": "エラー: {err}",
+
     # ---- install: 引数
     "First-time setup for the Subagent Dashboard":
         "Subagent Dashboard の初期設定",
     "only show what would be written (changes nothing)":
         "書き込む内容を表示するだけ（何も変更しない）",
     "undo the settings that were written": "書き込んだ設定を取り消す",
+    "which CLI to write the operating rules for "
+    "(the default writes to every one that is installed)":
+        "運用ルールを書き込む CLI（既定では入っている CLI 全部に書きます）",
 }
 
 # ============================================================ 中文（简体）
 CATALOG["zh"] = {
+    # ---- install: CLAUDE.md に書き込む本文（変更履歴トラッキングのブロック）
+    AUTOREG_BLOCK_EN: AUTOREG_BLOCK_ZH,
+    CHANGELOG_BLOCK_EN: CHANGELOG_BLOCK_ZH,
+
+    '    (only the marked block is updated; anything already there is kept — including the Subagent Dashboard block above)':
+        '    （只更新标记包围的范围，既有内容都会保留——包括上面的 Subagent Dashboard 块）',
+    'What will be added to {name} ({path}) (changelog tracking block):':
+        '将写入 {name}（{path}）的内容（变更历史追踪的块）:',
+    '  ✓ {name} (changelog tracking block) is already up to date (no change)':
+        '  ✓ {name} 已是最新（变更历史追踪的块，无变化）',
+    '  ✓ {name} was created (changelog tracking block).':
+        '  ✓ 已新建 {name}（变更历史追踪的块）',
+    '  ✓ The changelog tracking block was appended to {name}.':
+        '  ✓ 已向 {name} 追加变更历史追踪的块',
+    '  ✓ {name} was updated (changelog tracking block; also tidied up {n} duplicated old blocks).':
+        '  ✓ 已更新 {name}（变更历史追踪的块；同时整理了重复的旧块 {n} 个）',
+    '  ✓ {name} was updated (changelog tracking block).':
+        '  ✓ 已更新 {name}（变更历史追踪的块）',
+    '  Removed the Subagent Dashboard and changelog tracking settings from {name} (anything else was left alone).':
+        '  已从 {name} 删除 Subagent Dashboard 与变更历史追踪的设置（其他内容原样保留）',
+    '  Removed the changelog tracking settings from {name} (anything else was left alone).':
+        '  已从 {name} 删除变更历史追踪的设置（其他内容原样保留）',
+
     # ---- install: CLAUDE.md に書き込む本文
     BLOCK_EN: BLOCK_ZH,
 
     # ---- install: CLAUDE.md の差し替え
     "the markers ({begin} / {end}) are not paired":
         "标记（{begin} / {end}）没有成对",
-    "  ✓ CLAUDE.md was created.": "  ✓ 已新建 CLAUDE.md",
-    "  ✓ The settings were appended to CLAUDE.md.": "  ✓ 已向 CLAUDE.md 追加写入",
-    "  ✓ CLAUDE.md was updated.": "  ✓ 已更新 CLAUDE.md",
-    "  ✓ CLAUDE.md was updated (also tidied up {n} duplicated old blocks).":
-        "  ✓ 已更新 CLAUDE.md（顺便整理了重复的 {n} 个旧块）",
+    "  ✓ {name} was created.": "  ✓ 已新建 {name}",
+    "  ✓ The settings were appended to {name}.": "  ✓ 已向 {name} 追加写入",
+    "  ✓ {name} was updated.": "  ✓ 已更新 {name}",
+    "  ✓ {name} was updated (also tidied up {n} duplicated old blocks).":
+        "  ✓ 已更新 {name}（顺便整理了重复的 {n} 个旧块）",
     "    (only the marked block is updated; anything already there is kept)":
         "    （只更新标记包围的范围。已有的记述会保留）",
 
@@ -498,16 +777,16 @@ CATALOG["zh"] = {
         "找不到以下文件（可能是文件不齐全）: {list}",
     "cannot write to the mission storage ({path} / {reason})":
         "无法写入任务保存位置（{path} / {reason}）",
-    "cannot write to Claude's config folder ({path} / {reason})":
-        "无法写入 Claude 的配置文件夹（{path} / {reason}）",
+    "cannot write to the config folder of {name} ({path} / {reason})":
+        "无法写入 {name} 的配置文件夹（{path} / {reason}）",
 
     # ---- install: 見出しと --print
     "  Subagent Dashboard — installer":
         "  Subagent Dashboard — 安装程序",
     "  What would be written (--print, so nothing is actually changed)":
         "  将要写入的内容（因为带了 --print，实际上不做任何修改）",
-    "What will be added to CLAUDE.md ({path}):":
-        "要追加写入 CLAUDE.md（{path}）的内容:",
+    "What will be added to {name} ({path}):":
+        "要追加写入 {name}（{path}）的内容:",
     "The entry that will be added to keybindings.json ({path}):":
         "要添加到 keybindings.json（{path}）的条目:",
     "* The old location ({path}) still holds":
@@ -526,7 +805,7 @@ CATALOG["zh"] = {
     "Tool location": "本体的位置",
     "VSCode keybinding": "VSCode 键绑定",
     "OK ({n} files, all present)": "OK（{n} 个全部确认）",
-    "OK ({missions} / {claude})": "OK（{missions} / {claude}）",
+    "OK ({missions} / {config})": "OK（{missions} / {config}）",
     "OK ({path})": "OK（{path}）",
     "cannot write ({reason})": "无法写入（{reason}）",
     "the settings folder was not found ({path})":
@@ -542,7 +821,7 @@ CATALOG["zh"] = {
     "Step 2/4: Automatic detection of the environment": "步骤 2/4: 环境的自动检测",
     "Dashboard location": "面板的位置",
     "Python command": "Python 执行命令",
-    "Claude config file": "Claude 配置文件",
+    "Config file ({name})": "配置文件（{name}）",
     "  (leftovers in the old location: {path} / {n})":
         "  （旧的位置有残留: {path} / {n} 个）",
 
@@ -556,8 +835,8 @@ CATALOG["zh"] = {
     "    Pair up the markers in {path}, then run this again.":
         "    请把 {path} 里的标记配成对，然后再执行一次。",
     "  ✗ Error: cannot write to {path} ({err})": "  ✗ 错误: 无法写入 {path}（{err}）",
-    "  ✓ CLAUDE.md is already up to date (no change)":
-        "  ✓ CLAUDE.md 已经是最新的了（无变更）",
+    "  ✓ {name} is already up to date (no change)":
+        "  ✓ {name} 已经是最新的了（无变更）",
     "  ✓ keybindings.json was updated ({msg})":
         "  ✓ 已更新 keybindings.json（{msg}）",
     "    (Ctrl+Shift+D → agentDashboard.open. "
@@ -620,13 +899,13 @@ CATALOG["zh"] = {
     "Config file": "配置文件",
     "Keybinding settings": "键绑定设置",
     "(the old location)": "（旧的位置）",
-    "  CLAUDE.md does not exist.": "  没有 CLAUDE.md。",
+    "  {name} does not exist.": "  没有 {name}。",
     "Error: cannot read {path} ({err})": "错误: 无法读取 {path}（{err}）",
     "Error: cannot write to {path} ({err})": "错误: 无法写入 {path}（{err}）",
-    "  Removed the settings from CLAUDE.md (anything else was left alone).":
-        "  已从 CLAUDE.md 删除设置（其他记述都保留着）。",
-    "  CLAUDE.md has no settings from this tool.":
-        "  CLAUDE.md 里没有这个工具的设置。",
+    "  Removed the settings from {name} (anything else was left alone).":
+        "  已从 {name} 删除设置（其他记述都保留着）。",
+    "  {name} has no settings from this tool.":
+        "  {name} 里没有这个工具的设置。",
     "the keybindings.json in the old location": "旧位置的 keybindings.json",
     "  Removed the settings from {label} ({msg}).":
         "  已从 {label} 删除设置（{msg}）。",
@@ -638,26 +917,71 @@ CATALOG["zh"] = {
     "  The mission records are still there: {path}":
         "  任务的记录还留着: {path}",
 
+    # ---- install: CLI 的检测和列表
+    "The CLIs this tool knows about:": "本工具支持的 CLI:",
+    "For a CLI that is not on this list, point at its file directly:":
+        "对于不在这个列表里的 CLI，直接指向它的文件:",
+    "--agent-file needs a path to a file, not a folder":
+        "--agent-file 需要一个文件路径，而不是文件夹",
+    " (added by you)": "（由你添加）",
+    "write to this file as well, for a CLI that is not in the list "
+    "(it gets remembered)":
+        "对于不在列表里的 CLI 也写入这个文件（会被记录）",
+    "show the CLIs this tool knows about, and stop":
+        "显示本工具支持的 CLI 并停止",
+    "written": "已写入",
+    "Entries you add are remembered in {path}":
+        "你添加的条目会存储在 {path}",
+    "installed, not written yet": "已安装，尚未写入",
+    "not found on this machine": "在这台机器上找不到",
+    "Error: {err}": "错误: {err}",
+
     # ---- install: 引数
     "First-time setup for the Subagent Dashboard": "Subagent Dashboard 的初始设置",
     "only show what would be written (changes nothing)":
         "只显示将要写入的内容（不做任何修改）",
     "undo the settings that were written": "取消已经写入的设置",
+    "which CLI to write the operating rules for "
+    "(the default writes to every one that is installed)":
+        "写入运行规则的 CLI（默认写入所有已安装的 CLI）",
 }
 
 # ============================================================ 한국어
 CATALOG["ko"] = {
+    # ---- install: CLAUDE.md に書き込む本文（変更履歴トラッキングのブロック）
+    AUTOREG_BLOCK_EN: AUTOREG_BLOCK_KO,
+    CHANGELOG_BLOCK_EN: CHANGELOG_BLOCK_KO,
+
+    '    (only the marked block is updated; anything already there is kept — including the Subagent Dashboard block above)':
+        '    (마커로 둘러싸인 범위만 갱신합니다. 기존 내용은 그대로 유지됩니다——위의 Subagent Dashboard 블록 포함)',
+    'What will be added to {name} ({path}) (changelog tracking block):':
+        '{name}({path}) 에 추가되는 내용(변경 이력 추적 블록):',
+    '  ✓ {name} (changelog tracking block) is already up to date (no change)':
+        '  ✓ {name} 은(는) 이미 최신입니다(변경 이력 추적 블록. 변경 없음)',
+    '  ✓ {name} was created (changelog tracking block).':
+        '  ✓ {name} 을(를) 새로 만들었습니다(변경 이력 추적 블록)',
+    '  ✓ The changelog tracking block was appended to {name}.':
+        '  ✓ {name} 에 변경 이력 추적 블록을 추가했습니다',
+    '  ✓ {name} was updated (changelog tracking block; also tidied up {n} duplicated old blocks).':
+        '  ✓ {name} 을(를) 갱신했습니다(변경 이력 추적 블록. 중복된 오래된 블록 {n} 개도 정리)',
+    '  ✓ {name} was updated (changelog tracking block).':
+        '  ✓ {name} 을(를) 갱신했습니다(변경 이력 추적 블록)',
+    '  Removed the Subagent Dashboard and changelog tracking settings from {name} (anything else was left alone).':
+        '  {name} 에서 Subagent Dashboard 와 변경 이력 추적 설정을 삭제했습니다(다른 내용은 그대로 둡니다)',
+    '  Removed the changelog tracking settings from {name} (anything else was left alone).':
+        '  {name} 에서 변경 이력 추적 설정을 삭제했습니다(다른 내용은 그대로 둡니다)',
+
     # ---- install: CLAUDE.md に書き込む本文
     BLOCK_EN: BLOCK_KO,
 
     # ---- install: CLAUDE.md の差し替え
     "the markers ({begin} / {end}) are not paired":
         "마커({begin} / {end})가 짝을 이루고 있지 않습니다",
-    "  ✓ CLAUDE.md was created.": "  ✓ CLAUDE.md 를 새로 만들었습니다",
-    "  ✓ The settings were appended to CLAUDE.md.": "  ✓ CLAUDE.md 에 추가로 기록했습니다",
-    "  ✓ CLAUDE.md was updated.": "  ✓ CLAUDE.md 를 갱신했습니다",
-    "  ✓ CLAUDE.md was updated (also tidied up {n} duplicated old blocks).":
-        "  ✓ CLAUDE.md 를 갱신했습니다 (중복되어 있던 오래된 블록 {n} 개도 정리)",
+    "  ✓ {name} was created.": "  ✓ {name} 를 새로 만들었습니다",
+    "  ✓ The settings were appended to {name}.": "  ✓ {name} 에 추가로 기록했습니다",
+    "  ✓ {name} was updated.": "  ✓ {name} 를 갱신했습니다",
+    "  ✓ {name} was updated (also tidied up {n} duplicated old blocks).":
+        "  ✓ {name} 를 갱신했습니다 (중복되어 있던 오래된 블록 {n} 개도 정리)",
     "    (only the marked block is updated; anything already there is kept)":
         "    (마커로 둘러싸인 범위만 갱신합니다. 기존의 기술은 유지됩니다)",
 
@@ -710,16 +1034,16 @@ CATALOG["ko"] = {
         "다음 파일을 찾을 수 없습니다 (파일이 갖춰져 있지 않을 수 있습니다): {list}",
     "cannot write to the mission storage ({path} / {reason})":
         "미션 저장 위치에 쓸 수 없습니다 ({path} / {reason})",
-    "cannot write to Claude's config folder ({path} / {reason})":
-        "Claude 의 설정 폴더에 쓸 수 없습니다 ({path} / {reason})",
+    "cannot write to the config folder of {name} ({path} / {reason})":
+        "{name} 의 설정 폴더에 쓸 수 없습니다 ({path} / {reason})",
 
     # ---- install: 見出しと --print
     "  Subagent Dashboard — installer":
         "  Subagent Dashboard — 설치 프로그램",
     "  What would be written (--print, so nothing is actually changed)":
         "  기록할 내용 (--print 이므로 실제로는 변경하지 않습니다)",
-    "What will be added to CLAUDE.md ({path}):":
-        "CLAUDE.md ({path}) 에 추가로 기록할 내용:",
+    "What will be added to {name} ({path}):":
+        "{name} ({path}) 에 추가로 기록할 내용:",
     "The entry that will be added to keybindings.json ({path}):":
         "keybindings.json ({path}) 에 추가할 항목:",
     "* The old location ({path}) still holds":
@@ -738,7 +1062,7 @@ CATALOG["ko"] = {
     "Tool location": "도구의 위치",
     "VSCode keybinding": "VSCode 키 바인딩",
     "OK ({n} files, all present)": "OK ({n} 건 모두 확인)",
-    "OK ({missions} / {claude})": "OK ({missions} / {claude})",
+    "OK ({missions} / {config})": "OK ({missions} / {config})",
     "OK ({path})": "OK ({path})",
     "cannot write ({reason})": "쓸 수 없습니다 ({reason})",
     "the settings folder was not found ({path})":
@@ -754,7 +1078,7 @@ CATALOG["ko"] = {
     "Step 2/4: Automatic detection of the environment": "단계 2/4: 환경 자동 검출",
     "Dashboard location": "대시보드의 위치",
     "Python command": "Python 실행 명령",
-    "Claude config file": "Claude 설정 파일",
+    "Config file ({name})": "설정 파일 ({name})",
     "  (leftovers in the old location: {path} / {n})":
         "  (옛 위치에 잔재 있음: {path} / {n} 개)",
 
@@ -770,8 +1094,8 @@ CATALOG["ko"] = {
         "    {path} 의 마커를 짝으로 맞춘 뒤 다시 실행하세요.",
     "  ✗ Error: cannot write to {path} ({err})":
         "  ✗ 오류: {path} 에 쓸 수 없습니다 ({err})",
-    "  ✓ CLAUDE.md is already up to date (no change)":
-        "  ✓ CLAUDE.md 는 이미 최신입니다 (변경 없음)",
+    "  ✓ {name} is already up to date (no change)":
+        "  ✓ {name} 는 이미 최신입니다 (변경 없음)",
     "  ✓ keybindings.json was updated ({msg})":
         "  ✓ keybindings.json 을 갱신했습니다 ({msg})",
     "    (Ctrl+Shift+D → agentDashboard.open. "
@@ -834,13 +1158,13 @@ CATALOG["ko"] = {
     "Config file": "설정 파일",
     "Keybinding settings": "키 바인딩 설정",
     "(the old location)": "(옛 위치)",
-    "  CLAUDE.md does not exist.": "  CLAUDE.md 가 없습니다.",
+    "  {name} does not exist.": "  {name} 가 없습니다.",
     "Error: cannot read {path} ({err})": "오류: {path} 를 읽을 수 없습니다 ({err})",
     "Error: cannot write to {path} ({err})": "오류: {path} 에 쓸 수 없습니다 ({err})",
-    "  Removed the settings from CLAUDE.md (anything else was left alone).":
-        "  CLAUDE.md 에서 설정을 삭제했습니다 (다른 기술은 남겨 두었습니다).",
-    "  CLAUDE.md has no settings from this tool.":
-        "  CLAUDE.md 에는 이 도구의 설정이 없습니다.",
+    "  Removed the settings from {name} (anything else was left alone).":
+        "  {name} 에서 설정을 삭제했습니다 (다른 기술은 남겨 두었습니다).",
+    "  {name} has no settings from this tool.":
+        "  {name} 에는 이 도구의 설정이 없습니다.",
     "the keybindings.json in the old location": "옛 위치의 keybindings.json",
     "  Removed the settings from {label} ({msg}).":
         "  {label} 에서 설정을 삭제했습니다 ({msg}).",
@@ -852,10 +1176,32 @@ CATALOG["ko"] = {
     "  The mission records are still there: {path}":
         "  미션의 기록은 남아 있습니다: {path}",
 
+    # ---- install: CLI 의 검출과 목록
+    "The CLIs this tool knows about:": "이 도구가 지원하는 CLI:",
+    "For a CLI that is not on this list, point at its file directly:":
+        "목록에 없는 CLI 는 파일을 직접 가리키세요:",
+    "--agent-file needs a path to a file, not a folder":
+        "--agent-file 은 폴더가 아닌 파일 경로가 필요합니다",
+    " (added by you)": "（직접 추가함）",
+    "write to this file as well, for a CLI that is not in the list "
+    "(it gets remembered)":
+        "목록에 없는 CLI 용으로도 이 파일에 기록합니다 (저장됩니다)",
+    "show the CLIs this tool knows about, and stop":
+        "이 도구가 지원하는 CLI 를 표시하고 종료합니다",
+    "written": "기록 완료",
+    "Entries you add are remembered in {path}":
+        "추가한 항목은 {path} 에 저장됩니다",
+    "installed, not written yet": "설치되어 있지만 아직 기록되지 않음",
+    "not found on this machine": "이 컴퓨터에서 찾을 수 없습니다",
+    "Error: {err}": "오류: {err}",
+
     # ---- install: 引数
     "First-time setup for the Subagent Dashboard":
         "Subagent Dashboard 의 초기 설정",
     "only show what would be written (changes nothing)":
         "기록할 내용을 표시만 한다 (아무것도 변경하지 않는다)",
     "undo the settings that were written": "기록한 설정을 취소한다",
+    "which CLI to write the operating rules for "
+    "(the default writes to every one that is installed)":
+        "운용 규칙을 기록할 CLI (기본값은 설치되어 있는 CLI 전부)",
 }

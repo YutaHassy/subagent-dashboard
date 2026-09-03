@@ -23,8 +23,19 @@
     POST /api/history/delete → ミッションの記録を削除（必ずゴミ箱へ移動。完了したものだけ）
     GET  /*                  → public/ 配下の静的ファイル
 
+    変更履歴トラッキング（Phase 3、changelog_lib.py に相乗り。すべて読み取り専用）:
+    GET  /api/changelog/projects → 登録済みプロジェクトの軽い一覧
+    GET  /api/changelog/sessions → 1プロジェクトの index.json（?path=<登録済みの絶対パス>）
+    GET  /api/changelog/session  → 1セッションの完全な内容
+                                    （?path=<登録済みの絶対パス>&sessionId=<id>）
+
 破壊的な操作は POST でしか受け付けない。GET では絶対に消さない（ブラウザの先読み・
 履歴・うっかり踏んだリンクで記録が消えることがないように）。
+
+変更履歴側の path クエリは任意の絶対パスを受け取れてしまうので、
+changelog_registry.json に登録済みの値と完全一致するものだけ許可する
+（_is_registered_project）。これが無いと「サーバーの実行ユーザーが読めるファイルなら
+何でも読める」入口になってしまう。
 
 外部ライブラリは使いません（Python 標準ライブラリのみ）。
 Windows / macOS / Linux で同じように動きます。
@@ -40,9 +51,10 @@ import sys
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from urllib.parse import parse_qs, unquote, urlparse
 
+import changelog_lib as cl
 import dashlib
 from i18n import t
 from dashlib import PUBLIC_DIR
@@ -63,6 +75,15 @@ _stale = dashlib.stale_block_notice()
 if _stale:
     print()
     print(_stale)
+    print()
+
+# 同じ理由で、セットアップのあとに別の CLI を入れた人もここで気づけるようにする。
+# 何も書かれていない CLI からの起動は、画面に何も出ないだけでエラーにはならない
+# ので、サーバー起動時のこの一瞬を逃すと気づく場所が無くなる。
+_unwired = dashlib.unwired_agent_notice()
+if _unwired:
+    print()
+    print(_unwired)
     print()
 
 DEFAULT_PORT = 3939
@@ -112,6 +133,27 @@ def _safe_component(value) -> bool:
     if "\x00" in value or "/" in value or "\\" in value:
         return False
     return PurePath(value).name == value
+
+
+def _is_registered_project(value) -> bool:
+    """変更履歴の path クエリが、changelog_registry.json に登録済みの絶対パスと
+
+    **完全一致**するかだけを見るガード。_safe_component が「パスの1階層として
+    安全か」を見るのに対し、こちらは「フルパスとして、そもそも触ってよい対象か」
+    を見る（changelog の path は slug と違って絶対パスがそのまま来る）。
+
+    正規化（resolve 等）はしない。登録値は画面が /api/changelog/projects で
+    受け取った文字列をそのまま返してくるので、完全一致で十分であり、緩めると
+    「大文字小文字や末尾スラッシュの違いで別物をすり抜けさせる」余地を自分で
+    作ることになる。レジストリに無いものは無条件に拒否する。
+    """
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        entries = cl.read_registry()
+    except Exception:
+        return False
+    return any(e.get("path") == value for e in entries)
 
 
 def _ts(raw) -> float | None:
@@ -363,6 +405,39 @@ def env_info() -> dict:
     }
 
 
+def changelog_projects_payload() -> list[dict]:
+    """GET /api/changelog/projects が返す本体。
+
+    build_tabs と同じ「軽さ」の規律に合わせる: 1プロジェクトにつき index.json を
+    1回読むだけ（sessions/*.json は開かない）。件数が増えても
+    プロジェクト数 × index.json 読み込み1回、で収まる。
+
+    1プロジェクトの index.json が壊れていても他のプロジェクトを道連れにしない
+    （dashlib.read_json_safe は例外を投げないので、ここでは try は不要）。
+    """
+    out: list[dict] = []
+    for entry in cl.read_registry():
+        project_root = Path(entry["path"])
+        ok, index, _ = dashlib.read_json_safe(cl.index_path(project_root))
+        sessions = index.get("sessions") if ok and isinstance(index, dict) else None
+        if not isinstance(sessions, list):
+            sessions = []
+
+        last_headline = None
+        if sessions and isinstance(sessions[0], dict):
+            last_headline = dashlib.as_str(sessions[0].get("headline")) or None
+
+        out.append({
+            "path": entry["path"],
+            "slug": entry["slug"],
+            "sessionCount": len(sessions),
+            "lastHeadline": last_headline,
+            "lastEventAt": entry["lastEventAt"],
+            "lastSummaryAt": entry["lastSummaryAt"],
+        })
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "AgentDashboard/3.0"
     protocol_version = "HTTP/1.1"  # keep-alive。Content-Length は必ず付ける
@@ -456,6 +531,11 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        # 言語設定を読み直す（変わっていたときだけ）。サーバーは何時間も同じプロセスで
+        # 動くので、起動時に決めたままにすると dash lang で切り替えても画面側のフォール
+        # バック文言（「（ミッション未開始）」など）が古い言語のまま出続ける。
+        dashlib.refresh_lang()
+
         if path == "/api/state":
             # 映すチームはサーバーが決めるので、クエリでの指定は受け付けない。
             # ?t= のキャッシュ避けだけが付いてくる。
@@ -481,6 +561,23 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/env":
             self._send_json(200, env_info())
+            return
+
+        if path == "/api/changelog/projects":
+            # build_tabs と同じ理由（1秒ごとに叩かれても重くならないように）で、
+            # changelog_projects_payload() 自体を軽さの規律に留めてある。
+            try:
+                self._send_json(200, {"projects": changelog_projects_payload()})
+            except Exception as e:
+                self._send_json(500, {"error": f"{type(e).__name__}: {e}"})
+            return
+
+        if path == "/api/changelog/sessions":
+            self._handle_changelog_sessions(parsed.query)
+            return
+
+        if path == "/api/changelog/session":
+            self._handle_changelog_session(parsed.query)
             return
 
         if path.startswith("/api/project/") or path.startswith("/api/history/"):
@@ -541,6 +638,60 @@ class Handler(BaseHTTPRequestHandler):
         state = dict(state)
         state.setdefault("runId", run_id or None)
         self._send_json(200, state)
+
+    def _handle_changelog_sessions(self, query: str) -> None:
+        """GET /api/changelog/sessions?path=<登録済みプロジェクトの絶対パス>
+
+        該当プロジェクトの index.json（セッションの新しい順の軽量一覧）をそのまま返す。
+        """
+        params = parse_qs(query)
+        proj_path = (params.get("path") or [""])[0]
+
+        if not _is_registered_project(proj_path):
+            self._send_json(400, {"ok": False, "error": t("specify a registered project path")})
+            return
+
+        ok, index, err = dashlib.read_json_safe(cl.index_path(Path(proj_path)))
+        if not ok:
+            if dashlib.is_not_created(err):
+                # まだ1回も summarize されていないプロジェクト（レジストリには登録済み、
+                # index.json はまだ無い）。エラーではなく空の一覧として返す。
+                self._send_json(200, {"path": proj_path, "updatedAt": None, "sessions": []})
+                return
+            self._send_json(500, {"ok": False, "error": err})
+            return
+
+        sessions = index.get("sessions") if isinstance(index, dict) else None
+        self._send_json(200, {
+            "path": proj_path,
+            "updatedAt": (index.get("updatedAt") if isinstance(index, dict) else None),
+            "sessions": sessions if isinstance(sessions, list) else [],
+        })
+
+    def _handle_changelog_session(self, query: str) -> None:
+        """GET /api/changelog/session?path=<登録済みの絶対パス>&sessionId=<id>
+
+        sessions/<sessionId>.json の完全な内容（body・filesTouched・toolCallCounts を含む）
+        をそのまま返す。
+        """
+        params = parse_qs(query)
+        proj_path = (params.get("path") or [""])[0]
+        session_id = (params.get("sessionId") or [""])[0]
+
+        if not _is_registered_project(proj_path):
+            self._send_json(400, {"ok": False, "error": t("specify a registered project path")})
+            return
+        # session_id の検証は changelog_lib 側の既存ガード（is_valid_session_id）を
+        # そのまま使う。区切り文字や .. を含む値をここで弾く。
+        if not cl.is_valid_session_id(session_id):
+            self._send_json(400, {"ok": False, "error": t("specify a valid sessionId")})
+            return
+
+        summary = cl.read_session_summary(Path(proj_path), session_id)
+        if summary is None:
+            self._send_json(404, {"ok": False, "error": t("no such session")})
+            return
+        self._send_json(200, summary)
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path

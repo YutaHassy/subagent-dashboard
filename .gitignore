@@ -1,9 +1,13 @@
-# 組み立てた .vsix と配布物。作り直せるので追跡しない
+# 組み立てた .vsix と配布物。作り直せるので追跡しない。
+# 配る版だけは直下に置いて追跡する（受け取る人が clone や画面から落とせるように）。
 dist/
 
 # 実行時にできる記録。ここは利用者のデータであってソースではない
 missions/
 trash/
+lang
+# 利用者が足したエージェント CLI の登録。手元の環境の話なので配らない
+agents.json
 
 # Python
 __pycache__/
@@ -12,3 +16,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# agent-dashboard: Claude Code changelog tracking (auto-added; safe to remove)
+.claude/changelog/log/
