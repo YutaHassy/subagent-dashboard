@@ -130,6 +130,7 @@ PAYLOAD_SKIP = {
     "CHANGELOG.md",
     "RESTORE_NOTES.md",
     "配布後のセットアップ手順.md",
+    "機体色変更計画.md",
     # このリポジトリを触るエージェント向けの指示。**製品の一部ではない**ので配らない
     # （配ると、配布先の CLAUDE.md をこちらの開発ルールで上書きしかねない）
     "CLAUDE.md",
@@ -832,7 +833,7 @@ def status() -> int:
 
     print(f"  VSCode        {code}")
     installed = list_extensions(code)
-    if ident in installed:
+    if ident.lower() in {name.lower() for name in installed}:
         print(f"  ✓ 入っています: {ident}")
     else:
         print(f"  ✗ 入っていません: {ident}")

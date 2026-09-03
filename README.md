@@ -474,6 +474,22 @@ For the same reason, token counts and tool-use counts that were not in the compl
 That is not a fault; it is the correct way to display "unknown". The command post's own model follows the same
 rule: leave `--model` out of `start` and it shows as "unknown" too, instead of a guessed or hard-coded value.
 
+### Unit colour shows the model
+
+The colour of the egg-shaped body and arms shows which model is driving that unit: red = Fable, orange =
+Opus / Sol, pale green = Haiku / Luna, and white = Sonnet / Terra / Gemini and everything else.
+
+The eyes, visor, antenna, chest light, mouth, and the state animation (idle / running / awaiting
+report / done) are unchanged. That space already carries "state", and layering a second meaning —
+"model" — onto it would make the two compete.
+
+A model name the dashboard cannot recognise is left white. Guessing and painting it some other
+colour would let the screen lie silently. A unit whose model was never recorded — such as one a
+hook registered — is white for the same reason. That is not a fault; it is the correct display.
+
+The state glow (cyan while running, amber while awaiting report, mint when done) sits on top of the
+body colour exactly as before, so colour-coding the model never gets in the way of reading state.
+
 ### Freezing units with no record when a mission closes
 
 `finish` (and `dash autofinish`) freezes whatever units are running right now with no record into `state.json`,

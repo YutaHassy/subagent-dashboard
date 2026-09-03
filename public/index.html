@@ -475,6 +475,15 @@ body {
 .rb-egg           { fill: url(#rbEggGrad); }
 .rb-egg-shade     { fill: url(#rbShadeGrad); }
 .rb-arm           { fill: url(#rbLimbGrad); }
+/* --- モデル別のボディ色。塗り以外（目・バイザー・胸ライト・口・状態アニメ）は変えない。
+   グラデは #rb-defs に1組しか置けない（id が重複するため）ので、色ごとに定義を増やして
+   参照先を差し替える。クラスが付かない機体は既定の白のまま。 */
+.agent.mdl-red    .rb-egg { fill: url(#rbEggGradRed); }
+.agent.mdl-red    .rb-arm { fill: url(#rbLimbGradRed); }
+.agent.mdl-orange .rb-egg { fill: url(#rbEggGradOrange); }
+.agent.mdl-orange .rb-arm { fill: url(#rbLimbGradOrange); }
+.agent.mdl-green  .rb-egg { fill: url(#rbEggGradGreen); }
+.agent.mdl-green  .rb-arm { fill: url(#rbLimbGradGreen); }
 .rb-socket        { fill: #ccd8e6; }
 .rb-bezel         { fill: #c9d5e3; }
 .rb-visor         { fill: url(#rbVisorGrad); }
@@ -1069,6 +1078,33 @@ body {
   <linearGradient id="rbLimbGrad" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="#ffffff"/>
     <stop offset="1" stop-color="#dbe5f1"/>
+  </linearGradient>
+  <linearGradient id="rbEggGradRed" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#fff2f4"/>
+    <stop offset="0.5"  stop-color="#ffbcc6"/>
+    <stop offset="1"    stop-color="#d9697d"/>
+  </linearGradient>
+  <linearGradient id="rbLimbGradRed" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#fff2f4"/>
+    <stop offset="1" stop-color="#f4a0ae"/>
+  </linearGradient>
+  <linearGradient id="rbEggGradOrange" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#fff6ec"/>
+    <stop offset="0.5"  stop-color="#ffd39b"/>
+    <stop offset="1"    stop-color="#dd9440"/>
+  </linearGradient>
+  <linearGradient id="rbLimbGradOrange" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#fff6ec"/>
+    <stop offset="1" stop-color="#f2b76c"/>
+  </linearGradient>
+  <linearGradient id="rbEggGradGreen" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#f4fcec"/>
+    <stop offset="0.5"  stop-color="#c6e79b"/>
+    <stop offset="1"    stop-color="#7cae4c"/>
+  </linearGradient>
+  <linearGradient id="rbLimbGradGreen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#f4fcec"/>
+    <stop offset="1" stop-color="#a9d178"/>
   </linearGradient>
   <linearGradient id="rbVisorGrad" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="#0e1724"/>
@@ -2683,6 +2719,30 @@ function elapsedFrom(iso, refMs) {
 
 // ------------------------------------------------------------------ ロボット
 
+/** モデル名からボディ色のトーンを決める。'' は既定の白。
+ *
+ *  記録側は "claude-opus-5"、実機の meta.json は "opus" と、同じモデルが別表記で入る
+ *  （livefeed.model_key と同じ事情）。そのため部分一致で拾う。
+ *  **知らない表記は必ず '' に落とす。** 推測して別の色で塗ると、画面が黙って嘘をつく。
+ *  Gemini を先に弾いているのは、全モデル白と決まっているため。将来 "sol" を含む
+ *  Gemini のモデル名が出ても、下の表に吸われないようにする。 */
+const MODEL_TONES = [
+  [/fable/,                     'red'],
+  [/opus/,                      'orange'],
+  [/haiku/,                     'green'],
+  [/sonnet/,                    ''],
+  [/(^|[^a-z])sol([^a-z]|$)/,   'orange'],
+  [/(^|[^a-z])luna([^a-z]|$)/,  'green'],
+  [/(^|[^a-z])terra([^a-z]|$)/, ''],
+];
+
+function modelTone(model) {
+  const low = String(model || '').toLowerCase();
+  if (!low || low.includes('gemini')) return '';
+  for (const [re, tone] of MODEL_TONES) if (re.test(low)) return tone;
+  return '';
+}
+
 function robotSvg() {
   // viewBox 120x166 は .robot の 94x130 と同じ縦横比。倍率 0.783 でレターボックスが出ない。
   // 頭と胴は1つの卵（x14-106 / y28-154）。上半分は縦半径78で細く、下半分は48で丸い。
@@ -2870,6 +2930,7 @@ function buildAgentDom(a) {
     result: card.querySelector('.c-result'),
     status: null,
     waiting: null,
+    tone:   null,
     top:    null,   // layoutTree が入れた縦位置（px、.gen-body 基準）。null は未配置
     left:   null,   // layoutTree が入れた横位置（px、バンドの左端基準）。null は未配置
     h:      0,      // layoutTree が実測した高さ
@@ -2903,6 +2964,12 @@ function updateAgent(t, entry, a) {
   entry.id.textContent = a.id;
   // 空 = モデル未指定。サーバーは言語に依存しない空文字で寄こすので、訳すのはここ。
   entry.model.textContent = a.model || tr('card.unknown_model');
+  const tone = modelTone(a.model);
+  if (entry.tone !== tone) {
+    entry.root.classList.remove('mdl-red', 'mdl-orange', 'mdl-green');
+    if (tone) entry.root.classList.add('mdl-' + tone);
+    entry.tone = tone;
+  }
   entry.src.hidden = a.source !== 'self';
   // 記録に無い機体。線は実測で引いているが、**記録としては存在しない**ことを
   // カード自身に言わせる。ここを出さないと、add を打ち忘れたことに気づけない。
