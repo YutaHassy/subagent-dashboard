@@ -45,8 +45,20 @@ The target project is detected automatically from the current directory, so the 
 ```
 
 - **Do not forget `finish`.** Nothing breaks when you forget, which is exactly why nobody notices. The screen keeps saying "running", and the next time you `start`, that record is left behind as "unfinished" - **it can never be marked complete afterwards**. A reminder to run `finish` appears the moment you mark the last unit `done`, so close the mission when you see it.
+- **There is also a safety net: the `autofinish` subcommand.** Wire it into a SessionEnd hook and it closes whatever mission is still running the moment the session ends:
+  ```json
+  "SessionEnd": [
+    {{
+      "matcher": "",
+      "hooks": [
+        {{ "type": "command", "command": "python '<absolute path to update_state.py>' autofinish; exit 0" }}
+      ]
+    }}
+  ]
+  ```
+  This does not mean you can skip `finish`. Only the person who did the work can judge where it ends, and the automatic close can only write a mechanical one-line headline, "closed automatically when the session ended." Run `finish --headline "..."` yourself whenever you want a real one-line summary on the record. With no mission running, `autofinish` does nothing. When you split records apart with `--project` to run several missions in this directory at once, it closes every one still running here — it never touches a mission in a different folder.
 - **Leave out any number that was not in the completion report (`--tokens` / `--tools` / `--sec`); do not estimate it.** Leaving it out shows "—" on the screen, and that is the correct state. Writing an estimate defeats the whole purpose of this dashboard.
-- **Name each unit after wording that actually appears in the instructions you gave it.** The screen then reads that unit's own live record and shows what it is doing right now, plus its measured tool count and tokens. When the name matches nothing, the unit still shows up - listed separately as running but unrecorded - it just is not tied to its card.
+- **Name each unit after wording that actually appears in the instructions you gave it.** The screen then reads that unit's own live record and shows what it is doing right now, plus its measured tool count and tokens. When the name matches nothing, the unit still shows up - listed separately as running but unrecorded - it just is not tied to its card. Before `finish` or `autofinish` closes the mission, whatever is still shown this way gets frozen into the record as it was — it stays there afterward, on screen and in history, but is never counted toward the unit total.
 - **`--parent` is what draws the tree.** Leave it out and the unit is filed directly under Command, so the screen shows a single column however deep the team really goes. Pass the parent's `--id` for every unit that a subagent launched rather than you.
 - **Run `add` once per unit; never fold several into one entry.** An entry like "scout team (6)" loses the six members and everything they launched below them, and it cannot be recovered afterwards. When a subagent launches children of its own, put this in that subagent's own instructions: one JSON file per child, carrying **that subagent's own ID as `parentId`**, written into the grandchild self-report directory that `{py} {us} status` prints - `{op}` has the format.
 - **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you write it and shown on the screen exactly as recorded - nothing is translated afterwards. Follow the language of these instructions, not the language of the conversation.
@@ -101,8 +113,20 @@ BLOCK_JA = """## Subagent Dashboard
 ```
 
 - **`finish` を忘れないでください。** 打ち忘れても何も壊れないので気づけません。画面には「稼働中」と出続け、次に `start` したときその記録は「未完」として残り、**あとから完了にはできません**。最後の1体を `done` にした時点で `finish` の催促が出るので、それを見たら締めてください。
+- **安全網もあります。`autofinish` というサブコマンドです。** SessionEnd hook に配線しておくと、セッションが終わった瞬間に、そのとき稼働中のミッションを自動で締めます:
+  ```json
+  "SessionEnd": [
+    {{
+      "matcher": "",
+      "hooks": [
+        {{ "type": "command", "command": "python '<update_state.py への絶対パス>' autofinish; exit 0" }}
+      ]
+    }}
+  ]
+  ```
+  だからといって `finish` を打たなくてよいわけではありません。どこが作業の区切りかを決められるのは作業した本人だけで、自動締めの見出しは「セッション終了により自動で締めました」という機械的な一行にしかなりません。結果の一行要約を残したいときは、自分で `finish --headline "..."` を打ってください。稼働中のミッションが無ければ、`autofinish` は何もしません。`--project` で記録先を分けて同じディレクトリで並行させているときも、そのディレクトリで稼働中のものは全部締まります——別のフォルダのミッションは巻き込みません。
 - **完了通知に含まれていなかった数値（`--tokens` / `--tools` / `--sec`）は推定せず省略してください。** 省略すれば画面に「—」と表示され、それが正しい状態です。推定値を書くのはこのダッシュボードの目的を壊す行為です。
-- **`--name` には、その機体へ渡した指示文に実際に出てくる語句を使ってください。** そうすると画面がその機体の記録を読み、いま何をしているか・ツール回数・トークンを実測で出せます。名前がどれにも当たらない機体も消えはしませんが、カードには紐づかず「記録に無い稼働中の機体」として別に並びます。
+- **`--name` には、その機体へ渡した指示文に実際に出てくる語句を使ってください。** そうすると画面がその機体の記録を読み、いま何をしているか・ツール回数・トークンを実測で出せます。名前がどれにも当たらない機体も消えはしませんが、カードには紐づかず「記録に無い稼働中の機体」として別に並びます。`finish` や `autofinish` でミッションを締める前に、その時点でこう表示されている機体は記録へそのまま焼き付けられます。締めたあとも画面や履歴の同じ場所に残りますが、機体数には数えられません。
 - **系統樹を描いているのは `--parent` です。** 付けないとその機体は指令塔の直下に置かれ、実際は何世代に展開していても画面は1列のままになります。自分ではなくサブエージェントが起動した機体には、必ず親の `--id` を渡してください。
 - **`add` は1体につき1回で、複数体を1件にまとめないでください。** 「調査班（6名）」のような1件は、6体とその配下に展開した機体を丸ごと失い、**あとから復元できません**。サブエージェント自身に子を起動させる場合は、**そのサブエージェント自身のIDを `parentId` にした**JSONを子1体につき1ファイル、`{py} {us} status` が表示する孫の自己申告フォルダへ書き出すよう、起動時の指示文に含めてください（形式は `{op}`）。
 - **自由記述は日本語で書いてください**（`--title` / `--name` / `--mission` / `--headline`）。書いたとおりに記録され、記録したとおりに画面へ出ます——あとから翻訳はされません。会話の言語ではなく、この指示の言語に合わせてください。
@@ -155,8 +179,20 @@ BLOCK_ZH = """## Subagent Dashboard
 ```
 
 - **请不要忘记 `finish`。** 忘了敲也不会坏掉任何东西，所以察觉不到。画面上会一直显示「运行中」，下次 `start` 时那条记录会作为「未完成」留下，**事后无法再改成完成**。把最后一体置为 `done` 的时点会出现 `finish` 的催促，看到它就请收尾。
+- **还有一张安全网：`autofinish` 子命令。** 把它配线到 SessionEnd hook，会话一结束就会自动收尾那一刻仍在运行的任务:
+  ```json
+  "SessionEnd": [
+    {{
+      "matcher": "",
+      "hooks": [
+        {{ "type": "command", "command": "python '<update_state.py 的绝对路径>' autofinish; exit 0" }}
+      ]
+    }}
+  ]
+  ```
+  这不代表可以不打 `finish`。只有做这项工作的本人才能判断在哪里收尾，自动收尾写下的只是一句机械式的「因会话结束而自动收尾」。想在记录上留下真正的一行摘要时，请自己执行 `finish --headline "..."`。没有正在运行的任务时，`autofinish` 什么也不做。用 `--project` 分开记录、在同一目录并行跑多个任务时，那个目录下所有正在运行的任务也都会被收尾——不会牵连别的文件夹里的任务。
 - **完成通知里没有的数值（`--tokens` / `--tools` / `--sec`）请不要估算，直接省略。** 省略后画面上会显示「—」，那才是正确的状态。写上估算值是破坏这个面板目的的行为。
-- **`--name` 请使用该机体所收到的指令文中实际出现的词句。** 这样画面就能读取该机体自己的记录，实测显示它此刻在做什么、工具次数和词元数。名字对不上的机体也不会消失，只是不与卡片绑定，而是另外列为「未记录但在运行的机体」。
+- **`--name` 请使用该机体所收到的指令文中实际出现的词句。** 这样画面就能读取该机体自己的记录，实测显示它此刻在做什么、工具次数和词元数。名字对不上的机体也不会消失，只是不与卡片绑定，而是另外列为「未记录但在运行的机体」。在 `finish` 或 `autofinish` 收尾任务之前，那一刻仍以这种方式显示的机体会被原样固化进记录。收尾后仍留在画面和历史的同一位置，但不计入机体数。
 - **绘制树状结构的是 `--parent`。** 不加的话，那一体会直接归在指挥部之下，无论团队实际展开到多深，画面都会显示为一列。不是由你而是由子代理启动的每一体，都请传入其父级的 `--id`。
 - **每一体运行一次 `add`，绝不要把多体合并为一条记录。** 像「侦察小队（6名）」这样的条目会丢失那6体及其下方启动的所有单位，而且事后无法恢复。当子代理自行启动子级时，请在该子代理的启动指示中包含以下内容：为每个子级写入一个 JSON 文件，**将该子代理自身的 ID 作为 `parentId`**，写入 `{py} {us} status` 显示的孙级自我报告目录——格式见 `{op}`。
 - **自由文本请用中文书写**（`--title` / `--name` / `--mission` / `--headline`）。会照你写下的样子记录，照记录的样子显示在画面上——事后不会翻译。请对齐这份指示的语言，而不是对话的语言。
@@ -209,8 +245,20 @@ BLOCK_KO = """## Subagent Dashboard
 ```
 
 - **`finish` 를 잊지 마세요.** 잊고 치지 않아도 아무것도 망가지지 않기 때문에 알아챌 수 없습니다. 화면에는 계속 「가동 중」이라고 나오고, 다음에 `start` 했을 때 그 기록은 「미완」으로 남으며, **나중에 완료로 만들 수는 없습니다**. 마지막 한 대를 `done` 으로 만든 시점에 `finish` 를 재촉하는 안내가 나오므로, 그것을 보면 마무리하세요.
+- **안전망도 있습니다. `autofinish` 서브커맨드입니다.** SessionEnd hook 에 연결해 두면, 세션이 끝나는 순간 그때 가동 중이던 미션을 자동으로 마감합니다:
+  ```json
+  "SessionEnd": [
+    {{
+      "matcher": "",
+      "hooks": [
+        {{ "type": "command", "command": "python '<update_state.py 의 절대 경로>' autofinish; exit 0" }}
+      ]
+    }}
+  ]
+  ```
+  그렇다고 `finish` 를 치지 않아도 되는 것은 아닙니다. 작업이 어디서 끝나는지는 작업한 본인만 판단할 수 있고, 자동 마감의 헤드라인은 「세션 종료로 자동으로 마감했습니다」라는 기계적인 한 줄일 뿐입니다. 결과의 한 줄 요약을 남기고 싶다면 직접 `finish --headline "..."` 를 실행하세요. 가동 중인 미션이 없으면 `autofinish` 는 아무것도 하지 않습니다. `--project` 로 기록 위치를 나눠 같은 디렉터리에서 병렬로 돌리고 있을 때도, 그 디렉터리에서 가동 중인 것은 전부 마감됩니다——다른 폴더의 미션은 끌어들이지 않습니다.
 - **완료 보고에 들어 있지 않던 수치(`--tokens` / `--tools` / `--sec`)는 추정하지 말고 생략하세요.** 생략하면 화면에 「—」로 표시되며, 그것이 올바른 상태입니다. 추정값을 적는 것은 이 대시보드의 목적을 망가뜨리는 행위입니다.
-- **`--name` 에는 그 기체에 준 지시문에 실제로 나오는 어구를 쓰세요.** 그러면 화면이 그 기체의 기록을 읽어 지금 무엇을 하고 있는지, 도구 횟수와 토큰을 실측으로 보여줍니다. 이름이 어디에도 맞지 않는 기체도 사라지지는 않지만 카드에 연결되지 않고 「기록에 없는 가동 중인 기체」로 따로 표시됩니다.
+- **`--name` 에는 그 기체에 준 지시문에 실제로 나오는 어구를 쓰세요.** 그러면 화면이 그 기체의 기록을 읽어 지금 무엇을 하고 있는지, 도구 횟수와 토큰을 실측으로 보여줍니다. 이름이 어디에도 맞지 않는 기체도 사라지지는 않지만 카드에 연결되지 않고 「기록에 없는 가동 중인 기체」로 따로 표시됩니다. `finish` 나 `autofinish` 로 미션을 마감하기 전에, 그 시점에 이렇게 표시되고 있는 기체는 그대로 기록에 새겨 넣습니다. 마감한 뒤에도 화면과 이력의 같은 자리에 남지만, 기체 수에는 세지 않습니다.
 - **계통도를 그리는 것은 `--parent` 입니다.** 붙이지 않으면 그 기체는 지령탑 바로 아래에 놓이며, 실제로는 몇 세대까지 전개되어 있어도 화면에는 한 열로만 표시됩니다. 자신이 아니라 서브에이전트가 띄운 기체에는 반드시 부모의 `--id` 를 넘겨주세요.
 - **`add` 는 한 대마다 한 번 실행하고, 여러 대를 한 건으로 합치지 마세요.** 「조사반(6명)」 같은 한 건은 여섯 대와 그 아래에 띄운 기체를 전부 잃게 만들며, 나중에 복원할 수 없습니다. 서브에이전트가 자신의 자식을 띄우는 경우에는, 자식 한 대마다 **그 서브에이전트 자신의 ID를 `parentId`로 넣은** JSON 파일 하나를 `{py} {us} status`가 표시하는 손자 자체 보고 폴더에 쓰도록 띄울 때의 지시문에 포함하세요(형식은 `{op}`).
 - **자유 기술은 한국어로 쓰세요**(`--title` / `--name` / `--mission` / `--headline`). 적은 그대로 기록되고, 기록된 그대로 화면에 나옵니다——나중에 번역되지 않습니다. 대화의 언어가 아니라 이 지시의 언어에 맞추세요.

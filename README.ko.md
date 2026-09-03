@@ -171,7 +171,41 @@ http://127.0.0.1:3939/manual.html
 `dash` 만으로 실행하면 목록이 나옵니다. 각 명령은 `dash <명령> --help` 로 자세한 내용을 볼 수 있습니다.
 
 상태를 고쳐 쓰는 명령(`start` / `add` / `done` / `finish`)은 보통 Claude 가 자동으로 실행하므로
-손으로 칠 필요는 없습니다.
+손으로 칠 필요는 없습니다. `autofinish` 는 보통 SessionEnd hook 이 자동으로 실행하므로
+이 역시 손으로 칠 필요가 없습니다(자세한 내용은 아래 「세션이 끝나면 자동으로 마감」 참고).
+
+### 세션이 끝나면 자동으로 마감(autofinish)
+
+`.claude/settings.local.json` 에 SessionEnd hook 을 설정해 두면, 세션이 끝나는 순간
+`dash autofinish` 가 자동으로 실행되어 열려 있던 미션을 마감합니다. Claude 가 `finish` 를
+치는 것을 잊어도 상관없습니다.
+
+```json
+"SessionEnd": [
+  {
+    "matcher": "",
+    "hooks": [
+      { "type": "command", "command": "python 'C:\\path\\to\\update_state.py' autofinish; exit 0" }
+    ]
+  }
+]
+```
+
+가동 중인 미션이 없으면 아무 일도 일어나지 않습니다. `--project` 를 붙이지 않으면 현재
+디렉터리에서 가동 중인 미션을 전부 마감합니다(`--project` 로 나눠서 병렬로 돌리던 것도
+포함). `--project <이름>` 을 붙이면 그 하나만 마감합니다.
+
+마감할 때, 그 순간 가동 중이었지만 기록에는 없던 유닛도 당시 모습 그대로 기록에 새겨집니다
+(유닛 수에는 세지 않습니다). 자세한 내용은 `OPERATION.md` 를 참고하세요.
+
+autofinish 는 **자신이 속한 세션**이 연 미션만 마감합니다 — `start` 가 세션 ID 를
+`mission.sessionId` 에 기록해 두고, 세션 ID 를 알 수 없는 환경에서만 예전처럼 전부
+마감합니다. 같은 폴더에서 Claude Code 를 두 개 띄웠을 때, 한쪽이 끝났다고 아직 작업
+중인 다른 쪽 미션까지 닫혀 버리는 사고를 막기 위한 장치입니다.
+
+> `/clear` 도 SessionEnd 를 발생시키므로, 작업 도중에 미션이 마감되는 경우가 있습니다.
+> 지나치게 닫히는 것은 다음 `start` 로 다시 하면 되지만, **마감을 놓치는 것은 고칠 수
+> 없습니다** — 이것이 바로 autofinish 가 막으려는 것입니다.
 
 ### 같은 폴더에서 두 개를 동시에 돌릴 때
 

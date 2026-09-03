@@ -2149,6 +2149,23 @@ function freezeRef(s, tb) {
 
 /** /api/run の応答を render() が触る形にそろえる。1件ずつの読み込みでしか通らないので、
  *  ここは毎秒の負荷にならない。壊れた記録1件で画面全体が落ちないようにするための保険。 */
+/** 焼き付けた孤児の実測値を、完了したカードが読む形にする。
+ *
+ *  **測った値だけを写す。** 見出しは持たせない——記録が無い機体には完了の合図も
+ *  無いので、名乗れる一行がそもそも存在しない。
+ *
+ *  ここを null のままにすると、締めた瞬間にトークンとツール回数が「—」に戻る。
+ *  締める前は確かに測れて画面に出ていた数字なので、捨てるほうが嘘に近い。
+ */
+function frozenResult(o) {
+  if (!o || !o.frozen) return null;
+  const num = (v) => (v === undefined ? null : v);
+  return {
+    elapsedSec: num(o.elapsedSec), tokens: num(o.tokens),
+    toolCalls: num(o.toolCalls), headline: '',
+  };
+}
+
 /** 系統樹に置いた孤児のカードIDの頭。記録のIDと混ざらないように分ける。 */
 const ORPHAN_ID_PREFIX = 'LIVE:';
 
@@ -2189,12 +2206,14 @@ function placedOrphans(agents, sources) {
         generation: gen.get(id),
         model: o.model || '',
         mission: '',
-        // 記録が無い＝完了の合図も来ないので、状態は「稼働中」しか名乗れない。
+        // 記録が無い＝完了の合図も来ないので、動いているあいだは「稼働中」しか名乗れない。
         // 実際に終わっているかは沈黙の長さでしか読めない（カードの b-idle に出る）。
-        status: 'running',
+        // 締めるときに焼き付けたもの（frozen）だけは別で、そのミッションはもう
+        // 終わっている——完了した記録の中で稼働中の顔をしていたら、それは嘘になる。
+        status: o.frozen ? 'done' : 'running',
         waiting: false,
         live: o,
-        startedAt: null, finishedAt: null, result: null,
+        startedAt: null, finishedAt: null, result: frozenResult(o),
         // **数えない印。** 記録に無いものを「機体数」や「完了数」に混ぜると、
         // 締め忘れの判定（全機帰還したか）が狂う。
         source: 'orphan',
@@ -4430,9 +4449,9 @@ function orphanAgent(o) {
     parentId: null, generation: 0,
     model: o.model || '',
     mission: '',                 // 記録が無いので任務は名乗れない（カードは「未記載」を出す）
-    status: 'running', waiting: false,
+    status: o.frozen ? 'done' : 'running', waiting: false,
     live: o,
-    startedAt: null, finishedAt: null, result: null,
+    startedAt: null, finishedAt: null, result: frozenResult(o),
     source: 'orphan',
   };
 }
@@ -4455,7 +4474,10 @@ function paintOrphanBay(t) {
 
   bay.hidden = !list.length;
   if (t.els.bayTitle) t.els.bayTitle.textContent = tr('live.bay_title', { n: list.length });
-  if (t.els.bayNote) t.els.bayNote.textContent = tr('live.bay_note');
+  // 締めたあとの記録では、これらはもう動いていない。現在形のままにすると、
+  // 完了した記録が「いま動いている機体がある」と言い続けることになる。
+  const frozen = list.length > 0 && list.every((o) => o.frozen);
+  if (t.els.bayNote) t.els.bayNote.textContent = tr(frozen ? 'live.bay_note_frozen' : 'live.bay_note');
 
   // 要るぶんだけ作り、居なくなったぶんを片付ける。毎秒呼ばれる経路なので、
   // 毎回作り直すとロボのアニメーションが1秒ごとに 0 から始まってしまう。

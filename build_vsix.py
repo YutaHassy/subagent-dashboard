@@ -114,6 +114,7 @@ PAYLOAD_SKIP = {
     "check_agents.py",
     "check_lang.py",
     "check_autoreg.py",
+    "check_autofinish.py",
     "auto_setup.py",
     "make_icons.py",
     "make_icons_simple.py",

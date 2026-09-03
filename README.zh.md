@@ -196,7 +196,37 @@ http://127.0.0.1:3939/manual.html
 只输入 `dash` 执行会显示一览。各命令可以用 `dash <命令> --help` 查看详情。
 
 改写状态的命令（`start` / `add` / `done` / `finish`）通常由 Claude 自动执行，
-不需要你手动输入。
+不需要你手动输入。`autofinish` 通常由 SessionEnd hook 自动执行，同样不需要手动输入
+（详见下面的「会话结束时自动收尾」）。
+
+### 会话结束时自动收尾（autofinish）
+
+在 `.claude/settings.local.json` 里配置好 SessionEnd hook 后，会话一结束就会自动执行
+`dash autofinish`，把还开着的任务收尾，不用等着 Claude 记得敲 `finish`。
+
+```json
+"SessionEnd": [
+  {
+    "matcher": "",
+    "hooks": [
+      { "type": "command", "command": "python 'C:\\path\\to\\update_state.py' autofinish; exit 0" }
+    ]
+  }
+]
+```
+
+没有正在运行的任务时什么都不会发生。不加 `--project` 会把当前目录下所有运行中的任务
+收尾（包括用 `--project` 分开、并行跑的那些）；加上 `--project <名字>` 则只收尾那一个。
+
+收尾时，当时仍在运行却没有记录的单元也会按当时的样子固化进记录（不计入单元数），
+不会无声无息地消失。详情见 `OPERATION.md`。
+
+autofinish 只会收尾**自己所在会话**开的任务——`start` 会把会话 ID 记进
+`mission.sessionId`，取不到会话 ID 的环境才会照旧收尾全部任务。这是为了避免同一个
+文件夹里开着两个 Claude Code 时，一边会话结束就误把另一边还在跑的任务收尾了。
+
+> `/clear` 也会触发 SessionEnd，所以任务有时会在做到一半时被收尾。收得过多，下次
+> `start` 重来就好；但**收尾漏掉是没法补救的**——这正是 autofinish 要防的事。
 
 ### 在同一个文件夹里同时跑两条时
 

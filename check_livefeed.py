@@ -108,7 +108,8 @@ def write_agent(subagents: Path, agent_id: str, *, start: float, cwd: str,
 
 
 def write_mission(missions: Path, slug: str, *, project_path: str, started: float,
-                  agents: list, keep_others: bool = False) -> None:
+                  agents: list, keep_others: bool = False,
+                  phase: str = "running", orphans=None) -> None:
     if not keep_others:
         # 同じ場所で何本ものミッションが同時に「稼働中」で残っているのは、実運用では
         # 起きない形（起きるときは --project で分けた2本まで）。検査は場面ごとに
@@ -130,11 +131,14 @@ def write_mission(missions: Path, slug: str, *, project_path: str, started: floa
         "version": 2,
         "project": {"slug": slug, "name": slug, "path": project_path},
         "updatedAt": local_iso(started),
-        "mission": {"phase": "running", "title": "検査", "startedAt": local_iso(started),
-                    "finishedAt": None, "summary": None},
+        "mission": {"phase": phase, "title": "検査", "startedAt": local_iso(started),
+                    "finishedAt": local_iso(started + 1) if phase == "done" else None,
+                    "summary": None},
         "agents": agents,
         "log": [],
     }
+    if orphans is not None:
+        state["orphans"] = orphans
     (missions / slug / "state.json").write_text(
         json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -954,6 +958,73 @@ def main() -> int:
         check("名前が重なっていたら、どちらにも結ばない",
               sorted(o["agentId"] for o in st["sources"]["liveOrphans"]),
               ["fin31", "none31"])
+
+        print()
+        print("[32] 締めるときに焼き付けた「記録に無い機体」は、締めたあとも残る")
+        # 締めると assign_live は何も返さない（稼働中のミッションしか見ないため）。
+        # そこで消えると、記録に無いまま動いていた機体は**いたこと自体が残らない**。
+        # finish が state.json に焼き付けたものを、そのまま出せているかを見る。
+        work32 = tmp / "work32"
+        work32.mkdir(parents=True, exist_ok=True)
+        path32 = str(work32.resolve())
+        t32 = now - 400
+        baked = [
+            {"agentId": "baked32a", "description": "焼き付けた下請け",
+             "model": "sonnet", "tokens": 1234, "toolCalls": 5, "elapsedSec": 42,
+             "parentRecordId": "SCOUT-A", "parentName": "調べもの班"},
+            {"agentId": "baked32b", "description": "置き場所が決まらなかった機体",
+             "model": "haiku", "tokens": 99, "toolCalls": 1, "elapsedSec": 7},
+        ]
+        reset(livefeed)
+        write_mission(data_home / "missions", "t32", project_path=path32,
+                      started=t32, phase="done", orphans=baked,
+                      agents=[dict(command("claude-opus-5", t32), status="done")])
+        st = dashlib.build_state("t32")
+        got = st["sources"]["liveOrphans"]
+        check("締めたあとの記録にも残っている",
+              sorted(o["agentId"] for o in got), ["baked32a", "baked32b"])
+        check("もう動いていない印が立つ（画面が完了の姿で描けるように）",
+              [o.get("frozen") for o in got], [True, True])
+        check("実測値は焼き付けたまま（測り直さない）",
+              [(o["tokens"], o["toolCalls"], o["elapsedSec"]) for o in got],
+              [(1234, 5, 42), (99, 1, 7)])
+        check("実測で辿れていた起動元も残る",
+              [o.get("parentRecordId", "") for o in got], ["SCOUT-A", ""])
+        check("記録の数には混ざらない（機体数が水増しされない）",
+              sorted(a["id"] for a in st["agents"]), ["COMMAND"])
+
+        # 壊れた要素で全体を落とさない。1件でも例外を上げると、その記録は
+        # 画面から丸ごと消える（孤児が出ないことより、はるかに重い壊れ方）。
+        reset(livefeed)
+        write_mission(data_home / "missions", "t32", project_path=path32,
+                      started=t32, phase="done",
+                      orphans=["これは dict ではない", {"description": "agentId が無い"},
+                               {"agentId": "baked32c", "description": "まともな1件"}],
+                      agents=[dict(command("claude-opus-5", t32), status="done")])
+        st = dashlib.build_state("t32")
+        check("壊れた要素は落として、読めるものだけ出す",
+              [o["agentId"] for o in st["sources"]["liveOrphans"]], ["baked32c"])
+
+        # 稼働中は実測が勝つ。**古い焼き付けが現役の画面に混ざってはいけない。**
+        work33 = tmp / "work33"
+        work33.mkdir(parents=True, exist_ok=True)
+        path33 = str(work33.resolve())
+        slug33 = dashlib.slug_for_path(work33.resolve())
+        session33 = "33333333-2222-3333-4444-555555555555"
+        sub33 = live_root / slug33 / session33 / "subagents"
+        t33 = now - 120
+        write_agent(sub33, "live33", start=t33, cwd=path33, session=session33,
+                    model="sonnet", description="いま動いている機体",
+                    tools=[("Read", {"file_path": "/a.py"}, 1)])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t33", project_path=path33,
+                      started=t33 - 5, orphans=baked,
+                      agents=[command("claude-opus-5", t33 - 5)])
+        st = dashlib.build_state("t33")
+        check("稼働中は実測が勝つ（焼き付けは出さない）",
+              [o["agentId"] for o in st["sources"]["liveOrphans"]], ["live33"])
+        check("その機体に「もう動いていない」印は付かない",
+              [o.get("frozen") for o in st["sources"]["liveOrphans"]], [None])
 
     finally:
         os.environ.pop("AGENT_DASHBOARD_DATA_HOME", None)

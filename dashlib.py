@@ -2163,6 +2163,32 @@ def assign_live_safely(agents: list[dict], project_path: str, mission: dict, slu
         return []
 
 
+def frozen_orphans(base: dict) -> list:
+    """締めたときに焼き付けた「記録に無かった機体」。
+
+    assign_live は稼働中のミッションしか見ない。だから締めた瞬間に、記録に無いまま
+    動いていた機体は画面から消える——**いたこと自体が残らない**。実測した当時の姿を
+    finish が state.json に焼き付けてあるので、稼働が終わった記録ではそれを出す。
+
+    ここで作り直さないのは、元にした実機のログが残っていても、締めたあとの再計算は
+    そのときの実測とは別物になるため（沈黙が延びる・別のミッションの機体が窓に入る）。
+    焼き付けたものをそのまま出すのが、いちばん嘘が少ない。
+
+    frozen を立てて渡すのは、画面がこれを「もう動いていないもの」として描けるように
+    するため。完了した記録の中で稼働中の顔をしていたら、それは実測の表示ではない。
+    """
+    raw = base.get("orphans")
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for o in raw:
+        if isinstance(o, dict) and as_str(o.get("agentId")):
+            got = dict(o)
+            got["frozen"] = True
+            out.append(got)
+    return out
+
+
 def extract_from_self_report(value) -> tuple[list, list]:
     """孫の自己申告1ファイル分を読む。単体 dict・リスト・{agents,log} の3形式を受け付ける。"""
     agents: list = []
@@ -2263,6 +2289,10 @@ def _build_state(slug: str, state_path: Path, agents_path: Path, *, live: bool =
     live_orphans: list = []
     if live:
         live_orphans = assign_live_safely(agents, as_str(project.get("path")), mission, slug)
+    if not live_orphans:
+        # 締めるときに焼き付けたぶん。稼働中は上の実測が勝つので、ここが効くのは
+        # 「終わった記録を見ているとき」だけ（履歴も、締めたあとの現在のミッションも）。
+        live_orphans = frozen_orphans(base)
     logs.sort(key=_log_sort_key)
 
     return {

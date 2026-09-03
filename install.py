@@ -219,8 +219,20 @@ The target project is detected automatically from the current directory, so the 
 ```
 
 - **Do not forget `finish`.** Nothing breaks when you forget, which is exactly why nobody notices. The screen keeps saying "running", and the next time you `start`, that record is left behind as "unfinished" - **it can never be marked complete afterwards**. A reminder to run `finish` appears the moment you mark the last unit `done`, so close the mission when you see it.
+- **There is also a safety net: the `autofinish` subcommand.** Wire it into a SessionEnd hook and it closes whatever mission is still running the moment the session ends:
+  ```json
+  "SessionEnd": [
+    {{
+      "matcher": "",
+      "hooks": [
+        {{ "type": "command", "command": "python '<absolute path to update_state.py>' autofinish; exit 0" }}
+      ]
+    }}
+  ]
+  ```
+  This does not mean you can skip `finish`. Only the person who did the work can judge where it ends, and the automatic close can only write a mechanical one-line headline, "closed automatically when the session ended." Run `finish --headline "..."` yourself whenever you want a real one-line summary on the record. With no mission running, `autofinish` does nothing. When you split records apart with `--project` to run several missions in this directory at once, it closes every one still running here — it never touches a mission in a different folder.
 - **Leave out any number that was not in the completion report (`--tokens` / `--tools` / `--sec`); do not estimate it.** Leaving it out shows "—" on the screen, and that is the correct state. Writing an estimate defeats the whole purpose of this dashboard.
-- **Name each unit after wording that actually appears in the instructions you gave it.** The screen then reads that unit's own live record and shows what it is doing right now, plus its measured tool count and tokens. When the name matches nothing, the unit still shows up - listed separately as running but unrecorded - it just is not tied to its card.
+- **Name each unit after wording that actually appears in the instructions you gave it.** The screen then reads that unit's own live record and shows what it is doing right now, plus its measured tool count and tokens. When the name matches nothing, the unit still shows up - listed separately as running but unrecorded - it just is not tied to its card. Before `finish` or `autofinish` closes the mission, whatever is still shown this way gets frozen into the record as it was — it stays there afterward, on screen and in history, but is never counted toward the unit total.
 - **`--parent` is what draws the tree.** Leave it out and the unit is filed directly under Command, so the screen shows a single column however deep the team really goes. Pass the parent's `--id` for every unit that a subagent launched rather than you.
 - **Run `add` once per unit; never fold several into one entry.** An entry like "scout team (6)" loses the six members and everything they launched below them, and it cannot be recovered afterwards. When a subagent launches children of its own, put this in that subagent's own instructions: one JSON file per child, carrying **that subagent's own ID as `parentId`**, written into the grandchild self-report directory that `{py} {us} status` prints - `{op}` has the format.
 - **Write the free text in English** (`--title` / `--name` / `--mission` / `--headline`). It is recorded exactly as you write it and shown on the screen exactly as recorded - nothing is translated afterwards. Follow the language of these instructions, not the language of the conversation.
