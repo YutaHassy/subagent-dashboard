@@ -525,6 +525,8 @@ def describe(entry: dict) -> dict:
         "description": dashlib.as_str(meta.get("description")),
         # この機体を起動した Agent 呼び出しのID。親のログの tool_use と突き合わせる。
         "toolUseId": dashlib.as_str(meta.get("toolUseId")),
+        # 親そのものが書かれている個体もある（実データで確認）。あればこちらが確実。
+        "parentAgentId": dashlib.as_str(meta.get("parentAgentId")),
         "agentType": dashlib.as_str(meta.get("agentType")),
         "model": dashlib.as_str(meta.get("model")),
         "spawnDepth": dashlib.as_num(meta.get("spawnDepth")),
@@ -662,7 +664,16 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
     if not isinstance(mission, dict) or mission.get("phase") != "running":
         return []
 
-    running = [a for a in agents if a.get("status") == "running"]
+    # **指令塔は外す。** 指令塔は主セッションであって、サブエージェントではない。
+    # その記録は <slug>/<sessionId>.jsonl であって subagents/ の下には無いので、
+    # agent-*.jsonl が指令塔であることは原理的にありえない。
+    # 外さないと、残った候補が1つのときに規則4（双方向の一意）が成立して、
+    # **別の機体の数字が指令塔のカードに載る**。実測（2026-09-02）: 下請けが自分で
+    # 起動した孫が指令塔のカードに載った。孫の meta.json には model が無く
+    # （実データで確認）、モデル一致の門は「両方に値があるときだけ」外すので素通りする。
+    running = [a for a in agents
+               if a.get("status") == "running"
+               and dashlib.as_str(a.get("id")) != dashlib.COMMAND_ID]
     if not running:
         return []
 
@@ -677,6 +688,7 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
 
     taken = _tick_taken(now)
     cands = []
+    known_desc = {}          # agentId -> description（候補に残らなかった機体も含む）
     for entry in enumerate_agents(now):
         if taken.get(entry["agentId"], slug) != slug:
             continue
@@ -685,6 +697,7 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         if floor is not None and entry["mtime"] < floor:
             continue
         c = describe(entry)
+        known_desc[c["agentId"]] = c["description"]
         if not _belongs(c, want_path, want_slug):
             continue
         m = measure(c, now)
@@ -697,6 +710,7 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         m["_firstTs"] = acc["firstTs"]
         m["_prompt"] = c.get("prompt") or ""
         m["_toolUseId"] = c.get("toolUseId") or ""
+        m["_parentAgentId"] = c.get("parentAgentId") or ""
         m["_spawns"] = list(acc["spawns"])
         cands.append(m)
     if not cands:
@@ -726,9 +740,29 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
     sticky_key = slug + "|" + dashlib.as_str(mission.get("startedAt"))
     prev = _sticky.get(sticky_key, {})
 
+    # 0. 起動呼び出しのIDが一致するもの。**推測がいっさい入らない唯一の規則**で、
+    #    ほかのどれよりも強い。記録側の toolUseId は hook が自動で登録したときに入り
+    #    （update_state.py hook）、実機側は meta.json に書かれている。同じ Agent
+    #    呼び出しから出た2つの値なので、一致は「同じもの」を意味する。
+    #
+    #    **compatible() の門を通さない。** あの門はモデル表記と時刻のずれで
+    #    「たぶん違う」を落とすためのもので、確実な手がかりに重ねる意味がない。
+    #    重ねると、モデル名の書き方が違うだけで確実な対応づけを捨てることになる。
+    for rec in sorted(running, key=lambda r: r["id"]):
+        tuid = dashlib.as_str(rec.get("toolUseId")).strip()
+        if not tuid:
+            continue
+        hits = [c for c in cands
+                if c["agentId"] not in used and c["_toolUseId"] == tuid]
+        if len(hits) == 1:
+            pairs[rec["id"]] = hits[0]["agentId"]
+            used.add(hits[0]["agentId"])
+
     # 1. 名前が Agent ツールの description と完全に一致するもの。運用でこの2つを
     #    そろえてもらえば、ここだけで決まる（Workflow 経由には description が無い）。
     for rec in sorted(running, key=lambda r: r["id"]):
+        if rec["id"] in pairs:
+            continue
         name = dashlib.as_str(rec.get("name")).strip()
         if not name:
             continue
@@ -832,14 +866,18 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
             owner[tid] = c["agentId"]
     rec_of_agent = {aid: rid for rid, aid in pairs.items()}
     name_of_rec = {dashlib.as_str(r.get("id")): dashlib.as_str(r.get("name")) for r in agents}
-    desc_of_agent = {c["agentId"]: c["description"] for c in cands}
+    desc_of_agent = dict(known_desc)
+    for c in cands:
+        desc_of_agent[c["agentId"]] = c["description"]
 
     orphans = []
     for c in sorted(cands, key=lambda x: x["agentId"]):
         if c["agentId"] in used:
             continue
         o = public(c)
-        pid = owner.get(c.get("_toolUseId") or "")
+        # meta.json に親が直接書いてあればそれを使う。無いときだけ、起動呼び出しの
+        # IDを親のログの tool_use と突き合わせる。どちらも実測で、推測は入らない。
+        pid = c.get("_parentAgentId") or owner.get(c.get("_toolUseId") or "")
         if pid:
             # 親がカードに結ばれていればその名前を、まだなら親自身の説明を出す。
             o["parentAgentId"] = pid

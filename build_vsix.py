@@ -75,6 +75,10 @@ PAYLOAD_FILES = [
     "changelog_lib.py",     # 記録・要約・CHANGELOG.md 生成の土台
     "changelog_cli.py",     # hooks から呼ばれる CLI 本体
     "changelog_setup.py",   # プロジェクトローカルの初期設定
+    # サブエージェントの自動登録。settings.local.json へ hook を2本書き、その
+    # プロジェクトの CLAUDE.md に「ここでは add を打たない」を書く。
+    # **配らないと、入っていない場所で初期設定コマンドが黙って落ちる。**
+    "autoreg_setup.py",
     "open_dashboard.py",    # キーバインドの旧形式が案内している
     "diagnose.py",          # 完了メッセージが案内している
     "dash.cmd",             # ランチャ（Windows）
@@ -109,6 +113,7 @@ PAYLOAD_SKIP = {
     "check_livefeed.py",
     "check_agents.py",
     "check_lang.py",
+    "check_autoreg.py",
     "auto_setup.py",
     "make_icons.py",
     "make_icons_simple.py",

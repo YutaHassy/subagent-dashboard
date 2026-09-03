@@ -293,6 +293,18 @@ CATALOG["ja"] = {
     "ID of the parent (the command post when omitted)": "親のID（省略時は指令塔）",
     "model ID that was used": "使用したモデルID",
     "what the task is": "任務内容",
+    "ID of the Agent call that started it "
+    "(pairs the card with the real unit; usually left out)":
+        "その機体を起動した Agent 呼び出しのID（カードと実機を結ぶ。普通は省く）",
+    "called by Claude Code's hooks — do not type this yourself":
+        "Claude Code の hook から呼ばれる（人が打つものではない）",
+    "Dashboard: recorded {id} ({event}).": "ダッシュボード: {id} を記録しました（{event}）。",
+    "The dashboard hook did nothing: {err}":
+        "ダッシュボードの hook は何もしませんでした: {err}",
+    "Dashboard: {n} missions are running in this folder, so there is no "
+    "way to tell which one this unit belongs to. Nothing was recorded "
+    "(it will show up as a running unit that is not in the records).":
+        "ダッシュボード: このフォルダでは {n} 本のミッションが稼働中で、この機体がどちらのものか決められません。記録しませんでした（画面には「記録に無い稼働中の機体」として出ます）。",
     "copy the measured values in once the report arrives":
         "完了通知を受け取ったら実測値を転記する",
     "seconds taken (computed from the start time when omitted)":
@@ -595,6 +607,17 @@ CATALOG["zh"] = {
     "ID of the parent (the command post when omitted)": "父级的 ID（省略时为指挥塔）",
     "model ID that was used": "使用的模型 ID",
     "what the task is": "任务内容",
+    "ID of the Agent call that started it "
+    "(pairs the card with the real unit; usually left out)":
+        "启动该机体的 Agent 调用 ID（用于把卡片与实机对应，通常省略）",
+    "called by Claude Code's hooks — do not type this yourself":
+        "由 Claude Code 的 hook 调用（不是手动输入的命令）",
+    "Dashboard: recorded {id} ({event}).": "仪表盘: 已记录 {id}（{event}）。",
+    "The dashboard hook did nothing: {err}": "仪表盘的 hook 什么也没做: {err}",
+    "Dashboard: {n} missions are running in this folder, so there is no "
+    "way to tell which one this unit belongs to. Nothing was recorded "
+    "(it will show up as a running unit that is not in the records).":
+        "仪表盘: 这个文件夹里有 {n} 条任务正在运行，无法判断这个机体属于哪一条。没有记录（画面上会显示为「记录中没有的运行中机体」）。",
     "copy the measured values in once the report arrives":
         "收到完成通知后把实测值转记进来",
     "seconds taken (computed from the start time when omitted)":
@@ -897,6 +920,17 @@ CATALOG["ko"] = {
     "ID of the parent (the command post when omitted)": "부모의 ID (생략하면 지휘탑)",
     "model ID that was used": "사용한 모델 ID",
     "what the task is": "임무 내용",
+    "ID of the Agent call that started it "
+    "(pairs the card with the real unit; usually left out)":
+        "그 기체를 기동한 Agent 호출 ID (카드와 실제 기체를 잇는다. 보통은 생략)",
+    "called by Claude Code's hooks — do not type this yourself":
+        "Claude Code 의 hook 이 호출한다 (사람이 입력하는 것이 아님)",
+    "Dashboard: recorded {id} ({event}).": "대시보드: {id} 를 기록했다 ({event}).",
+    "The dashboard hook did nothing: {err}": "대시보드 hook 은 아무것도 하지 않았다: {err}",
+    "Dashboard: {n} missions are running in this folder, so there is no "
+    "way to tell which one this unit belongs to. Nothing was recorded "
+    "(it will show up as a running unit that is not in the records).":
+        "대시보드: 이 폴더에서는 {n} 개의 임무가 가동 중이라 이 기체가 어느 쪽인지 정할 수 없습니다. 기록하지 않았습니다 (화면에는 「기록에 없는 가동 중인 기체」로 나옵니다).",
     "copy the measured values in once the report arrives":
         "완료 통지를 받으면 실측값을 옮겨 적는다",
     "seconds taken (computed from the start time when omitted)":
