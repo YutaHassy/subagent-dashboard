@@ -239,6 +239,97 @@ def unfinished_mission(state: dict) -> dict | None:
     }
 
 
+#: いま動いている Claude Code のセッション。**ミッションの持ち主を決めるのはこれだけ。**
+#: hook もこの CLI も、同じ実行ファイルの子プロセスとして起動されるので同じ値が渡る。
+#:
+#: **サブエージェントは親と同じ値を受け継ぐ。**（実測 2026-09-03: 司令塔が start で
+#: 書いた mission.sessionId と、2体のサブエージェントのシェルで測った値が一致した。）
+#: ここが別々の値になる環境では、親が start した記録にサブエージェントが add できなく
+#: なり、下の照合が道具そのものを壊す。**受け継がれることが、この照合の前提である。**
+ENV_SESSION = "CLAUDE_CODE_SESSION_ID"
+
+
+def current_session() -> str:
+    return (os.environ.get(ENV_SESSION) or "").strip()
+
+
+def other_session_owns(state: dict) -> str:
+    """この記録の持ち主が、いま呼んでいる側と**確かに違う**ならその持ち主を返す。
+    違うと言い切れないときは空文字＝通す。
+
+    **両方そろっているときだけ拒否する。** 片方でも空なのは
+      - 記録が sessionId を持たない（0.9.1 より前に start されたもの）
+      - この端末に CLAUDE_CODE_SESSION_ID が渡っていない（hook 未配線、人が手で打つ）
+    のどちらかで、この2つを見分ける手段は無い。ここで「分からないから拒否」に倒すと
+    **道具が黙って使えなくなる**——running_missions_here が「分からないときは今まで
+    どおり」に倒しているのと同じ理由による。
+
+    取りこぼし（両方とも空で、実は別セッション）は残る。**承知の上の穴である。**
+    塞ぐには印の無い記録を拒否するしかなく、その代償のほうが重い。
+    """
+    mission = state.get("mission") if isinstance(state.get("mission"), dict) else {}
+    owner = dashlib.as_str(mission.get("sessionId"))
+    me = current_session()
+    return owner if (owner and me and owner != me) else ""
+
+
+def suggest_project(project: dict) -> str:
+    """衝突したときに勧める、一意な --project 名。取れなければ空文字。
+
+    **同じセッションからは何度呼んでも同じ名前が出る**こと、それがこの関数の全部で
+    ある。start / add / done / finish の4回に同じ名前を渡してもらう必要があるので、
+    呼ぶたびに違う名前を出したら案内として成立しない。だからセッションIDから作る。
+
+    **区切りに "-" を使わない。** resolve_project の前方一致は
+    `s == hint or s.startswith(hint + "-")` なので（dashlib.py:1864）、
+    "<ディレクトリ名>-<8桁>" にすると、あとから誰かが `--project <ディレクトリ名>`
+    と打ったとき、cwd から決まる "<ディレクトリ名>-<ハッシュ6桁>" と2件に当たって
+    「曖昧です」で弾かれる（exact 一致は優先されない。dashlib.py:1864-1877）。
+    "@" は sanitize_name（dashlib.py:889-893、禁止は <>:"/\\|?* と制御文字）が通し、
+    is_valid_slug（dashlib.py:961-974）も通り、前方一致にも引っかからない。
+    """
+    me = current_session()
+    if not me:
+        return ""
+    tail = "".join(ch for ch in me if ch.isalnum())[:8]
+    base = dashlib.as_str(project.get("name")) or dashlib.as_str(project.get("slug"))
+    return (base or "mission") + "@" + tail
+
+
+def owner_conflict_message(project: dict, state: dict, *, starting: bool) -> str:
+    """持ち主が違う記録に書こうとしたときの案内。**次に打つ行まで出す。**
+
+    ここで止められた人は、たいてい「同じフォルダでもう1つ Claude Code を開いた」
+    ことにすら気づいていない（気づけない——気づく手段が無いから事故になった）。
+    「別のセッションが使っています」とだけ言うと、次に何をすればよいか分からず、
+    --force を打つか、道具を使うのをやめるかのどちらかになる。**貼れば通る行を出す。**
+    """
+    mission = state.get("mission") if isinstance(state.get("mission"), dict) else {}
+    title = dashlib.as_str(mission.get("title")) or t("(untitled mission)")
+    started = dashlib.as_str(mission.get("startedAt"))
+    ago = elapsed_sec_from(started)
+    when = t("{time} ago").format(time=fmt_sec(ago)) if ago is not None else t("unknown")
+    lines = [
+        t("another session is using this project's record right now.")
+        if starting else
+        t("this record belongs to another session that is using it right now."),
+        t("      Target: {name}").format(name=project_label(project)),
+        t('      The record here is "{title}" (started {when}).')
+        .format(title=title, when=when),
+        t("      Starting here would push that record into the history while it is\n"
+          "      still running, and it could never be marked finished afterwards.\n"
+          "      Nothing was started.")
+        if starting else
+        t("      Writing here would file your work into that mission and mix the\n"
+          "      two records together. Nothing was written."),
+        t("      Give your work its own record. Put the same --project on all four:"),
+        t('        start --project "{name}" --title "<name of the work>" '
+          '--model <your own model ID>').format(name=suggest_project(project)),
+        t("      To do it anyway, add --force."),
+    ]
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------- コマンド
 
 
@@ -255,6 +346,17 @@ def cmd_start(args) -> None:
     prev_mission = previous.get("mission", {})
     prev_running = prev_mission.get("phase") == "running"
     prev_pending = unfinished_mission(previous)
+
+    # **稼働中で、しかも別のセッションのものなら、退避せずに止まる。**
+    # 押し出された記録は完了に直せない。取り返しがつかない操作を、押した本人が
+    # 「押した」とすら思っていない状態で通してはいけない。
+    #
+    # **同じセッションのものなら、今までどおり退避する。** finish の打ち忘れは
+    # 日常的に起きるので、そこで止めると次の作業が始められなくなる——閉じすぎは
+    # 次の start でやり直せるが、始められないのはやり直しようがない。
+    # （この非対称は running_missions_here と同じ天秤である。）
+    if prev_running and not args.force and other_session_owns(previous):
+        die(owner_conflict_message(project, previous, starting=True))
 
     state = dashlib.empty_state(project)
     state["mission"].update({"phase": "running", "title": title, "startedAt": at})
@@ -282,7 +384,21 @@ def cmd_start(args) -> None:
 
     # 前のミッションを history/<runId>/ へ退避してから上書きする。ここを通らないと
     # 過去の作業が痕跡なく消える。失敗しても start は止めない（警告だけ出て None が返る）。
-    archived = dashlib.archive_current_run(project["slug"])
+    # 稼働中のまま押し出すときだけ、なぜ終わっていないかを書き添える。
+    # 完了した記録の退避は正常な流れなので、何も足さない（_stamp_interrupted 側でも
+    # 弾いているが、渡さないほうが意図が読める）。
+    note = None
+    if prev_running:
+        prev_owner = dashlib.as_str(prev_mission.get("sessionId"))
+        me = current_session()
+        note = {
+            "at": at,
+            "by": "start",
+            "title": title,
+            # 両方そろっていなければ「分からない」。false と混ぜない。
+            "sameSession": (prev_owner == me) if (prev_owner and me) else None,
+        }
+    archived = dashlib.archive_current_run(project["slug"], note)
 
     dashlib.write_state(project["slug"], state)
 
@@ -384,6 +500,14 @@ def cmd_add(args) -> None:
     project = pick_project(args)
     slug = project["slug"]
     state = read_state(slug, project, required=True)
+
+    # **持ち主が違う記録には書かない。** ここが無かったので、押し出されたことに
+    # 気づいていない側の add が成功し、押し出した側のチームに機体が1体混ざった
+    # （実測 2026-09-03）。done は「その機体が居ない」で弾かれるが、ID は
+    # SCOUT-A のように使い回されるので、たまたま同じ ID が両方に居れば
+    # **他人の機体が完了になる**。add と同じ穴が done にもある。
+    if not args.force and other_session_owns(state):
+        die(owner_conflict_message(project, state, starting=False))
 
     parent_id = args.parent or COMMAND_ID
     if parent_id != COMMAND_ID and find_agent(state, parent_id) is None:
@@ -505,6 +629,12 @@ def cmd_done(args) -> None:
     slug = project["slug"]
     state = read_state(slug, project, required=True)
 
+    # cmd_add と同じ理由（持ち主が違う記録には書かない）。find_agent の die() より
+    # 前に置くこと——順番を逆にすると、他人の記録に対して「その機体は居ません／
+    # 履歴に押し出されたのでは」という当たっていない案内が出る。
+    if not args.force and other_session_owns(state):
+        die(owner_conflict_message(project, state, starting=False))
+
     agent = find_agent(state, args.id)
     if agent is None:
         die(missing_agent_message(project, state, args.id))
@@ -596,6 +726,11 @@ def cmd_finish(args) -> None:
     project = pick_project(args)
     slug = project["slug"]
     state = read_state(slug, project, required=True)
+
+    # cmd_add と同じ理由（持ち主が違う記録には書かない）。snapshot_orphans() より
+    # 前に置くこと——build_state を通す重い読み取りなので、拒否するなら走らせる必要が無い。
+    if not args.force and other_session_owns(state):
+        die(owner_conflict_message(project, state, starting=False))
 
     # **phase を done にする前に採る。** assign_live は稼働中のミッションしか見ないので、
     # 順番を逆にすると必ず空になり、記録に無いまま動いていた機体は跡形もなく消える。
@@ -693,15 +828,6 @@ def cmd_finish(args) -> None:
             print(notice)
 
 
-#: いま動いている Claude Code のセッション。**ミッションの持ち主を決めるのはこれだけ。**
-#: hook もこの CLI も、同じ実行ファイルの子プロセスとして起動されるので同じ値が渡る。
-ENV_SESSION = "CLAUDE_CODE_SESSION_ID"
-
-
-def current_session() -> str:
-    return (os.environ.get(ENV_SESSION) or "").strip()
-
-
 def running_missions_here(explicit, session: str = "") -> list:
     """いま「このディレクトリで」稼働中のミッションの slug 一覧。
 
@@ -774,6 +900,10 @@ def cmd_autofinish(args) -> None:
     for slug in running_missions_here(getattr(args, "project", None), current_session()):
         one = argparse.Namespace(**vars(args))
         one.project = slug
+        # running_missions_here が既に持ち主を見ているので、cmd_finish の照合は
+        # 必ず通る。それでも属性は要る（無いと AttributeError）。**二重に弾かない
+        # ための force ではなく、cmd_finish が読む属性を用意するための force。**
+        one.force = False
         if not one.headline:
             one.headline = t("closed automatically when the session ended")
         # 錠は1本ずつ取る。まとめて抱えると、締めている最中の hook が待たされる。
@@ -956,6 +1086,18 @@ def _hook_target(payload: dict, want_id: str, caller_rid: str) -> dict | None:
     here = [(slug, st) for slug, st in missions
             if (st.get("mission") or {}).get("phase") == "running"
             and _same_dir(dashlib.as_str((st.get("project") or {}).get("path")), cwd)]
+
+    # 2本以上あっても、そのうち1本だけが自分のセッションのものなら決まる。
+    # **推測ではない**——mission.sessionId は start が書いた事実で、いま呼んでいる
+    # 側の CLAUDE_CODE_SESSION_ID も事実である。絞れたときだけ絞る（絞れなければ
+    # 下の「決めない」に落ちるので、いまより取りこぼす方向へは動かない）。
+    me = current_session()
+    if len(here) > 1 and me:
+        mine = [(s, st) for s, st in here
+                if dashlib.as_str((st.get("mission") or {}).get("sessionId")) == me]
+        if len(mine) == 1:
+            here = mine
+
     if len(here) == 1:
         return pick(*here[0])
     if len(here) > 1:
@@ -1118,6 +1260,11 @@ def cmd_log(args) -> None:
     project = pick_project(args)
     slug = project["slug"]
     state = read_state(slug, project, required=True)
+
+    # cmd_add と同じ理由（持ち主が違う記録には書かない）。
+    if not args.force and other_session_owns(state):
+        die(owner_conflict_message(project, state, starting=False))
+
     push_log(state, args.who, args.text)
     dashlib.write_state(slug, state)
     print(t("Added a log line. ({name})").format(name=project["name"]))
@@ -1634,6 +1781,21 @@ def add_project_arg(p: argparse.ArgumentParser) -> None:
     )
 
 
+def add_force_arg(p: argparse.ArgumentParser, *, starting: bool) -> None:
+    """持ち主が違っても書く、という明示。
+
+    **既定は「書かない」。** 環境変数で切れるようにしないのは、一度立てたら以後
+    すべてのコマンドで黙って無効になり、コマンド行を見ても分からないからである
+    ——それは今回の事故と同じ種類の問題になる。切るならコマンド行に書かせる。
+    """
+    p.add_argument(
+        "--force", action="store_true",
+        help=(t("push the record that is here into the history even when another "
+                "session owns it") if starting else
+              t("write to this record even when another session owns it")),
+    )
+
+
 def _relanguage_instructions() -> None:
     """運用ルールを、いま選ばれた言語で書き直す（書き込んである CLI だけ）。
 
@@ -1747,6 +1909,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--model", default="",
                    help=t("model ID of the command post"))
     add_project_arg(s)
+    add_force_arg(s, starting=True)
     s.set_defaults(func=under_state_lock(cmd_start))
 
     a = sub.add_parser("add", help=t("register a subagent right after starting it"))
@@ -1766,6 +1929,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help=t("initial state (running when omitted; kept as it is "
                           "when the unit already exists)"))
     add_project_arg(a)
+    add_force_arg(a, starting=False)
     a.set_defaults(func=under_state_lock(cmd_add))
 
     d = sub.add_parser("done",
@@ -1779,6 +1943,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help=t("tool-call count (leave it out if you did not get one)"))
     d.add_argument("--headline", default="", help=t("one-line summary of the result"))
     add_project_arg(d)
+    add_force_arg(d, starting=False)
     d.set_defaults(func=under_state_lock(cmd_done))
 
     f = sub.add_parser("finish",
@@ -1786,6 +1951,7 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--headline", default="",
                    help=t("one-line summary of the whole mission"))
     add_project_arg(f)
+    add_force_arg(f, starting=False)
     f.set_defaults(func=under_state_lock(cmd_finish))
 
     af = sub.add_parser("autofinish",
@@ -1800,6 +1966,7 @@ def build_parser() -> argparse.ArgumentParser:
     lg.add_argument("--who", default=t("Command"))
     lg.add_argument("--text", required=True)
     add_project_arg(lg)
+    add_force_arg(lg, starting=False)
     lg.set_defaults(func=under_state_lock(cmd_log))
 
     st = sub.add_parser("status", help=t("show the current state"))

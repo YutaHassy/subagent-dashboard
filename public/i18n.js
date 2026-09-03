@@ -118,6 +118,7 @@
     'phase.unfinished_short': 'Open',
     'phase.unfinished':    'All back · not closed',
     'phase.unfinished_tip':'Every subagent has reported back, but the mission is not marked finished.\nRun update_state.py finish --headline "…".',
+    'phase.interrupted_tip':'Another session started a new mission ("{title}") in this folder, and this one was interrupted at {when}.\nIt can no longer be marked finished.',
 
     // --- ミッションバーの数値
     'stat.elapsed':        'Elapsed',
@@ -292,6 +293,7 @@
     'phase.unfinished_short': '未締',
     'phase.unfinished':    '全機帰還・未締め',
     'phase.unfinished_tip':'サブエージェントは全員帰還しましたが、ミッションが完了になっていません。\nupdate_state.py finish --headline "..." を実行してください。',
+    'phase.interrupted_tip':'別のセッションがこのフォルダで新しいミッション「{title}」を開始したため、このミッションは {when} に押し出されました。\nあとから完了に直すことはできません。',
 
     'stat.elapsed':        '経過',
     'stat.agents':         '機体',
@@ -453,6 +455,7 @@
     'phase.unfinished_short': '未收尾',
     'phase.unfinished':    '全部归队・未收尾',
     'phase.unfinished_tip':'所有子代理都已回报，但任务尚未标记为完成。\n请执行 update_state.py finish --headline "..."。',
+    'phase.interrupted_tip':'另一个会话在此文件夹中启动了新任务「{title}」，此任务已于 {when} 被中断。\n事后无法将其标记为已完成。',
 
     'stat.elapsed':        '已用时',
     'stat.agents':         '单元',
@@ -614,6 +617,7 @@
     'phase.unfinished_short': '미종료',
     'phase.unfinished':    '전원 귀환・미종료',
     'phase.unfinished_tip':'서브에이전트는 모두 보고를 마쳤지만 미션이 완료로 표시되지 않았습니다.\nupdate_state.py finish --headline "..." 을 실행하세요.',
+    'phase.interrupted_tip':'다른 세션이 이 폴더에서 새 미션 "{title}"을 시작하여, 이 미션은 {when}에 중단되었습니다.\n이후에는 완료로 표시할 수 없습니다.',
 
     'stat.elapsed':        '경과',
     'stat.agents':         '유닛',

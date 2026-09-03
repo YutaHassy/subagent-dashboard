@@ -1517,6 +1517,45 @@ def _move_current_to_history(slug: str) -> str:
     return dest.name
 
 
+def _stamp_interrupted(slug: str, run_id: str, note: dict) -> None:
+    """押し出された記録に「なぜ稼働中のまま終わったか」を書き添える。
+
+    **移したあとに書く。** 移す前に書くと、移動が落ちたときに「押し出された」と
+    書かれた記録が現役のまま残る。移したあとの history/<runId>/state.json を
+    書いているのは、この時点ではもう誰も居ない。
+
+    **書くのは観測できた事実だけ。** phase も finishedAt も触らない——そのミッションが
+    「終わった」時刻は誰も測っていない。実測でない値を書かないというこの道具の約束
+    （cmd_start の「見るだけで直さない」）は、ここでも同じである。
+
+    **締まっている記録には何も足さない。** 完了した記録が退避されるのは正常な流れで、
+    そこに「打ち切られた」と書けば嘘になる。
+
+    失敗しても黙って戻る。start は既に成立していて、これはその付随物である。
+    ここで例外を上げると、記録を残せたのに start が落ちる。
+    """
+    path = run_state_file(slug, run_id)
+    ok, value, _err = read_json_safe(path)
+    if not ok or not isinstance(value, dict):
+        return
+    mission = value.get("mission")
+    if not isinstance(mission, dict) or mission.get("phase") != "running":
+        return
+    mission["interruptedBy"] = note
+    tmp = path.with_name(path.name + ".%d.tmp" % os.getpid())
+    try:
+        tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+                       encoding="utf-8")
+        _replace_with_retry(tmp, path)
+    except OSError:
+        pass
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
 def prune_history(slug: str, keep: int | None = None) -> list[str]:
     """history/ が保持件数を超えていたら古い順に trash/ へ移す。
 
@@ -1565,13 +1604,17 @@ def is_unstarted_state(state) -> bool:
     return not state.get("agents")
 
 
-def archive_current_run(slug: str) -> dict:
+def archive_current_run(slug: str, interrupted_by: dict | None = None) -> dict:
     """いまの state.json と agents/ を history/ へ退避する。start の write_state() 直前に呼ぶ。
 
     返り値: {"runId": 退避した runId or None, "pruned": trash へ移した runId の一覧}
 
     例外は投げない（set_current と同じ方針）。記録が残っているのに start が落ちるのが
     一番困るので、失敗しても警告だけ出して呼び出し側を進ませる。
+
+    interrupted_by を渡すと、退避した記録が**稼働中のままだったときに限り**
+    mission.interruptedBy として書き添える。既定は None＝何も足さない
+    （引数を足しただけで、渡さない呼び出しの挙動は1バイトも変わらない）。
     """
     result: dict = {"runId": None, "pruned": []}
 
@@ -1600,6 +1643,9 @@ def archive_current_run(slug: str) -> dict:
             t("this start will overwrite the previous record (the mission still begins)"),
         )
         return result
+
+    if interrupted_by:
+        _stamp_interrupted(slug, result["runId"], interrupted_by)
 
     try:
         result["pruned"] = prune_history(slug)
@@ -2215,6 +2261,21 @@ def _log_sort_key(e: dict):
         return (1, 0.0)
 
 
+def _interrupted_note(v) -> dict | None:
+    """押し出された理由のうち、**画面に出す2つだけ**を渡す形にする。無ければ None。
+
+    sessionId は渡さない。人が読めない値で、画面に出す用途が無いうえ、ここを通った
+    ものはブラウザから見えるところへ出ていく（サーバーがユーザー名を伏せているのと
+    同じ考え方）。sameSession も渡さない——出し分ける文言を持たないので、渡せば
+    「読まれない項目」が1つ増えるだけになる。
+    """
+    if not isinstance(v, dict):
+        return None
+    at = as_str(v.get("at")) or None
+    title = as_str(v.get("title")) or None
+    return {"at": at, "title": title} if (at or title) else None
+
+
 def _build_state(slug: str, state_path: Path, agents_path: Path, *, live: bool = False) -> dict:
     """state.json と agents/*.json をマージして1つの状態にする（置き場所は引数で受ける）。
 
@@ -2309,6 +2370,7 @@ def _build_state(slug: str, state_path: Path, agents_path: Path, *, live: bool =
             "title": as_str(mission.get("title")) or t("(untitled mission)"),
             "startedAt": as_str(mission.get("startedAt")) or None,
             "finishedAt": as_str(mission.get("finishedAt")) or None,
+            "interruptedBy": _interrupted_note(mission.get("interruptedBy")),
             "summary": {
                 "agentCount": as_num(summary.get("agentCount")),
                 "totalTokens": as_num(summary.get("totalTokens")),
