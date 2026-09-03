@@ -1,14 +1,14 @@
 {
-  "updatedAt": "2026-09-04T00:58:54+09:00",
+  "updatedAt": "2026-09-04T01:43:31+09:00",
   "sessions": [
     {
       "sessionId": "0fb816ec-833d-4da2-9290-0db5570290db",
       "startedAt": "2026-09-03T21:16:26+09:00",
-      "endedAt": "2026-09-04T00:58:54+09:00",
-      "headline": "押し出された記録の理由が画面に出るようにし、配線がサーバーから画面まで届いていることを実測で確かめた",
+      "endedAt": "2026-09-04T01:43:31+09:00",
+      "headline": "最終読み合わせで3件の食い違いを発見。エージェントが読む注入文面だけ demo が抜けていた",
       "auto": false,
-      "fileCount": 55,
-      "toolCallCount": 790
+      "fileCount": 75,
+      "toolCallCount": 1089
     },
     {
       "sessionId": "6debbcfa-f32d-4ad8-b45c-6a75a49ddfa4",
