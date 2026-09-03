@@ -477,7 +477,7 @@ rule: leave `--model` out of `start` and it shows as "unknown" too, instead of a
 ### Unit colour shows the model
 
 The colour of the egg-shaped body and arms shows which model is driving that unit: red = Fable, orange =
-Opus / Sol, pale green = Haiku / Luna, and white = Sonnet / Terra / Gemini and everything else.
+Opus / Sol, pale green = Haiku / Luna, aqua = Gemini, and white = Sonnet / Terra and everything else.
 
 The eyes, visor, antenna, chest light, mouth, and the state animation (idle / running / awaiting
 report / done) are unchanged. That space already carries "state", and layering a second meaning —

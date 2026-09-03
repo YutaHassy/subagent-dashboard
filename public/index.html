@@ -484,6 +484,8 @@ body {
 .agent.mdl-orange .rb-arm { fill: url(#rbLimbGradOrange); }
 .agent.mdl-green  .rb-egg { fill: url(#rbEggGradGreen); }
 .agent.mdl-green  .rb-arm { fill: url(#rbLimbGradGreen); }
+.agent.mdl-aqua   .rb-egg { fill: url(#rbEggGradAqua); }
+.agent.mdl-aqua   .rb-arm { fill: url(#rbLimbGradAqua); }
 .rb-socket        { fill: #ccd8e6; }
 .rb-bezel         { fill: #c9d5e3; }
 .rb-visor         { fill: url(#rbVisorGrad); }
@@ -1105,6 +1107,15 @@ body {
   <linearGradient id="rbLimbGradGreen" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="#f4fcec"/>
     <stop offset="1" stop-color="#a9d178"/>
+  </linearGradient>
+  <linearGradient id="rbEggGradAqua" x1="0.12" y1="0" x2="0.85" y2="1">
+    <stop offset="0"    stop-color="#ebf5f9"/>
+    <stop offset="0.5"  stop-color="#a8def5"/>
+    <stop offset="1"    stop-color="#2d9dcd"/>
+  </linearGradient>
+  <linearGradient id="rbLimbGradAqua" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ebf5f9"/>
+    <stop offset="1" stop-color="#65bfe6"/>
   </linearGradient>
   <linearGradient id="rbVisorGrad" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="#0e1724"/>
@@ -2724,8 +2735,9 @@ function elapsedFrom(iso, refMs) {
  *  記録側は "claude-opus-5"、実機の meta.json は "opus" と、同じモデルが別表記で入る
  *  （livefeed.model_key と同じ事情）。そのため部分一致で拾う。
  *  **知らない表記は必ず '' に落とす。** 推測して別の色で塗ると、画面が黙って嘘をつく。
- *  Gemini を先に弾いているのは、全モデル白と決まっているため。将来 "sol" を含む
- *  Gemini のモデル名が出ても、下の表に吸われないようにする。 */
+ *  空文字を先に弾くのは「モデル名が無い＝判定できない」ので白のまま、という別の理由。
+ *  Gemini をその次に見ているのは、全モデル水色と決まっているため。将来 "sol" を含む
+ *  Gemini のモデル名が出ても、下の表（Opus/Sol 用の正規表現）に吸われないようにする。 */
 const MODEL_TONES = [
   [/fable/,                     'red'],
   [/opus/,                      'orange'],
@@ -2738,7 +2750,8 @@ const MODEL_TONES = [
 
 function modelTone(model) {
   const low = String(model || '').toLowerCase();
-  if (!low || low.includes('gemini')) return '';
+  if (!low) return '';
+  if (low.includes('gemini')) return 'aqua';
   for (const [re, tone] of MODEL_TONES) if (re.test(low)) return tone;
   return '';
 }
@@ -2966,7 +2979,7 @@ function updateAgent(t, entry, a) {
   entry.model.textContent = a.model || tr('card.unknown_model');
   const tone = modelTone(a.model);
   if (entry.tone !== tone) {
-    entry.root.classList.remove('mdl-red', 'mdl-orange', 'mdl-green');
+    entry.root.classList.remove('mdl-red', 'mdl-orange', 'mdl-green', 'mdl-aqua');
     if (tone) entry.root.classList.add('mdl-' + tone);
     entry.tone = tone;
   }
