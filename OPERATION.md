@@ -257,9 +257,12 @@ Pass `--model` with your own model ID here too. The command post no longer defau
 out and the model column shows "unknown" instead of a guess (→ "3. When a completion report arrives" for the
 same principle applied to `done`).
 
-**When you run a second mission at the same time in the same directory, split the record destination with
-`--project`.** Running `start` as-is pushes the first mission out while it is still running, and from then on
-its record cannot be kept. → "6.1. Running two or more missions at the same time in the same directory"
+**When you run a second mission at the same time in the same directory, splitting the record destination in
+advance with `--project` keeps the collision from happening at all.** Even if you forget to split it, the tool
+now refuses and stops when a session tries to push another session's running record out (the rejection prints
+`--project` guidance you can paste as-is). The one place this protection does not reach is an environment with
+no ownership mark, where a push-out still happens as before — there, splitting in advance remains the only
+countermeasure. → "6.1. Running two or more missions at the same time in the same directory"
 
 > **Installed a new AI coding CLI after running setup?** Setup only writes operating rules into the CLIs that
 > exist at that moment — this is the one trap in the design. Install another CLI afterwards and it has none, so
@@ -376,9 +379,10 @@ would mean the conditions could never all hold and the warning would never appea
 
 If you `start` the next one while units have not returned, that is not a "forgotten close" but an
 **abandonment mid-flight**, so `start` words it differently: `⚠️ …ended while still running (there are units
-that never returned)`. This also happens without fail when you try to run two missions in parallel in the same
-directory, so in that case it goes on to give the countermeasure (splitting the record destination with
-`--project`). → "6.1. Running two or more missions at the same time in the same directory"
+that never returned)`. This warning appears on **a restart from the same session** (your own forgotten close),
+on **pushing out another session's record with `--force`**, or on pushing out a record that carries no
+ownership mark. Trying to push out a record with a different owner without `--force` is stopped by a rejection
+before you ever reach this warning. → "6.1. Running two or more missions at the same time in the same directory"
 
 ### Closing automatically from a SessionEnd hook
 
@@ -408,7 +412,9 @@ dash autofinish --headline "..."
   that against its own session ID, silently skipping any mission it does not own. **Where a session ID cannot be
   read, it closes the mission anyway, as before** — refusing to close on "unknown" would let this whole
   mechanism fail silently, and closing too eagerly can be redone with the next `start` while a forgotten close
-  cannot be fixed at all.
+  cannot be fixed at all. This same rule also appears in the opposite direction — the side that writes when it
+  doesn't know — in `start` / `add` / `done` / `finish` / `log` / `demo`. → "6.1. Running two or more missions
+  at the same time in the same directory"
 - Omit `--headline` and it fills in "closed automatically when the session ended".
 - It takes the lock one mission at a time (taking them all at once would make a hook mid-close wait on another).
 
@@ -543,19 +549,86 @@ In other words you can also create missions unrelated to any directory, such as 
 
 ---
 
-## 6.1. Running two or more missions at the same time in the same directory (required)
+## 6.1. Running two or more missions at the same time in the same directory
 
-There is only **one record destination per project (= per working directory)**.
-Run a second `start` in the same directory and the first one is **pushed out into history while still running**.
-A record that has been pushed out can no longer be written to, so the first mission's `done` is rejected with
-"not there", and nothing more is recorded for it. **There is also no way to mark it finished afterwards**
-(by design, values that were not measured are never written). Splitting the record destination in advance is
-the only countermeasure.
+There is only **one record destination per project (= per working directory)**. On 2026-09-03, two Claude Code
+sessions were running in the same directory in practice, and the one that started later took over the earlier
+one's record without anyone noticing. What follows describes the protection that was added after that.
+
+**`start` / `add` / `done` / `finish` / `log` / `demo` now compare the owner of the record they are about to
+write to (`mission.sessionId` — the `CLAUDE_CODE_SESSION_ID` of the session that ran `start`) against the
+caller's own session ID.** Only once it is confirmed that they differ does it refuse to write, **rejecting with
+exit code 1**.
+
+```
+Error: another session is currently using this project's record.
+      Target: <project>
+      The record here is "<current record's title>" (started <elapsed> ago).
+      Running start here would push that running record out into history,
+      and it could not be marked finished afterward.
+      Nothing was started.
+      Set up a dedicated record for your own work. Put the same --project on all four of these:
+        start --project "<unique name>" --title "<task name>" --model <your model ID>
+      To go ahead anyway, add --force.
+```
+
+`add` / `done` / `finish` / `log` are rejected in the same shape; only the "would push out…" part changes to
+"would mix the records together". **The tool builds and prints the `<unique name>` for you** (it is derived
+from the caller's session ID, so calling it repeatedly from the same session always yields the same name). You
+never have to invent a unique name yourself or keep it consistent across all four commands by hand — just paste
+the line the error prints, four times.
+
+- **To push through anyway, add `--force`.** On `start` and `demo`, it pushes the other record out into history while
+  still running, exactly as before. On `add` / `done` / `finish` / `log`, it writes anyway, exactly as before.
+- **A pushed-out record keeps a trace of what pushed it out and when** (`mission.interruptedBy`). You can read
+  it by hovering over the "Unfinished" badge that appears when you open that record from history. **This mark
+  is not limited to when `--force` was used.** It is written the same way for your own forgotten close (running
+  the next `start` from the same session without closing the previous mission first) — it exists to let you
+  trace the reason for "Unfinished" after the fact, not only to flag a push-out by another session.
+- **Subagents never trip this rejection.** They inherit the parent's `CLAUDE_CODE_SESSION_ID` as-is, so a
+  subagent running `add` / `done` / `finish` / `log` against a mission the command post opened with `start`
+  still counts as "the same session", exactly as before.
+- **`demo` always archives first, even when it is not rejected.** It is the command that inserts a display-test
+  dummy, and against someone else's record it is stopped by the same rejection as above. On top of that, **even
+  against a record from your own session, it always archives it into history before overwriting** (the `by` in
+  `interruptedBy` reads `demo`) — inserting a dummy is not license to erase whatever record came before it.
+  Previously there was neither an ownership check nor an archive step here, and a running record could vanish
+  without even being kept in history.
+
+### When the protection does not apply
+
+**Ownership can only be told apart when both the pushing side and the pushed-out side have `mission.sessionId`
+set.** If either of the following holds, the tool cannot tell whether it is a different session, and it
+**lets the write through unguarded, exactly as before** (choosing "stop when unsure" instead would make the
+tool itself unusable in an environment with no ownership mark, so it deliberately errs on the side of letting
+it through).
+
+- The record has no `mission.sessionId` (a record whose `start` ran before 0.9.1)
+- This machine was never given a `CLAUDE_CODE_SESSION_ID` (the hook is not wired up, or a person is typing
+  commands by hand from a separate terminal, etc.)
+
+If a push-out happens under these conditions, you are told about it in two places. **Both only tell you;
+neither fixes it**, and there is no way to mark it finished afterward.
+
+| Where | What you get |
+| --- | --- |
+| `start` | `⚠️ The archived "…" ended while still running`, followed by the procedure for splitting with `--project` |
+| `done` | "not in the current mission '…' / the same ID is in the recent history '…'" plus a warning that running `add` here would mix the records together |
+
+The guidance from `done` **words it differently depending on whether you "have not run add yet" or "were pushed
+out"**. If the same ID is in the last 5 history entries, it is treated as a push-out
+(`update_state.find_in_history`). If it did not distinguish and only said "run add first", the person who was
+pushed out would do exactly that and **mix the first mission's unit into the team that pushed them out**. That
+is why it is worded differently. **This same path is also taken for your own forgotten close** (a write from
+the same session was never subject to the rejection in the first place) — do not confuse it with a rejection
+over a different owner.
+
+### Should you split with `--project` in advance?
 
 ```bash
 # When running in parallel in the same directory, give start a unique name with --project to split them
 # (pass a name that does not exist and a new project is created under that name)
-dash start --project PAVS_ER-issue51 --title "issue51 impact survey" --model claude-sonnet-5
+dash start --project PAVS_ER-issue51 --title "issue51 impact survey" --model claude-opus-5
 
 # Put the same --project on that mission's add / done / finish as well — all of them
 dash add --project PAVS_ER-issue51 --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "..."
@@ -563,25 +636,31 @@ dash done --project PAVS_ER-issue51 --id SCOUT-A --headline "..."
 dash finish --project PAVS_ER-issue51 --headline "..."
 ```
 
-- **Put `--project` on all four commands.** Forget it on even one and that command alone writes to the record on
-  the current-directory side — the other team — and the two records get mixed together.
-- Missions running in different directories already have different record destinations, so `--project` is not needed.
-- Each split is treated as an independent project. Two tabs line up on the screen, and running teams are shown at the same time.
+Before this protection existed, this document called it **required**. The reasoning was: "unless you split it
+in advance, the moment a different session starts in the same directory later, the record breaks with no way
+to fix it." But that instruction did not hold up. **The side that started first has no way to predict that a
+different session will start later.** Telling people to guard in advance against something unpredictable was
+the actual reason the real accident happened.
+
+Now, forgetting to split it does not break anything. **A write that collides with another session is simply
+rejected, and the record survives intact.** Whoever was rejected can just read the `--project` guidance the
+tool prints — it pastes as-is — and try again. **That is why this is no longer "required".** Splitting in
+advance still has value, though: it keeps the collision from happening at all, saving you the extra step of
+being rejected and retrying. **Do it in advance when you can — the tool stops you even if you forget.**
+
+The one exception is an environment matching "When the protection does not apply" above; there, splitting in
+advance remains the only countermeasure, exactly as before.
+
+- **Put `--project` on all four commands.** Forget it on even one and that command alone writes to the record
+  on the current-directory side — the other team — and the two records get mixed together.
+- Missions running in different directories already have different record destinations, so `--project` is not
+  needed.
+- Each split is treated as an independent project. Two tabs line up on the screen, and running teams are shown
+  at the same time.
 - It can also be given with the environment variable `AGENT_DASHBOARD_PROJECT` (`--project` takes priority).
-- **`autofinish` can close both in one call.** Run it without `--project` and it closes **every mission running
-  in that directory** — split-off ones included. One call from a SessionEnd hook is enough.
-
-When a push-out does happen, you are told in two places. **Both only tell you; neither fixes it.**
-
-| Where | What you get |
-| --- | --- |
-| `start` | `⚠️ The archived "…" ended while still running`, followed by the procedure for splitting with `--project` |
-| `done` | "not in the current mission '…' / the same ID is in the recent history '…'" plus a warning that running `add` here would mix the records together |
-
-The guidance from `done` **words it differently depending on whether you "have not run add yet" or "were pushed out"**.
-If the same ID is in the last 5 history entries, it is treated as a push-out (`update_state.find_in_history`).
-If it did not distinguish and only said "run add first", the person who was pushed out would do exactly that and
-**mix the first mission's unit into the team that pushed them out**. That is why it is worded differently.
+- **`autofinish` can close both of these in one call.** Run it without `--project` and it closes **every
+  mission running in the current directory** — split-off ones included. One call from a SessionEnd hook is
+  enough.
 
 ---
 

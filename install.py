@@ -240,15 +240,17 @@ The target project is detected automatically from the current directory, so the 
 - **Use the `update_state.py` at the path above.** If a copy sits somewhere else, running that one splits the `missions/` that gets written, and nothing appears on the screen.
 - For the details (grandchild agents, `--project`, helper commands), see `{op}`.
 
-### When you run two or more missions at once in the same directory (required)
+### When you run two or more missions at once in the same directory
 
-Mission records are kept **one per project (= per working directory)**. If you type a second
-`start` in the same directory, the first one is pushed into the history tabs while it is still
-running, and every `done` for that first one after that fails with "does not exist". **There is
-no way to mark a pushed-out record as finished later on.** Separating the records in advance is
-the only remedy.
-
-When you run missions in parallel in the same directory, give each `start` a unique name with
+Mission records are kept **one per project (= per working directory)**. If a second `start` (or
+`add` / `done` / `finish` / `log` / `demo`) would touch a record another session still has running, it is
+refused (exit code 1) instead of silently pushing it out or mixing the two records — the error
+prints a ready-to-paste `--project` command with a unique name already filled in, so you do not
+have to invent one yourself. `--force` pushes through anyway, the same as before: the old record
+is pushed into the history tabs while it stays marked running, and it can never be marked finished
+afterward. This protection only works when both sides carry a session ID; without one it silently
+falls back to the old, unprotected behavior. When you already know missions will overlap here,
+splitting them in advance is still the smoothest path: give each `start` a unique name with
 `--project` (passing a name that does not exist creates a new project under that name).
 
 ```bash

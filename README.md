@@ -176,13 +176,17 @@ closed as before where it is not). See [OPERATION.md](OPERATION.md) for an examp
 
 ### Running two missions at once in the same folder
 
-There is one record destination per project (= per working folder). If you `start` a second mission in the
-same folder, the first is pushed out into history while it is still running, and nothing can be recorded
-against it after that (nor can it be marked finished later). To run missions in parallel, split the record
-destinations with `--project`.
+There is one record destination per project (= per working folder). **If another session tries to push out or
+overwrite a mission record that is still running, the tool itself now refuses** (exit code 1; the guidance
+prints a ready-to-paste `--project` command). Add `--force` only when you want to push through anyway — it
+still pushes the mission out as before, but the record that gets pushed out keeps a note of what pushed it
+out. This protection only takes effect when `mission.sessionId` (sourced from `CLAUDE_CODE_SESSION_ID`) is
+present on both sides, so older records and environments where `CLAUDE_CODE_SESSION_ID` is not passed through
+remain unprotected, as before. If you already know you'll be running in parallel, splitting the record
+destination with `--project` beforehand avoids the collision altogether and causes the least friction.
 
 ```bash
-dash start  --project issue51 --title "issue51 investigation" --model claude-sonnet-5
+dash start  --project issue51 --title "issue51 investigation" --model claude-opus-5
 dash add    --project issue51 --id SCOUT-A --name "Scout A" --model claude-sonnet-5 --mission "..."
 dash done   --project issue51 --id SCOUT-A --headline "..."
 dash finish --project issue51 --headline "..."
@@ -190,7 +194,8 @@ dash finish --project issue51 --headline "..."
 
 Put `--project` on all four commands. Miss it on even one and that one command writes to the current folder's
 side — that is, to the other team's record. `dash install` writes this procedure into every installed CLI's
-instructions file as well, so the agent follows the same rule.
+instructions file as well, so the agent follows the same rule. See [OPERATION.md](OPERATION.md)'s
+"6.1. Running two or more missions at the same time in the same directory" for details.
 
 ### Looking at past records
 

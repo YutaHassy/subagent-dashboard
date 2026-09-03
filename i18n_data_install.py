@@ -66,15 +66,17 @@ The target project is detected automatically from the current directory, so the 
 - **Use the `update_state.py` at the path above.** If a copy sits somewhere else, running that one splits the `missions/` that gets written, and nothing appears on the screen.
 - For the details (grandchild agents, `--project`, helper commands), see `{op}`.
 
-### When you run two or more missions at once in the same directory (required)
+### When you run two or more missions at once in the same directory
 
-Mission records are kept **one per project (= per working directory)**. If you type a second
-`start` in the same directory, the first one is pushed into the history tabs while it is still
-running, and every `done` for that first one after that fails with "does not exist". **There is
-no way to mark a pushed-out record as finished later on.** Separating the records in advance is
-the only remedy.
-
-When you run missions in parallel in the same directory, give each `start` a unique name with
+Mission records are kept **one per project (= per working directory)**. If a second `start` (or
+`add` / `done` / `finish` / `log` / `demo`) would touch a record another session still has running, it is
+refused (exit code 1) instead of silently pushing it out or mixing the two records — the error
+prints a ready-to-paste `--project` command with a unique name already filled in, so you do not
+have to invent one yourself. `--force` pushes through anyway, the same as before: the old record
+is pushed into the history tabs while it stays marked running, and it can never be marked finished
+afterward. This protection only works when both sides carry a session ID; without one it silently
+falls back to the old, unprotected behavior. When you already know missions will overlap here,
+splitting them in advance is still the smoothest path: give each `start` a unique name with
 `--project` (passing a name that does not exist creates a new project under that name).
 
 ```bash
@@ -134,15 +136,18 @@ BLOCK_JA = """## Subagent Dashboard
 - **`update_state.py` は上のパスのものを使ってください。** 別の場所にコピーがある場合、そちらを実行すると書き込み先の `missions/` が分かれてしまい、画面に何も出ません。
 - 詳細（孫エージェントの扱い、`--project` 指定、補助コマンド）は `{op}` を参照してください。
 
-### 同じディレクトリで2本以上を同時に走らせるとき（必須）
+### 同じディレクトリで2本以上を同時に走らせるとき
 
-ミッションの記録先は**プロジェクト（＝作業ディレクトリ）ごとに1つ**です。同じディレクトリで
-2本目の `start` を打つと、1本目は稼働中のまま履歴タブへ押し出され、以後その1本目に対する
-`done` は「存在しません」というエラーになります。**押し出された記録をあとから完了に直す手段は
-ありません。** 事前に記録先を分けることが唯一の対策です。
-
-同じディレクトリで並行させるときは、`start` に `--project` で一意な名前を付けて分けてください
-（存在しない名前を渡せば、その名前で新しいプロジェクトが作られます）。
+ミッションの記録先は**プロジェクト（＝作業ディレクトリ）ごとに1つ**です。2本目の `start`
+（や `add` / `done` / `finish` / `log` / `demo`）が、別のセッションがまだ稼働中の記録に触れようと
+すると、黙って押し出したり記録を混ぜたりする代わりに**拒否されます**（終了コード 1）。
+エラーには、一意な名前が入った、貼るだけで使える `--project` 付きのコマンドが表示されるので、
+自分で名前を考える必要はありません。`--force` を付ければいままでどおり押し通せます——
+古い記録は稼働中のまま履歴タブへ押し出され、あとから完了にすることはできません。この保護は
+両側にセッション ID がある場合だけ働き、無い場合は黙って以前の無防備な挙動に戻ります。
+同じディレクトリで並行させると分かっているなら、`start` に `--project` で一意な名前を付けて
+事前に分けておくのがいちばん摩擦がありません（存在しない名前を渡せば、その名前で新しい
+プロジェクトが作られます）。
 
 ```bash
 {py} {us} start --project <一意な名前> --title "<作業の名前>" --model <自分のモデル ID>
@@ -200,15 +205,16 @@ BLOCK_ZH = """## Subagent Dashboard
 - **请使用上面那个路径的 `update_state.py`。** 如果别的地方有副本，执行那一个会让写入的 `missions/` 分家，画面上就什么都不出现。
 - 详细内容（孙代理的处理、`--project` 指定、辅助命令）请参照 `{op}`。
 
-### 在同一个目录里同时跑两个以上时（必须）
+### 在同一个目录里同时跑两个以上时
 
-任务的记录位置是**每个项目（＝工作目录）一个**。在同一个目录里敲第二个
-`start`，第一个就会在运行中的状态下被挤进历史标签页，此后针对第一个的
-`done` 会报「不存在」的错误。**被挤出去的记录事后没有办法改成完成。**
-事先把记录位置分开是唯一的对策。
-
-在同一个目录里并行时，请给 `start` 加上 `--project` 起一个唯一的名字来区分
-（传一个不存在的名字，就会用那个名字新建一个项目）。
+任务的记录位置是**每个项目（＝工作目录）一个**。当第二个 `start`（或 `add` / `done` /
+`finish` / `log` / `demo`）想要触碰另一个会话仍在运行的记录时，不会再默默把它挤出去或把两份记录
+混在一起，而是会**被拒绝**（退出码 1）——错误信息里会给出一条贴上就能用、已经填好唯一
+名字的 `--project` 命令，不需要自己再想名字。加上 `--force` 就能像以前一样强行推进：旧的
+记录会在运行中的状态下被挤进历史标签页，事后无法改成完成。这层防护只在两边都带有会话 ID
+时才起作用，没有的话就会默默退回到以前没有防护的老样子。如果已经知道要在这里并行，事先给
+每个 `start` 用 `--project` 起一个唯一的名字分开，仍然是摩擦最小的做法（传一个不存在的
+名字，就会用那个名字新建一个项目）。
 
 ```bash
 {py} {us} start --project <唯一的名字> --title "<工作的名称>" --model <你自己的模型 ID>
@@ -266,15 +272,18 @@ BLOCK_KO = """## Subagent Dashboard
 - **`update_state.py` 는 위 경로의 것을 쓰세요.** 다른 곳에 복사본이 있는 경우, 그쪽을 실행하면 기록되는 `missions/` 가 갈라져 화면에 아무것도 나오지 않습니다.
 - 자세한 내용(손자 에이전트의 취급, `--project` 지정, 보조 명령)은 `{op}` 를 참조하세요.
 
-### 같은 디렉터리에서 두 개 이상을 동시에 돌릴 때 (필수)
+### 같은 디렉터리에서 두 개 이상을 동시에 돌릴 때
 
-미션의 기록 위치는 **프로젝트(= 작업 디렉터리)마다 하나**입니다. 같은 디렉터리에서
-두 번째 `start` 를 치면, 첫 번째는 가동 중인 채로 이력 탭으로 밀려나고, 이후 그 첫 번째에 대한
-`done` 은 「존재하지 않습니다」라는 오류가 됩니다. **밀려난 기록을 나중에 완료로 고치는 수단은
-없습니다.** 미리 기록 위치를 나누는 것이 유일한 대책입니다.
-
-같은 디렉터리에서 병행할 때는 `start` 에 `--project` 로 고유한 이름을 붙여 나누세요
-(존재하지 않는 이름을 넘기면 그 이름으로 새 프로젝트가 만들어집니다).
+미션의 기록 위치는 **프로젝트(= 작업 디렉터리)마다 하나**입니다. 두 번째 `start`(또는
+`add` / `done` / `finish` / `log` / `demo`)가 다른 세션이 아직 가동 중인 기록을 건드리려 하면,
+조용히 밀어내거나 두 기록을 섞는 대신 **거부됩니다**(종료 코드 1). 오류에는 고유한
+이름이 이미 채워진, 붙여넣기만 하면 되는 `--project` 명령이 함께 나오므로 직접 이름을
+생각할 필요는 없습니다. `--force` 를 붙이면 지금까지처럼 밀어붙일 수 있습니다——오래된
+기록은 가동 중인 채로 이력 탭으로 밀려나고, 나중에 완료로 만들 수는 없습니다. 이 보호는
+양쪽 모두에 세션 ID 가 있을 때만 작동하며, 없으면 조용히 예전의 무방비했던 동작으로
+돌아갑니다. 여기서 병행하게 될 걸 이미 알고 있다면, `start` 에 `--project` 로 고유한
+이름을 붙여 미리 나눠두는 편이 가장 마찰이 적습니다(존재하지 않는 이름을 넘기면 그
+이름으로 새 프로젝트가 만들어집니다).
 
 ```bash
 {py} {us} start --project <고유한 이름> --title "<작업의 이름>" --model <자신의 모델 ID>
