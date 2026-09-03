@@ -401,6 +401,70 @@ def main() -> int:
         check("乙の記録は変わらない(絞り込めなければ両方とも増えない。[6]相当が2本ある場合の検査)",
               len(state_of(home, "otsu-hook")["agents"]), before_otsu_hook)
 
+        print()
+        print("[19] demo は、稼働中で他セッションの記録を拒否する（cmd_start と同じ規則）")
+        # [18] で稼働中のまま残った記録（甲hook、持ち主 sess-kou-h）を、
+        # 正しい持ち主で締めてから検査を始める。
+        run(["finish", "--headline", "demo検査の前に片付け"], work, home, session="sess-kou-h")
+        run(["start", "--title", "甲のdemo保護", "--model", "claude-opus-5"],
+            work, home, session="sess-kou-demo")
+        run(["add", "--id", "SCOUT-D", "--name", "偵察D", "--model", "claude-sonnet-5",
+             "--mission", "甲のdemo前の調査"], work, home, session="sess-kou-demo")
+        hist_before19 = history_runs(home, slug)
+        rc, out = run(["demo"], work, home, session="sess-otsu-demo")
+        check("終了コードは 1", rc, 1)
+        check("history/ は増えていない（退避すらされていない）",
+              history_runs(home, slug), hist_before19)
+        check("state.json は甲の記録のまま（ダミーで上書きされていない）",
+              state_of(home, slug)["mission"]["title"], "甲のdemo保護")
+        check("甲の機体もそのまま残る",
+              sorted(a["id"] for a in state_of(home, slug)["agents"]),
+              sorted(["COMMAND", "SCOUT-D"]))
+
+        print()
+        print("[20] [19] に --force を付ければ通り、上書き前の記録は history/ へ退避される")
+        rc, out = run(["demo", "--force"], work, home, session="sess-otsu-demo")
+        check("終了コードは 0", rc, 0)
+        check("history/ が1件増える", len(history_runs(home, slug)), len(hist_before19) + 1)
+        pushed19 = latest_history_state(home, slug)["mission"]
+        check("押し出された記録の phase は running のまま", pushed19["phase"], "running")
+        check("finishedAt は書かれていない（実測でない値を書かない約束）",
+              pushed19.get("finishedAt"), None)
+        check("退避された記録の機体も無事に残っている（history 側）",
+              sorted(a["id"] for a in latest_history_state(home, slug)["agents"]),
+              sorted(["COMMAND", "SCOUT-D"]))
+        note19 = pushed19.get("interruptedBy") or {}
+        check("interruptedBy.by は demo", note19.get("by"), "demo")
+        check("interruptedBy.sameSession は false（別セッションによる上書き）",
+              note19.get("sameSession"), False)
+        check("demo のダミーデータに置き換わっている",
+              state_of(home, slug)["mission"]["title"], "表示テスト（ダミーデータ）")
+
+        print()
+        print("[21] 同じセッションの demo でも、既存の記録は history/ へ退避される（消えない）")
+        run(["start", "--title", "甲の本番ミッション", "--model", "claude-opus-5"],
+            work, home, session="sess-kou-demo2")
+        run(["add", "--id", "SCOUT-E", "--name", "偵察E", "--model", "claude-sonnet-5",
+             "--mission", "甲の本番調査"], work, home, session="sess-kou-demo2")
+        hist_before21 = history_runs(home, slug)
+        rc, out = run(["demo"], work, home, session="sess-kou-demo2")
+        check("終了コードは 0（自分のセッションなので --force は要らない）", rc, 0)
+        check("history/ が1件増える（同一セッションでも退避される）",
+              len(history_runs(home, slug)), len(hist_before21) + 1)
+        pushed21 = latest_history_state(home, slug)["mission"]
+        check("退避された記録の phase は running のまま", pushed21["phase"], "running")
+        check("退避された記録のタイトルは demo 前の本番ミッションのまま",
+              pushed21["title"], "甲の本番ミッション")
+        check("退避された記録の機体も無事に残っている（history 側）",
+              sorted(a["id"] for a in latest_history_state(home, slug)["agents"]),
+              sorted(["COMMAND", "SCOUT-E"]))
+        note21 = pushed21.get("interruptedBy") or {}
+        check("interruptedBy.by は demo", note21.get("by"), "demo")
+        check("interruptedBy.sameSession は true（同一セッションによる上書き）",
+              note21.get("sameSession"), True)
+        check("demo のダミーデータに置き換わっている",
+              state_of(home, slug)["mission"]["title"], "表示テスト（ダミーデータ）")
+
         # 後片付け。よそのミッションを稼働中のまま残さない。
         run(["autofinish"], other, home)
 

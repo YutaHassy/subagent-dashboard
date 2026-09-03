@@ -1498,6 +1498,21 @@ def cmd_demo(args) -> None:
                     "(grandchild self-report)")
     headline_a = t("pinned down 23 call sites across 7 files")
 
+    # 上書きする前に、いま置き換えようとしているものを見ておく。cmd_start と同じ
+    # 理由・同じ位置（read_state の直後、書き込みの前）。demo は表示テスト用の
+    # ダミーを入れるコマンドであって、それまでの記録を消してよいという意味では
+    # ない——ここを素通りしていたので、稼働中の記録が退避も照合も無いまま
+    # ダミーで無条件に上書きされていた（読み合わせでの実測で発覚）。
+    previous = read_state(slug, project, required=False)
+    prev_mission = previous.get("mission", {})
+    prev_running = prev_mission.get("phase") == "running"
+
+    # **稼働中で、しかも別のセッションのものなら、退避せずに止まる。** cmd_start と
+    # 同じ規則・同じ案内（owner_conflict_message はそのまま使う）。
+    if prev_running and not args.force and other_session_owns(previous):
+        die(owner_conflict_message(project, previous, starting=True))
+
+    at = now_iso()
     state = dashlib.empty_state(project)
     state["mission"].update(
         {"phase": "running", "title": demo_title, "startedAt": iso_ago(96)}
@@ -1609,6 +1624,24 @@ def cmd_demo(args) -> None:
         },
     ]
 
+    # 前の記録を history/<runId>/ へ退避してから上書きする。**同じセッションでも
+    # 行う**（cmd_start と違い、demo に「打ち忘れなら閉じてよい」という前提は
+    # 無い——表示テストのついでに実データを消してよい理由にはならない）。
+    # 稼働中のまま押し出すときだけ、なぜ終わっていないかを書き添える
+    # （cmd_start と同じ組み立て。ここでは「demo に置き換えられた」という事実）。
+    note = None
+    if prev_running:
+        prev_owner = dashlib.as_str(prev_mission.get("sessionId"))
+        me = current_session()
+        note = {
+            "at": at,
+            "by": "demo",
+            "title": demo_title,
+            # 両方そろっていなければ「分からない」。false と混ぜない。
+            "sameSession": (prev_owner == me) if (prev_owner and me) else None,
+        }
+    archived = dashlib.archive_current_run(slug, note)
+
     dashlib.write_state(slug, state)
     dashlib.set_current(slug)   # 試しに見るのだから、そのまま画面に映す
 
@@ -1638,6 +1671,16 @@ def cmd_demo(args) -> None:
     print(t("  Target project: {name}").format(name=project_label(project)))
     print(t("  Standby, running, awaiting report, done, grandchild self-reports and\n"
             "  missing measured values (—) all appear on the screen."))
+    if archived["runId"]:
+        print(t("  Archived the previous mission into history: history/{run_id}/")
+              .format(run_id=archived["runId"]))
+        print(t("    You can list them with  update_state.py history"))
+    if archived["pruned"]:
+        print(
+            t("  Moved {n} old records over the limit of {keep} to the trash: {list}")
+            .format(n=len(archived["pruned"]), keep=dashlib.history_keep(),
+                    list=", ".join(archived["pruned"]))
+        )
 
 
 def cmd_reset(args) -> None:
@@ -1984,7 +2027,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     dm = sub.add_parser("demo", help=t("fill in data for testing the display"))
     add_project_arg(dm)
-    dm.set_defaults(func=cmd_demo)
+    add_force_arg(dm, starting=True)
+    dm.set_defaults(func=under_state_lock(cmd_demo))
 
     rs = sub.add_parser(
         "reset",
