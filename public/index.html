@@ -745,7 +745,9 @@ body {
   transition: max-height .26s cubic-bezier(.22,.68,.28,1), opacity .2s ease, padding .26s ease;
 }
 .bay-body {
-  flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 18px;
+  /* 変更後（1体あたりの専有幅が 176→116px とさらに詰まったので、隙間も同じ向きに詰める。
+     176px のときの 12px 14px から、116/176 の比でおよそ 8px 9px） */
+  flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 9px;
   padding: 2px 18px 14px; max-height: 46vh; overflow: auto; min-height: 0;
   transition: max-height .26s cubic-bezier(.22,.68,.28,1), opacity .2s ease, padding .26s ease;
 }
@@ -767,6 +769,60 @@ body {
 /* 木では「線がロボの上辺へ落ちる」ために上端固定にしてある（.robot-slot のコメント）。
    区画に線は無いので、カードの真上へ中央寄せする。 */
 .orphan-bay .robot-slot { align-self: center; }
+/* ---- 区画の機体は小さく並べる。**ロボは木の半分、カードは「入る中で一番小さい幅」。**
+   ロボもスロットもカードも、寸法はすべて --robot-w / --card-w から calc()/var() で
+   導かれている（.robot の height、.robot-slot の width、.card の width、上の
+   .orphan-bay .agent の width）ので、ここで2つ上書きすれば配下だけが揃って縮む。
+   JS のレーン幅（AGENT_W）は :root からしか読まないので、系統樹には一切届かない。
+
+   **transform: scale() は使えない。** .agent は誕生アニメーション pop が
+   fill-mode:both で transform を専有していて（上の .agent のコメントと同じ罠）、
+   静的な scale を足しても 0.68 秒のあいだ無視され、.born が外れた瞬間にガクッと縮む。 */
+.orphan-bay {
+  --robot-w: 47px;    /* 木の 94px の半分。高さは calc(--robot-w * 166 / 120) が追従する */
+  /* 「1行に収まること」をやめて、折り返しを前提に半分（116px）まで詰めた。
+     モデル札・.c-id とも、下の .orphan-bay .badge / .orphan-bay .c-id で折り返しを許している
+     ので、25文字のモデル名 claude-haiku-4-5-20251001 も「claude-haiku-」「4-5-20251001」の
+     2行（ハイフンの区切りで割れる）、.c-id の LIVE:+17桁も2行に収まる——実測
+     （headless Chromium, 最悪ケース機体で計測）で、その2行とも右端はカードの内側に収まり、
+     3行目には落ちない。card-w をさらに 96px まで詰めると札が3行目に落ちる実測が出たので、
+     116px はその閾値（96〜100px）から離れた安全側。padding を削った分の下限でもある
+     （右左 5px より狭いと同じ 96px 相当まで詰まってしまい、札の3行目落ちに近づく）。 */
+  --card-w: 116px;
+}
+/* モデル札は既定で white-space: nowrap（657行付近、木と共用）。折り返しは区画だけで許す
+   ——.badge を直接書き換えると木の札まで折り返ってしまうので、ここで上書きする。
+   ハイフンは overflow-wrap: break-word だけで折り返しの起点になる（実測: 25文字の
+   claude-haiku-4-5-20251001 が「claude-haiku-」「4-5-20251001」の2行に割れ、はみ出さない）。 */
+.orphan-bay .badge { white-space: normal; overflow-wrap: break-word; }
+/* .c-id は "LIVE:" + 17桁で、ハイフンなど自然な区切りが無い1つの塊。break-word では
+   割る場所が無く1行のままはみ出すので、anywhere で強制的に途中から折り返す
+   （実測でカードの内側に収まる2行になることを確認）。 */
+.orphan-bay .c-id { white-space: normal; overflow-wrap: anywhere; }
+/* 所要時間・トークン・ツールは区画では出さない（要件）。
+   **DOM からは消さず、CSS で隠す。** .c-metrics の中の要素は buildAgentDom が掴んだ参照を
+   updateAgent と updateAgentClock が毎秒書きに行く（entry.time/timeK/tok/tool）。木と共用の
+   関数なので、生成を分岐させれば null 参照で落ち、生成後に remove すれば「見えない要素へ
+   毎秒書き続ける」ことになる。display:none なら要素は生きたまま、見た目だけ消える。
+   中に CSS アニメーションを持つ要素は無いので、display:none で巻き戻る心配も無い
+   （ロボを畳むのに高さ 0 を使っているのは、そちらにはアニメーションがあるから）。 */
+.orphan-bay .c-metrics { display: none; }
+/* 区画の ID は "LIVE:" + 実機の agentId 17桁で、10px の等幅でも 121px を専有する。
+   .c-id は flex:none なので縮まず、狭いカードでは**隣の名前のほうが 0 まで潰れる**
+   （いまの 232px でも名前は 78px しか無い）。区画だけ ID を独立行に落として、
+   名前に幅を全部渡す。カードは小さくなるのに、名前は今より読める。 */
+.orphan-bay .c-top { flex-wrap: wrap; }
+.orphan-bay .c-id  { flex: 1 0 100%; }
+/* 区画のカードに任務は無い（orphanAgent が mission:'' を固定で入れる。記録が無いので
+   任務を名乗れない）。木では updateAgent がそこへ「（任務未記載）」と書くが、**区画では
+   その行ごと出さない。** 記録が無いと分かっている機体に「記載が無い」と毎行言わせても、
+   すぐ上の「記録に無い」の札と同じことを繰り返しているだけで、狭いカードの高さを食う。
+   .c-metrics と同じく **DOM からは消さず CSS で隠す**——entry.mission は木と共用の
+   updateAgent が毎回書きに行く参照なので、消すと null 参照で落ちる。 */
+.orphan-bay .c-mission { display: none; }
+/* 余白も幅に合わせてさらに詰める（176 → 116 なので、左右は 10 → 5）。上下は開閉ボタンや
+   折り返した2行を圧迫しない範囲で少しだけ（8→7, 9→8）。 */
+.orphan-bay .card { padding: 7px 5px 8px; }
 /* 起動元が名前だけ分かることがある（記録には無いが、親のログには残っている）。
    分かったときだけカードの下に小さく出す。分からない機体に何かを補うことはしない。 */
 .bay-parent {
@@ -1379,7 +1435,22 @@ const FIT_DEADBAND   = 0.02;  // 現在値からこの割合（最低1%pt）未�
 const FIT_GROW_GAIN  = 1.05;  // 拡大は5%以上余ったときだけ
 const FIT_GROW_MS    = 500;   // 拡大は形が落ち着いてから（毎秒増える機体で脈打たせない）
 const FIT_MIN_GAP_MS = 200;   // 自動変更どうしの最短間隔
-const FIT_MAX_BURST  = 4;     // 同じ寸法のまま何度も動いたら手を引く（最後の止め）
+// 同じ形・同じ枠のまま動いてよい手数の上限（最後の止め）。旧 FIT_MAX_BURST(4) を
+// 改名して増やした。**数える相手が変わったため。** 旧実装は「同じ寸法のまま何度も
+// 動いた回数」だったが、その署名が往復のたびに動いてしまい一度も溜まらなかった
+// （autoFitZoom のコメント参照）。署名を測った px ではなく木の素性（機体数・世代数・
+// 状態別の数）で組み直すと今度は正しく溜まるが、下の二分探索は正当な詰めに何手か
+// 使う——1〜500 の全域を二分で詰め切るのに最大9手（2^9 = 512 > 500）、その前の
+// 生の目標値での数手を足して余裕を見た値。
+const FIT_MAX_STEPS  = 16;
+// 二分で挟んだ区間の有効期限（安全弁）。署名（autoFitZoom 内）は木の素性で組んでいる
+// ので拡大率では動かないが、**顔ぶれと状態が同じまま木の形だけ変わる**場合は捉え
+// られない（例: 任務の文言が伸びてカードが1行高くなる）。捉えられないまま区間を
+// 持ち続けると、「形は変わっているのに署名は同じなので区間の外へ出られず、ずれた
+// まま直せない」という新しい不具合になる——これは作ってはいけない。だから区間を
+// 作ってから一定時間を超えたら区間だけを手放す（署名と手数は捨てない）。9手・
+// 200ms間隔で2秒以内に詰め切る設計なので、6秒あれば正当な詰めを邪魔しない。
+const FIT_BRACKET_MS = 6000;   // ms
 
 // ================================================================ 黙って死なないための下ごしらえ
 // この画面は body の末尾にある**1本のインラインスクリプト**で出来ている。top-level で例外が
@@ -1502,8 +1573,15 @@ let fitRaf       = 0;       // 予約中の rAF
 let fitRecheck   = 0;       // 「あとでもう一度測る」予約（待ちに入ったまま忘れないための命綱）
 let fitLastAt    = 0;       // 最後に自動で拡大率を変えた時刻
 let fitGrowSince = 0;       // 「拡大してよい」状態が続き始めた時刻（0＝続いていない）
-let fitBurst     = 0;       // 同じ寸法のまま何回動いたか
-let fitBurstSig  = null;    // その寸法の署名
+let fitSteps     = 0;       // 同じ署名のまま自動で何手動いたか（旧 fitBurst）
+let fitSig       = null;    // その署名（旧 fitBurstSig。組み方が変わっている）
+let fitDir       = 0;       // 直前に動いた向き（+1 拡大 / −1 縮小 / 0 まだ動いていない）
+let fitPrev      = 0;       // 直前に動く前の拡大率。反転したときに答えを挟む相手になる
+let fitLo        = 0;       // 答えを挟んだ区間の下端（0＝まだ挟めていない）。**そこでは
+                            //   まだ余っていた＝収まると実測できた**拡大率でもある
+let fitHi        = 0;       // 同じく上端（0＝まだ挟めていない）
+let fitBracketAt = 0;       // 区間を作った時刻（0＝区間が無い）。FIT_BRACKET_MS を過ぎたら
+                            //   区間だけを手放す安全弁（autoFitZoom 内のコメント参照）
 let tabs = [];              // サーバーが返したタブ一覧。並びもサーバーのものをそのまま使う
 let tabsSig = null;         // タブバーを組み直すかの判定用
 let liveSig = null;         // 進行中のミッションの顔ぶれ。新しい start の検出に使う
@@ -1614,12 +1692,41 @@ function nextZoomStep(dir) {
   return MIN_ZOOM;
 }
 
+/** 二分で挟んだ区間だけを手放す（fitSig / fitSteps には触らない）。
+ *
+ *  resetFitTuning() の中身から区間まわりだけを切り出したもの。区間の有効期限切れ
+ *  （FIT_BRACKET_MS、autoFitZoom 内）は「木の形は変わっていないかもしれないが、
+ *  区間が古くなったので測り直したい」場面で、**署名と手数は残したまま**区間だけを
+ *  捨てたい——そのためだけにここを分けてある。resetFitTuning() はこれに
+ *  fitSig/fitSteps のクリアを足したもの。 */
+function clearBracket() {
+  fitDir = 0; fitPrev = 0; fitLo = 0; fitHi = 0; fitBracketAt = 0; fitGrowSince = 0;
+}
+
+/** 自動フォーカスの調律をまっさらに戻す。
+ *
+ *  **捨て忘れが新しい不具合になる**ので、捨てる場所をここ1つに集めてある。捨て忘れると
+ *  「昔の往復の記憶（区間）が、木が本当に変わったあとの正当な合わせ直しを抑え込む」形で、
+ *  今度は**動かなすぎる**壊れ方をする。呼ぶのは次の3つだけ：
+ *    - 署名が変わったとき（木の形か枠の物理寸法が変わった＝測り直すべき）
+ *    - 自動フォーカスを入れ直したとき（＝「枠に合わせる」ボタンとして押されたとき）
+ *    - タブを切り替えたとき（別の木なので、前の木で挟んだ区間は意味を持たない）
+ *  区間の有効期限切れはここを呼ばない。署名と手数を残したいので、上の clearBracket()
+ *  だけを呼ぶ（autoFitZoom 内）。
+ *  @param {string} [sig] 署名。省略すると「署名も無かったことにする」
+ */
+function resetFitTuning(sig) {
+  fitSig = (sig === undefined) ? null : sig;
+  fitSteps = 0;
+  clearBracket();
+}
+
 /** 自動フォーカスの入切。`quiet` は setZoom から降ろされたときで、直後に本人が
  *  applyZoom を呼ぶので二度描かない。 */
 function setAutoFit(on, quiet) {
   autoFitOn = !!on;
   localStorage.setItem('dashboard:zoomAuto', autoFitOn ? '1' : '0');
-  fitBurstSig = null; fitBurst = 0; fitGrowSince = 0;   // 入れ直したら測り直す
+  resetFitTuning();   // 入れ直したら測り直す
   if (!quiet) applyZoom();
   if (autoFitOn) {
     const t = teams.get(currentTab);
@@ -1725,19 +1832,51 @@ function fitContent(t) {
  * 表示中のチームの系統樹が枠に収まる拡大率へ合わせる。
  *
  * 収束の要は**相対**で決めること。新しい拡大率 = いまの拡大率 × (枠 ÷ 中身)。
- * 中身のローカル寸法は zoom に依らず、枠のローカル寸法は 物理寸法 ÷ z なので、この式は
- * z を約分して 物理寸法 ÷ 中身 になる——**現在の拡大率に関係なく必ず同じ答えを返す**。
- * つまり不動点であり、どこから始めても1歩で着き、2歩目は必ず「差なし」で止まる。
- *
  * 旧実装の絶対式 newLevel = 100 / 比 は Z(n+1) = K / Z(n) の形で、Z(n+2) = Z(n)。
- * すなわち周期2で永久に往復する（100% ⇔ 39.68% を実測で再現している）。ここを相対に
- * するだけで、往復は「止まる」のではなく**起きなくなる**。
+ * すなわち周期2で永久に往復した（100% ⇔ 39.68% を実測で再現している）。相対にした
+ * ことで**その**往復は起きなくなった。
+ *
+ * **ただし、これは不動点ではない。** ここにはかつて「z が約分されるので1歩で着く」と
+ * 書いてあったが、成り立っていなかった。実際の1歩は次のアフィン写像になる（u = z/100）：
+ *
+ *     next(u) = m · [ (H − h0) − (b + P)·u ] / C
+ *       H  … .tree-pane の物理高さ（flex:1 で上から降ってくるので拡大率に依らない）
+ *       h0 … 区画の見出し＋注記の物理高さ（zoom は .bay-body にしか掛けていない）
+ *       b  … .bay-body の中身のローカル高、  P … .tree-scroll の上下パディング 56px
+ *       C  … 木の中身のローカル高、          m … FIT_MARGIN
+ *
+ * **実測でもう1つ分かったことがある。C も完全な定数ではない。** 拡大率と同期して
+ * 374〜384px のあいだで揺れることを実測で確認した（検証者の報告）。原因は
+ * chooseWrap()（下で定義）が fitBox() の**ローカル**寸法（＝物理 ÷ 拡大率）で葉クラスタ
+ * の折り返し本数 R を選び直すこと——拡大率が変わると枠のローカル寸法が変わり、勝つ R が
+ * 変われば列のレーン本数が変わり、木の形＝ contentH そのものが変わる。**ここには元々
+ * 「C はローカル座標なので拡大率に依らない」と書いてあったが、それは前提の誤りだった。**
+ * この揺れ自体は往復の主因ではない（発散はあくまで b・P の効きで起きる）が、「同じ形の
+ * まま動いたか」を判定する第4層の署名に測った C をそのまま使うと、C 自身が揺れるせいで
+ * 署名が往復のたびに変わり、第4層が発動すべき相手にだけ発動できなくなる——これが実際に
+ * 起きていた（下の autoFitZoom 本体、署名まわりのコメント参照。署名は測った px ではなく
+ * 木の素性で組み直してある）。
+ *
+ * 傾きが 0 でない理由は2つある。ひとつは**枠の物理高さが拡大率の関数だから**——区画
+ * （.orphan-bay）は木と同じ縦の取り分を奪い合っていて、その中身には木と同じ zoom が
+ * 掛かっている（applyZoom のコメント参照）。もうひとつは**パディング P**で、clientHeight
+ * はローカル値なのに、そこから引くパディングもローカル値なので、約分されずに残る。
+ * 傾き −m(b+P)/C の絶対値が 1 を超えると**発散し、拡大と縮小を交互に繰り返す**
+ * （木が小さく区画が大きいときに実際に起きる。P のぶん、区画が無くても傾きは 0 でない）。
+ *
+ * そこで、写像の性質に頼るのをやめて**挟み撃ち**にする。増分は g(u) − u = (1+k)(u* − u)
+ * で係数 (1+k) は必ず正なので、**目標の向きは常に答えのある側を指す**。だから「前回動いた
+ * 向きと逆の目標が出た」ことは「答えは前回の拡大率といまの拡大率のあいだにある」ことと
+ * 同じで、中点を当てれば区間は毎回半分になる。整数なので 1〜500 の全域からでも9手で
+ * 詰み切り、そこで必ず止まる。**原因を知らなくても止まる**のがこの方式の値打ちで、
+ * 将来べつの「拡大率が枠の寸法を動かす」結合が入っても同じように効く。
  *
  * その上で、丸め・スクロールバー・毎秒増える機体という現実の揺らぎに4層で備える：
- *   1. 上の不動点性（振動そのものを消す）
+ *   1. 反転したら二分で詰める（往復を必ず有限回で終わらせる。区間には有効期限
+ *      FIT_BRACKET_MS があり、詰め切れないまま長居したら区間だけを手放して測り直す）
  *   2. CSS の scrollbar-gutter:stable（バーの出入りで枠幅が揺れる古典的な振動源を断つ）
  *   3. 不感帯と、拡大側だけの待ち時間（1%刻みの±1ジッタと、増え続ける最中の脈動を吸う）
- *   4. 同じ寸法のまま何度も動いたら手を引く（上3層が破れても必ず有限回で終わる）
+ *   4. 同じ署名のまま動きすぎたら、収まると実測できた拡大率へ固定して手を引く
  *
  * ResizeObserver の発火を数える echo guard は**採らない**。zoom の変更で RO が飛ぶかは
  * ブラウザ依存（Firefox は 141 まで要素の zoom を contentRect に反映していなかった）で、
@@ -1750,30 +1889,133 @@ function autoFitZoom(t) {
   const box = fitBox(t), con = fitContent(t);
   if (!box || !con) return;
 
+  // 署名。**測った px ではなく、木の素性（データ）で組む。**
+  // ここにはかつて con.w x con.h（fitContent() の戻り値＝木の中身のローカル実寸）を
+  // 使い、「con はローカル座標なので拡大率に依らない」とコメントしていた（頭のコメント
+  // 参照）。**その前提は実測で破れていた**：con.h が拡大率と同期して 374〜384px の
+  // あいだで動いた。原因は chooseWrap()（後述）が fitBox() のローカル寸法（＝物理 ÷
+  // 拡大率）で葉クラスタの折り返し本数 R を選び直すこと——拡大率が変わると枠のローカル
+  // 寸法が変わり、勝つ R が変われば木の形＝ contentH そのものが変わる。測った px を
+  // 署名にする限り、拡大率が動くたびに署名も動いてしまい、**この最後の止めが、止める
+  // べき唯一の相手にだけ発動できなかった**（往復のたびに resetFitTuning() が発火して
+  // 二分の区間が一度も蓄積されない。検証者の実測で確認済み）。
+  //
+  // 署名の役目は寸法の記録ではなく「同じ木が同じ枠に入っている」ことの同一視なので、
+  // 拡大率にはそもそも汚染されないデータ由来の量で組み直す：機体数・世代数・状態別の
+  // 機体数（running/done/standby、および running に重なる修飾である waiting を別枠で）。
+  // カード高は状態で変わりうる（完了で結果行が生える等）ので、数が同じでも状態が動いた
+  // ら別の木として扱う。枠側は変えない——.tree-scroll ではなく親の .tree-pane を測る
+  // （.tree-scroll の物理高さは区画の伸縮で拡大率ごとに動くが、.tree-pane は実測でも
+  // 不変だった。§6-3）。
+  const agentsList = (t.state && t.state.agents) || [];
+  let sigRun = 0, sigDone = 0, sigStandby = 0, sigWaiting = 0;
+  const sigGens = new Set();
+  for (const a of agentsList) {
+    sigGens.add(genOf(a));
+    if (a.status === 'running') sigRun++;
+    else if (a.status === 'done') sigDone++;
+    else sigStandby++;
+    if (a.waiting) sigWaiting++;
+  }
+  const pane = t.els.pane.getBoundingClientRect();
+  const sig = agentsList.length + 'n' + sigGens.size + 'g' +
+              sigRun + '.' + sigDone + '.' + sigStandby + '.' + sigWaiting + 'w/' +
+              Math.round(pane.width) + 'x' + Math.round(pane.height);
+  if (sig !== fitSig) resetFitTuning(sig);   // 木の形か枠が変わった＝挟み直す
+
+  const now = performance.now();
+
+  // 区間の有効期限（安全弁。定数は上で定義）。**素性の署名は「顔ぶれと状態が同じまま
+  // 木の形だけ変わる」場合を捉えられない**（例: 任務の文言が伸びてカードが1行高くなる）。
+  // 捉えられないまま区間（fitLo/fitHi）を持ち続けると、「形は変わっているのに署名は
+  // 同じなので区間の外へ出られず、ずれたまま直せない」という新しい不具合になる——これは
+  // 作ってはいけない。だから区間を作ってから FIT_BRACKET_MS を超えたら区間だけを手放す。
+  // **署名と手数（fitSig/fitSteps）は捨てない**——「この木で往復した実績」なので、直後に
+  // また反転したら同じ手数の続きとして新しい区間を作ればよい。手放したら必ず
+  // laterAutoFit() で測り直しを予約する：完了して毎秒の再描画が止まった画面では、
+  // 予約しない限り誰も測り直さない。
+  if (fitHi && now - fitBracketAt > FIT_BRACKET_MS) {
+    clearBracket();
+    laterAutoFit(FIT_MIN_GAP_MS);
+  }
+
+  // 最後の止め。上の層が全部破れても、ここで必ず有限回で終わる。
+  // **固定先は fitLo。** そこでは「まだ余っている＝拡大したい」と出ていた拡大率なので、
+  // 収まることが実測で裏付けられている。ただ小さいだけの値ではなく、収まると分かって
+  // いる中で一番大きい値なので、必要以上に縮めない。
+  if (fitSteps >= FIT_MAX_STEPS) {
+    if (fitSteps === FIT_MAX_STEPS) {
+      fitSteps++;                                    // 言うのも直すのも1回だけ
+      console.warn(tr('console.fit_stopped'), sig);
+      if (fitLo && zoomLevel !== fitLo) {
+        fitLastAt = now;
+        setZoom(fitLo, { auto: true });
+        scheduleLayout(t);
+      }
+    }
+    return;   // 署名が変わるまで手を引く
+  }
+
   // 横と縦の両方を収める。列幅は 330px 固定で世代ぶんしか増えないが、縦は機体が増えるたび
   // 約152px ずつ伸びる。実測では縦が6体で溢れるのに対し、横は5世代必要——つまり普段
   // 効くのは縦のほう。横だけを見ていた旧実装は、最も起きる過密に何もしていなかった。
   const f = Math.min(box.w / con.w, box.h / con.h) * FIT_MARGIN;
   if (!Number.isFinite(f) || f <= 0) return;
 
-  const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(zoomLevel * f)));
+  const raw = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(zoomLevel * f)));
 
   // 不感帯は現在値に対する割合で見る。1%刻みなので、絶対値で置くと 500% では緩すぎ、
   // 5% では厳しすぎる。丸めの ±0.5 を必ず吸えるように最低 1%pt は確保する。
+  // **判定するのは生の目標値。** 二分の中点で判定すると、いまが正しい位置なのに
+  // 区間の反対側へ引っ張られて動いてしまう。
   const dead = Math.max(1, Math.round(zoomLevel * FIT_DEADBAND));
-  if (Math.abs(next - zoomLevel) < dead) {
-    // 落ち着いた＝往復は終わった。最後の止めの履歴もここで捨てる。残すと、あとで
-    // 木が本当に変わって正当に合わせ直したいときに、古い回数がそれを抑え込む。
-    fitGrowSince = 0; fitBurst = 0; fitBurstSig = null;
+  if (Math.abs(raw - zoomLevel) < dead) {
+    // 落ち着いた。ただし **区間（fitLo/fitHi）と署名は捨てない**。捨てると次のフレームで
+    // 生の目標値がそのまま戻ってきて往復が再開する（生の目標値は、往復しているあいだ
+    // ずっと遠くを指し続ける。落ち着いたのは二分で詰めた結果であって、生の目標値が
+    // 近づいたからではない）。捨ててよいのは resetFitTuning() を呼ぶ3つの場面だけ。
+    fitGrowSince = 0;
     return;
   }
 
-  const now = performance.now();
-  if (next > zoomLevel) {
+  // 反転したら答えを挟む。以後はその区間を二分で詰める（頭のコメントの挟み撃ち）。
+  const dir = raw > zoomLevel ? 1 : -1;
+  if (!fitHi && fitDir && dir !== fitDir) {
+    fitLo = Math.min(fitPrev, zoomLevel);
+    fitHi = Math.max(fitPrev, zoomLevel);
+    fitBracketAt = now;   // 区間ができた時刻。有効期限はここから数える（上のコメント参照）
+  }
+  let next = raw;
+  if (fitHi) {
+    // いまの位置が区間のどちら側かは、目標の向きが教えてくれる（向きは常に答えの側を
+    // 指す）。その側の境界をいまの位置まで寄せてから中点を取る。
+    if (dir > 0) fitLo = Math.max(fitLo, zoomLevel);
+    else         fitHi = Math.min(fitHi, zoomLevel);
+    // **中点は必ず切り捨てる（fitLo 側へ寄せる）。** Math.round だと .5 は上（fitHi 側）
+    // へ丸まる（JS の仕様）。fitLo は「まだ余っていた＝収まると実測できた」側、fitHi は
+    // 「収まらなかった」側（上のコメントの narrowing がそう作っている）ので、区間が
+    // 隣り合う整数2つ（fitHi === fitLo + 1）まで詰まったとき、Math.round では中点 0.5 が
+    // fitHi へ丸まり、**収まらない側で確定して return してしまう**。49体の木・1600x1000
+    // で実際に踏んだ（fitLo:16 fitHi:17 のまま zoomLevel が17に固定され、49体中4体が
+    // 46px はみ出し続けた。壊していないことの確認テストで発見）。切り捨てれば同じ場面で
+    // 必ず fitLo（収まる側）に着地する。「切れているのを直すのは急ぐ」という設計の
+    // 非対称性（頭のコメント参照）と向きが一致するので、最後の1手に限らず常に切り捨てる。
+    next = Math.floor((fitLo + fitHi) / 2);
+    if (next === zoomLevel) return;   // 区間が 1 未満に詰んだ＝ここが答え
+  }
+
+  // now はここより上（署名の直後）で1回だけ取っている——区間の有効期限判定と同じ
+  // 時刻を使うため。
+  if (next > zoomLevel && !fitHi) {
     // 拡大は急がない。機体は毎秒1体ずつ増えるので、空いた瞬間に戻すと画面が脈打つ。
     // 「切れているのを直す」は急ぎ、「余白を詰める」は急がない——利用者の損得が非対称。
     // 待つときは必ず「あとで測り直す」を予約する。予約しないと、完了して再描画が
     // 止まったミッションでは誰も測り直さず、待ちに入ったまま永久に拡大しなくなる。
+    //
+    // **区間を詰めている最中（fitHi あり）は待たない。** 区間があるということは署名＝
+    // 木の形が変わっていないということで、この待ちが守ろうとしている「毎秒増える機体」
+    // がそもそも居ない。しかも各手は必ず前の手より小さいので、待たなくても脈にならない。
+    // 待たせると1手ごとに 500ms かかり、詰め切るまで数秒も画面が動き続けることになる。
     if (f < FIT_GROW_GAIN) { fitGrowSince = 0; return; }
     if (!fitGrowSince)     { fitGrowSince = now; laterAutoFit(FIT_GROW_MS); return; }
     if (now - fitGrowSince < FIT_GROW_MS) {
@@ -1789,25 +2031,9 @@ function autoFitZoom(t) {
     return;
   }
 
-  // 最後の止め。上の層が全部破れても、ここで必ず有限回で終わる。
-  // 木の形か枠が変われば署名も変わるので、正当な再フィットは妨げない。
-  //
-  // **枠側は物理寸法で取る。** fitBox が返すのはローカル寸法（clientWidth ＝ 物理 ÷ 拡大率）
-  // なので、拡大率が往復するとこの署名も一緒に往復し、`sig === fitBurstSig` が永久に
-  // 成立しない——つまり「最後の止め」が、それが止めるべき唯一の相手である周期2の往復に
-  // 対してだけ効かなかった。getBoundingClientRect は zoom に依らない物理 px を返すので、
-  // 往復しても署名が動かない。padding を引かないのも同じ理由（padding はローカル px で、
-  // 引くと物理量ではなくなる）。中身側の con は元からローカルで拡大率に依らない。
-  const phys = t.els.scroll.getBoundingClientRect();
-  const sig = con.w + 'x' + con.h + '/' +
-              Math.round(phys.width) + 'x' + Math.round(phys.height);
-  if (sig === fitBurstSig) {
-    if (++fitBurst > FIT_MAX_BURST) {
-      console.warn(tr('console.fit_stopped'), sig);
-      return;
-    }
-  } else { fitBurstSig = sig; fitBurst = 1; }
-
+  fitSteps++;
+  fitDir  = next > zoomLevel ? 1 : -1;   // 次の反転判定はこの向きと比べる
+  fitPrev = zoomLevel;                    // 反転したとき、答えを挟む相手になる
   fitLastAt = now;
   setZoom(next, { auto: true });
   // 枠のローカル高さが変わったので縦の中央寄せを取り直す。ResizeObserver の発火に
@@ -1947,6 +2173,10 @@ function switchTab(key) {
   // 完全な状態を読み込むことになるし、もう変わらないので取り直す意味も無い。
   if (t.loadState === 'idle') loadRun(t, tb);
 
+  // 別の木に移った。前の木で挟んだ区間は意味を持たないので捨てる。**署名が偶然一致する
+  // ことがある**（同じミッションの「進行中」タブと、その記録タブは木の形も枠も同じ）ので、
+  // 署名の変化に任せず、ここで明示的に捨てる。
+  resetFitTuning();
   // 隠れている間は clientHeight が 0 なので縦の中央寄せが決まらない。出した直後に
   // 測り直す（lastAvailH を無効化しておけば ResizeObserver 側とも二重にならない）。
   t.lastAvailH = -1;
@@ -2588,6 +2818,10 @@ function createTeam(slug, runId, live) {
       elapsed:  q('.m-elapsed'),
       agents:   q('.m-agents'),
       tokens:   q('.m-tokens'),
+      // 自動フォーカスの署名を取る相手。**.tree-scroll ではなく、その親を測る。**
+      // .tree-scroll の物理寸法は下の区画（.orphan-bay）の伸縮で拡大率ごとに動くが、
+      // .tree-pane は flex:1（basis 0）なので寸法が上から降ってきて、拡大率に依らない。
+      pane:     q('.tree-pane'),
       scroll:   q('.tree-scroll'),
       canvas:   q('.tree-canvas'),
       links:    q('.links'),
@@ -3129,7 +3363,15 @@ function render(t, s) {
       : { standby: 'phase.standby', running: 'phase.running', done: 'phase.done' }[s.mission.phase];
   phaseEl.textContent = phaseKey ? tr(phaseKey) : tr('value.none');
   phaseEl.className = 'phase ' + (unfinished ? 'unfinished' : s.mission.phase);
-  phaseEl.title = unfinished ? tr('phase.unfinished_tip') : '';
+  // 止まった記録が「未完」なのは、締め忘れか、次の start に打ち切られたかのどちらか。
+  // 後者は state に理由が残っているので、そこを読んで言い分ける。**札の文字は変えない**
+  // ——「未完」は両方に当たっている。変えるのは、その上に出す説明だけ。
+  const cut = frozen && s.mission.interruptedBy;
+  phaseEl.title = unfinished ? tr('phase.unfinished_tip')
+                : cut ? tr('phase.interrupted_tip', {
+                          when:  fmtStamp(cut.at) || tr('value.none'),
+                          title: cut.title || tr('run.untitled') })
+                : '';
   if (frozen) t.root.dataset.frozen = '';
   else delete t.root.dataset.frozen;
   t.els.title.textContent = s.mission.title;
