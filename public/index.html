@@ -267,6 +267,9 @@ body {
    （縦積みしていた頃はチームの境目を示すために入れていた）。 */
 .team[data-active] { display: flex; flex: 1; min-height: 300px; flex-direction: column; }
 .team-body { flex: 1; display: flex; min-height: 0; }
+/* 木と、その下の区画を縦に積む器。min-width/min-height に 0 を入れておかないと、
+   flex の子の既定（auto）で中身の分だけ縮まなくなり、木のスクロールが効かなくなる。 */
+.tree-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 /* ============================================================ ミッションバー（チームごと） */
 .team-bar {
@@ -643,6 +646,11 @@ body {
   color: var(--dim); font-family: Consolas, monospace; white-space: nowrap;
 }
 .badge.self { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+/* 記録に無い機体。**記録のあるカードと一目で見分けられること**が要件。
+   線は実測で引いているが、カードそのものは記録に裏付けが無い。 */
+.badge.b-orphan { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+.agent.orphan .card { border-style: dashed; opacity: .88; }
+.agent.orphan .card::before { background: var(--amber); }
 .badge.b-wait { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
 /* 沈黙の札。b-wait と同じで status は上書きしない（動いていないことと、記録上の
    状態が「稼働中」であることは両立する）。無風のほうを強く出す。 */
@@ -691,15 +699,72 @@ body {
 .c-live.quiet   { color: #ddc79a; }
 .c-live.stalled { color: #ffadad; }
 
-/* 記録に無いのに動いている機体。系統樹には入れない（親を推測して描くと実測でなくなる）。 */
-.live-orphans {
-  flex: none;
-  margin: 0 14px 14px; padding: 10px 12px; border-radius: 10px;
-  background: rgba(120,200,255,.07); border: 1px solid rgba(120,200,255,.28);
-  font-size: 11px; line-height: 1.6; color: #bfe0f5;
+/* ============================================================ 置き場所が決まらない機体の区画 */
+/* 記録に無いのに動いている機体のうち、**起動元を実測で辿れなかった**もの。
+   系統樹には入れない——親を推測して線を引いた瞬間、この画面は実測を出す道具ではなくなる。
+   かといって隠すのは違う。動いているのに記録が無いこと自体が、いま見えるべき事実なので、
+   木の下に別の区画を出して、木の中と同じロボ＋カードの姿で並べる。 */
+.orphan-bay {
+  flex: none; display: flex; flex-direction: column; min-height: 0;
+  /* **器の半分より大きくならない。** 画面基準（vh）だと木の取り分と無関係に決まり、
+     枠が低いときに木が潰れて自動フォーカスが黙って止まる。ここを器基準にすれば、
+     木は何があっても半分を保てる。 */
+  max-height: 50%;
+  border-top: 1px solid rgba(120,200,255,.28);
+  background: rgba(120,200,255,.05);
 }
-.live-orphans b { display: block; margin-bottom: 3px; color: #7fc4ee; font-size: 10.5px; letter-spacing: .08em; }
-.live-orphans div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orphan-bay[hidden] { display: none; }
+.bay-head {
+  flex: none; display: flex; align-items: baseline; gap: 14px;
+  padding: 8px 18px 6px; font-size: 11px; letter-spacing: .08em; color: #7fc4ee;
+}
+.bay-title { font-family: Consolas, monospace; }
+/* 文字ボタン。見た目は変更履歴の .cl-toggle と同じで、開いているときだけ点灯させる。
+   ボタンは見出し行（＝閉じても残る側）に置く。中身と一緒に隠れると開き直せない。 */
+.bay-toggle {
+  cursor: pointer; font-family: inherit; font-size: 11px; color: var(--dim);
+  background: transparent; border: 0; padding: 2px 0; flex: none;
+  transition: color .2s;
+}
+.bay-toggle:hover { color: var(--cyan); }
+.bay-toggle.on { color: var(--cyan); }
+.bay-note {
+  flex: none; padding: 0 18px 8px; font-size: 11px; line-height: 1.6; color: var(--dim);
+  /* 開いた側にも max-height を置く。初期値の none と 0px のあいだは補間できず、
+     畳むたびに注記だけが途中で1回パッと消える（本体は滑らかに縮むので余計に目立つ）。 */
+  max-height: 8em; overflow: hidden;
+  transition: max-height .26s cubic-bezier(.22,.68,.28,1), opacity .2s ease, padding .26s ease;
+}
+.bay-body {
+  flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 18px;
+  padding: 2px 18px 14px; max-height: 46vh; overflow: auto; min-height: 0;
+  transition: max-height .26s cubic-bezier(.22,.68,.28,1), opacity .2s ease, padding .26s ease;
+}
+/* 畳むときに display:none を使わないのは .team-side と同じ理由（.agent のコメント参照）。
+   display:none は配下の CSS アニメーションを取り消すので、ロボの呼吸・瞬き・手の動きが
+   開き直すたびに 0 から作り直される。高さを 0 へ縮めて overflow で切る。 */
+#app.bay-collapsed .bay-note,
+#app.bay-collapsed .bay-body {
+  max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0;
+  overflow: hidden; pointer-events: none;
+}
+/* 木の中の .agent は layoutTree が top/left を書く絶対配置。区画では並べて折り返すので
+   通常のフローに戻し、ロボを上・カードを下に積む。木のほうの規則は触らない。 */
+.orphan-bay .agent {
+  position: static; width: var(--card-w);
+  flex-direction: column; align-items: center; gap: 4px;
+  transition: none;
+}
+/* 木では「線がロボの上辺へ落ちる」ために上端固定にしてある（.robot-slot のコメント）。
+   区画に線は無いので、カードの真上へ中央寄せする。 */
+.orphan-bay .robot-slot { align-self: center; }
+/* 起動元が名前だけ分かることがある（記録には無いが、親のログには残っている）。
+   分かったときだけカードの下に小さく出す。分からない機体に何かを補うことはしない。 */
+.bay-parent {
+  width: 100%; font-size: 10.5px; line-height: 1.5; color: var(--dim);
+  text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bay-parent[hidden] { display: none; }
 
 /* ============================================================ 親子線 */
 .link { fill: none; stroke-width: 2.5; stroke-linecap: round; }
@@ -984,6 +1049,8 @@ body {
   /* 系統樹の再配置も滑らせない。位置は top なので、transition を切れば即時反映になる。 */
   .agent { transition: none !important; }
   .team-side { transition: none !important; }
+  /* 下部区画の開閉も同じ性質の畳みなので、ここに入れないと区画だけが滑る。 */
+  .bay-note, .bay-body { transition: none !important; }
 }
 </style>
 </head>
@@ -1171,10 +1238,19 @@ body {
       </div>
     </header>
     <div class="team-body">
-      <div class="tree-scroll">
-        <div class="tree-canvas">
-          <svg class="links"></svg>
-          <div class="generations"></div>
+      <div class="tree-pane">
+        <div class="tree-scroll">
+          <div class="tree-canvas">
+            <svg class="links"></svg>
+            <div class="generations"></div>
+          </div>
+        </div>
+        <!-- 置き場所が決まらない機体の区画。見出しの文言と件数は paintOrphanBay() が
+             入れるので data-i18n は付けない（付けると apply() が件数ごと塗り戻す）。 -->
+        <div class="orphan-bay" hidden>
+          <div class="bay-head"><span class="bay-title"></span><button type="button" class="bay-toggle"></button></div>
+          <div class="bay-note"></div>
+          <div class="bay-body"></div>
         </div>
       </div>
       <aside class="team-side">
@@ -1183,7 +1259,6 @@ body {
           <div class="side-head"><span data-i18n="log.title">Event log</span><span class="count log-count">0</span></div>
           <div class="log"></div>
           <div class="warnings" hidden></div>
-          <div class="live-orphans" hidden></div>
         </div>
       </aside>
     </div>
@@ -1347,6 +1422,7 @@ function boot() {
   try { setupLang(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
   try { applyZoom(); } catch (e) { markBroken(tr('broken.apply_zoom', { msg: (e && e.message) || e })); }
   try { applyLogPanel(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
+  try { applyBayPanel(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
   tick();
   setInterval(tick, POLL_MS);
   // 変更履歴画面(Phase 3)。ここが落ちてもミッション管制室側は止めない。
@@ -1384,6 +1460,7 @@ let currentTab = null;      // 表示中のタブのキー（tabKey() の値）
 let zoomLevel = 100;        // 拡大率 %
 let autoFitOn = true;       // 自動フォーカスが入っているか（localStorage: dashboard:zoomAuto）
 let logPanelOpen = true;    // イベントログ（右パネル）を開いているか（localStorage: dashboard:logOpen）
+let bayOpen = true;         // 下部区画を開いているか（localStorage: dashboard:bayOpen）
 // 自動フォーカスの調律用。詳しくは autoFitZoom() の頭のコメント。
 let fitRaf       = 0;       // 予約中の rAF
 let fitRecheck   = 0;       // 「あとでもう一度測る」予約（待ちに入ったまま忘れないための命綱）
@@ -1423,6 +1500,10 @@ function loadState() {
   // 真っさらな初回は開いた状態から始める（既定値=表示）。
   const logRaw = localStorage.getItem('dashboard:logOpen');
   logPanelOpen = (logRaw === '0' || logRaw === '1') ? (logRaw === '1') : true;
+  // 下部区画も既定は開いた状態。**閉じたまま忘れられるのが一番まずい**ので、
+  // 明示的に閉じた記録があるときだけ閉じる。
+  const bayRaw = localStorage.getItem('dashboard:bayOpen');
+  bayOpen = (bayRaw === '0' || bayRaw === '1') ? (bayRaw === '1') : true;
 }
 
 /** 保存済みの選択を今の形に読み替える。以前は「プロジェクトの slug」をそのまま
@@ -1451,6 +1532,13 @@ function applyZoom() {
   // 系統樹スクロール領域だけに拡大を適用（ログ・バーは固定）
   for (const scrollEl of document.querySelectorAll('.tree-scroll')) {
     scrollEl.style.zoom = zoomPercent;
+  }
+  // 下部区画も同じ拡大率にする。**木の中と同じ姿で並べる**のが区画の狙いなので、
+  // ここを外すと、自動フォーカスが木を縮めたぶんだけ区画のカードだけが大きく残る
+  // （自動フォーカスは既定で入っているので、揃うのは拡大率がちょうど100%のときだけになる）。
+  // 掛けるのは中身（.bay-body）だけ。見出し行は固定にして、畳んだときの高さを変えない。
+  for (const bayEl of document.querySelectorAll('.bay-body')) {
+    bayEl.style.zoom = zoomPercent;
   }
   // 「自動」の2文字を数値の前に出す。自動で動いている画面と、利用者が決めた画面は
   // 見分けが付かないといけない——操作していないのに大きさが変わる理由がこれだから。
@@ -1519,6 +1607,29 @@ function setLogPanel(open) {
   logPanelOpen = !!open;
   localStorage.setItem('dashboard:logOpen', logPanelOpen ? '1' : '0');
   applyLogPanel();
+}
+
+/** 下部区画（置き場所が決まらない機体）の開閉を画面に反映する。
+ *
+ *  状態は全チーム共通の1個なので、器の畳み方は #app のクラス1つで足りる
+ *  （applyLogPanel と同じ考え方）。ただしボタンは区画の見出し行＝チームごとの
+ *  DOM の中にあるので、文言だけは各チームぶん入れ直す。トップバーに出さないのは、
+ *  この区画が「出るときだけ出る」ものだからで、区画ごと消えている画面に
+ *  効かないボタンを常設したくない。閉じても見出し行は残るので押す手段は隠れない。 */
+function applyBayPanel() {
+  if (elApp) elApp.classList.toggle('bay-collapsed', !bayOpen);
+  for (const [, t] of teams) {
+    const b = t.els.bayToggle;
+    if (!b) continue;
+    b.textContent = tr(bayOpen ? 'live.bay_hide' : 'live.bay_show');
+    b.classList.toggle('on', bayOpen);
+  }
+}
+
+function setBayPanel(open) {
+  bayOpen = !!open;
+  localStorage.setItem('dashboard:bayOpen', bayOpen ? '1' : '0');
+  applyBayPanel();
 }
 
 /** 1フレームに1回だけ予約する。ResizeObserver のコールバックの中で寸法を書き換えないための
@@ -1972,7 +2083,7 @@ async function loadRun(t, tb) {
     const res = await fetch(url, { cache: 'no-store' });
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
-    data = normalizeState(body);
+    data = withPlacedOrphans(normalizeState(body));
     if (!data) throw new Error(tr('run.bad_shape'));
   } catch (e) {
     if (!teams.has(t.key)) return;      // 読み込んでいる間に消された記録
@@ -2038,6 +2149,76 @@ function freezeRef(s, tb) {
 
 /** /api/run の応答を render() が触る形にそろえる。1件ずつの読み込みでしか通らないので、
  *  ここは毎秒の負荷にならない。壊れた記録1件で画面全体が落ちないようにするための保険。 */
+/** 系統樹に置いた孤児のカードIDの頭。記録のIDと混ざらないように分ける。 */
+const ORPHAN_ID_PREFIX = 'LIVE:';
+
+/** 記録に無い稼働中の機体のうち、**起動元が実測で分かっていて、その親が画面にいる**
+ *  ものだけを、木に置ける形にして返す。
+ *
+ *  **ここで推測はしない。** 親は「その機体を起動した Agent 呼び出しのID
+ *  （meta.json の toolUseId）が、親のログの tool_use と一致した相手」で、
+ *  サーバーが実測で辿ったものしか渡ってこない。その親が記録と結ばれているときだけ
+ *  記録上のID（parentRecordId）が分かり、置き場所が一意に決まる。
+ *
+ *  親が分からない機体は置かない。「たぶん指令塔の下」で線を引いた瞬間、この画面は
+ *  実測を出す道具ではなくなる。それらは今までどおり木の下の一覧に並ぶ。
+ *
+ *  孤児の下にさらに孤児がぶら下がることがあるので、置けなくなるまで繰り返す
+ *  （親が置かれて初めて子の置き場所が決まる）。
+ */
+function placedOrphans(agents, sources) {
+  const list = (sources && Array.isArray(sources.liveOrphans)) ? sources.liveOrphans : [];
+  if (!list.length) return [];
+  const gen = new Map(agents.map((a) => [a.id, a.generation]));
+  const out = [];
+  let rest = list.slice();
+  for (let pass = 0; pass < 8 && rest.length; pass++) {
+    const left = [];
+    for (const o of rest) {
+      // 親が記録と結ばれていればその記録ID、結ばれていなくても親自身が既に
+      // 置かれていればそのカードID。どちらも実測で辿った相手なので推測は入らない。
+      let pid = o.parentRecordId || '';
+      if (!gen.has(pid) && o.parentAgentId) pid = ORPHAN_ID_PREFIX + o.parentAgentId;
+      if (!gen.has(pid)) { left.push(o); continue; }
+      const id = ORPHAN_ID_PREFIX + o.agentId;
+      gen.set(id, (gen.get(pid) || 0) + 1);
+      out.push({
+        id: id,
+        name: o.description || o.agentId,
+        parentId: pid,
+        generation: gen.get(id),
+        model: o.model || '',
+        mission: '',
+        // 記録が無い＝完了の合図も来ないので、状態は「稼働中」しか名乗れない。
+        // 実際に終わっているかは沈黙の長さでしか読めない（カードの b-idle に出る）。
+        status: 'running',
+        waiting: false,
+        live: o,
+        startedAt: null, finishedAt: null, result: null,
+        // **数えない印。** 記録に無いものを「機体数」や「完了数」に混ぜると、
+        // 締め忘れの判定（全機帰還したか）が狂う。
+        source: 'orphan',
+      });
+    }
+    if (left.length === rest.length) break;   // 1体も置けなかった。これ以上は決まらない
+    rest = left;
+  }
+  return out;
+}
+
+/** 木に置ける孤児を混ぜた状態を返す。元の状態は変えない。
+ *
+ *  **呼び出し口は2つある。** 過去の記録は normalizeState を通って入り、稼働中の
+ *  チームは毎秒の一覧からそのまま入る。片方だけに掛けると、片方の画面でだけ
+ *  孤児が木に出ない——しかもエラーにはならないので気づけない。
+ */
+function withPlacedOrphans(s) {
+  if (!s || !Array.isArray(s.agents)) return s;
+  const extra = placedOrphans(s.agents, s.sources);
+  if (!extra.length) return s;
+  return Object.assign({}, s, { agents: s.agents.concat(extra) });
+}
+
 function normalizeState(s) {
   if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
   const mission = Object.assign({}, (s.mission && typeof s.mission === 'object') ? s.mission : {});
@@ -2054,12 +2235,13 @@ function normalizeState(s) {
                 ? a : Object.assign({}, a, { status: 'standby' }))
     .map((a) => (typeof a.waiting === 'boolean' && a.status === 'running')
                 ? a : Object.assign({}, a, { waiting: false }));
+  const sources = (s.sources && typeof s.sources === 'object') ? s.sources : null;
   return {
     runId:   s.runId || null,
     project: (s.project && typeof s.project === 'object') ? s.project : {},
     mission, agents,
     log:     (Array.isArray(s.log) ? s.log : []).filter((e) => e && typeof e === 'object'),
-    sources: (s.sources && typeof s.sources === 'object') ? s.sources : null,
+    sources: sources,
   };
 }
 
@@ -2359,9 +2541,17 @@ function createTeam(slug, runId, live) {
       log:      q('.log'),
       logCount: q('.log-count'),
       warnings: q('.warnings'),
-      orphans:  q('.live-orphans'),
+      bay:       q('.orphan-bay'),
+      bayTitle:  q('.bay-title'),
+      bayToggle: q('.bay-toggle'),
+      bayNote:   q('.bay-note'),
+      bayBody:   q('.bay-body'),
     },
     cards:   new Map(),   // id -> { root, card, metrics..., status }
+    // 下部区画のカード。**t.cards とは別に持つ。** 同じ入れ物に入れると、
+    // render() の刈り取り（s.agents に居ない id を消す）で毎回消され、
+    // drawLinks が「そこにカードがある」と読んで系統樹の線の経路まで曲がる。
+    orphanCards: new Map(),   // LIVE:<agentId> -> entry
     cols:    new Map(),   // generation -> { col, body }
     logKeys: new Set(),   // 重複排除キーは at|who|text。チームごとに分けるので衝突しない
     layoutOrder:  [],     // 深さ優先順の機体。縦順の決定はこれが基準
@@ -2391,6 +2581,8 @@ function createTeam(slug, runId, live) {
     archiveAt:    null,   // 記録された時刻（バーの「過去の記録」札に出す）
   };
   teams.set(key, t);
+  bind(t.els.bayToggle, 'click', () => setBayPanel(!bayOpen));
+  applyBayPanel();          // 生まれたばかりのボタンに、いまの状態の文言を入れる
   elTeams.appendChild(root);
   boxOwner.set(t.els.canvas, t);
   boxOwner.set(t.els.scroll, t);
@@ -2597,7 +2789,11 @@ function ensureColumn(t, g) {
 
 // ------------------------------------------------------------------ カード生成・更新
 
-function createAgent(t, a) {
+/** カード1枚ぶんの DOM を組んで、参照をまとめた entry を返す。
+ *
+ *  **どこに置くかは決めない。** 系統樹のカードはここで作ってから t.cards に登録し、
+ *  下部区画のカードは登録せずに区画へ入れる（登録すると render の刈り取りで消える）。 */
+function buildAgentDom(a) {
   const root = document.createElement('div');
   root.className = 'agent ' + a.status + ' born';
   root.dataset.id = a.id;
@@ -2616,6 +2812,7 @@ function createAgent(t, a) {
     '<div class="c-top"><span class="c-name"></span><span class="c-id"></span></div>' +
     '<div class="c-badges"><span class="badge b-model"></span>' +
       '<span class="badge b-src self" hidden data-i18n="card.self_reported"></span>' +
+      '<span class="badge b-orphan" hidden data-i18n="card.orphan"></span>' +
       '<span class="badge b-wait" hidden data-i18n="card.awaiting"></span>' +
       '<span class="badge b-idle" hidden></span></div>' +
     '<div class="c-mission"></div>' +
@@ -2640,6 +2837,7 @@ function createAgent(t, a) {
     id:     card.querySelector('.c-id'),
     model:  card.querySelector('.b-model'),
     src:    card.querySelector('.b-src'),
+    orphan: card.querySelector('.b-orphan'),
     mission:card.querySelector('.c-mission'),
     wait:   card.querySelector('.b-wait'),
     idle:   card.querySelector('.b-idle'),
@@ -2660,6 +2858,11 @@ function createAgent(t, a) {
   root.addEventListener('animationend', function once(e) {
     if (e.animationName === 'pop') root.classList.remove('born');
   });
+  return entry;
+}
+
+function createAgent(t, a) {
+  const entry = buildAgentDom(a);
   t.cards.set(a.id, entry);
   return entry;
 }
@@ -2682,6 +2885,10 @@ function updateAgent(t, entry, a) {
   // 空 = モデル未指定。サーバーは言語に依存しない空文字で寄こすので、訳すのはここ。
   entry.model.textContent = a.model || tr('card.unknown_model');
   entry.src.hidden = a.source !== 'self';
+  // 記録に無い機体。線は実測で引いているが、**記録としては存在しない**ことを
+  // カード自身に言わせる。ここを出さないと、add を打ち忘れたことに気づけない。
+  if (entry.orphan) entry.orphan.hidden = a.source !== 'orphan';
+  entry.root.classList.toggle('orphan', a.source === 'orphan');
   entry.mission.textContent = a.mission || tr('card.no_mission');
   entry.mission.title = a.mission || '';
 
@@ -2746,6 +2953,18 @@ function updateAgentClock(entry, a, refNow) {
   let sec = null;
   if (a.status === 'running') sec = elapsedFrom(a.startedAt, refNow);
   else if (a.status === 'done') sec = a.result ? a.result.elapsedSec : null;
+  // 記録に無い機体は開始時刻を名乗れない（add が打たれていないので記録が無い）。
+  // 代わりに出すのは実測のログの幅（最初の行から最後の行まで）で、start からの
+  // 壁時計ではない。黙っている機体ではその差が開くが、同じカードに沈黙の長さも
+  // 出ているので、両方を並べて読める。
+  //
+  // **記録のある機体には使わない。** sec === null だけを条件にすると、記録はあるが
+  // startedAt が欠けている機体（孫の自己申告は書かないことがある）にも効いてしまい、
+  // 「経過」という同じ見出しで、壁時計と、黙ると増えない値が並ぶことになる。
+  if (sec === null && a.source === 'orphan'
+      && a.live && a.live.elapsedSec !== null && a.live.elapsedSec !== undefined) {
+    sec = a.live.elapsedSec;
+  }
   setMetric(entry.time, fmtSec(sec), sec !== null);
   // live は毎秒変わる。sig（再描画の判定）には数値を入れていないので、
   // 経過時間と同じこの経路で塗る。ここを通さないと値が固まったままになる。
@@ -2762,6 +2981,11 @@ function resetView(t) {
   if (t.followRaf) { cancelAnimationFrame(t.followRaf); t.followRaf = 0; }
   for (const [, entry] of t.cards) entry.root.remove();
   t.cards.clear();
+  // 下部区画のカードは render() の刈り取りを通らない（t.cards に居ないため）。
+  // ここで片付けないと、前のミッションの機体が区画に残り続ける。
+  for (const [, entry] of t.orphanCards) entry.root.remove();
+  t.orphanCards.clear();
+  if (t.els.bay) t.els.bay.hidden = true;
   for (const [, entry] of t.cols) { entry.body.style.removeProperty('height'); entry.col.remove(); }
   t.cols.clear();
   t.layoutOrder = [];
@@ -2800,7 +3024,9 @@ function render(t, s) {
   // --- ミッションバー
   const isHist = t.runId !== null;      // 過去の記録（history/<runId>）
   const frozen = !t.live;               // もう更新されない画面（記録、または流れてこなくなったもの）
-  const workers = s.agents.filter((a) => a.id !== COMMAND_ID);
+  // 木に置いた孤児は数えない。記録に無いものを機体数や完了数に混ぜると、
+  // 「全機帰還したのに締められていない」の判定が狂う。
+  const workers = s.agents.filter((a) => a.id !== COMMAND_ID && a.source !== 'orphan');
   const doneCount = workers.filter((a) => a.status === 'done').length;
 
   // 全機帰還したのに締められていない状態。動いている画面のときだけ言う
@@ -4188,58 +4414,85 @@ function stateSig(ts) {
     l: ts.log.length,
     s: Object.assign({}, src, {
       liveOrphans: (src.liveOrphans || []).map(
-        (o) => [o.agentId, o.state, o.parentAgentId || '']),
+        (o) => [o.agentId, o.state, o.parentAgentId || '', o.parentRecordId || '']),
     }),
   });
 }
 
+/** 記録に無いのに動いている機体を、木と同じ姿のカードにして返す。
+ *
+ *  名乗れる状態は running だけ。記録が無い＝完了の合図も来ないので、
+ *  終わったかどうかは沈黙の長さ（live.state / live.idleSec）でしか読めない。 */
+function orphanAgent(o) {
+  return {
+    id: ORPHAN_ID_PREFIX + o.agentId,
+    name: o.description || o.agentId,
+    parentId: null, generation: 0,
+    model: o.model || '',
+    mission: '',                 // 記録が無いので任務は名乗れない（カードは「未記載」を出す）
+    status: 'running', waiting: false,
+    live: o,
+    startedAt: null, finishedAt: null, result: null,
+    source: 'orphan',
+  };
+}
+
 // 記録に無いのに動いている機体。add の打ち忘れがその場で見えるようにする。
-// 系統樹には入れない——親を推測して線を引いたら、それは実測ではなくなる。
-function paintOrphans(t) {
-  const el = t.els.orphans;
-  if (!el) return;
-  const list = (t.state && t.state.sources && t.state.sources.liveOrphans) || [];
-  el.textContent = '';
-  el.hidden = !list.length;
-  if (!list.length) return;
-  const head = document.createElement('b');
-  head.textContent = tr('live.orphans_title', { n: list.length });
-  el.appendChild(head);
+// **起動元が実測で分かったものは系統樹の中にいる**ので、ここには並べない。
+// ここに残るのは「誰が起動したのか分からない機体」だけ——親を推測して線を引いたら、
+// それは実測ではなくなるので、置き場所が決まらないものは木の下のこの区画に置く。
+//
+// 一覧の文字列ではなくカードにしているのは、木の中の機体と**同じ姿で見えること**に
+// 意味があるため。動いている以上どちらも同じ機体で、違うのは記録があるかどうかだけ。
+function paintOrphanBay(t) {
+  const bay = t.els.bay;
+  if (!bay) return;
+  const all = (t.state && t.state.sources && t.state.sources.liveOrphans) || [];
+  const placed = new Set(((t.state && t.state.agents) || [])
+    .filter((a) => a.source === 'orphan' && a.live)
+    .map((a) => a.live.agentId));
+  const list = all.filter((o) => !placed.has(o.agentId));
+
+  bay.hidden = !list.length;
+  if (t.els.bayTitle) t.els.bayTitle.textContent = tr('live.bay_title', { n: list.length });
+  if (t.els.bayNote) t.els.bayNote.textContent = tr('live.bay_note');
+
+  // 要るぶんだけ作り、居なくなったぶんを片付ける。毎秒呼ばれる経路なので、
+  // 毎回作り直すとロボのアニメーションが1秒ごとに 0 から始まってしまう。
+  const alive = new Set();
   for (const o of list) {
-    const row = document.createElement('div');
-    // 先頭は description（Agent ツールへ渡した説明）。--name をこれに合わせれば
-    // 対応づけの規則1で必ず結ばれるので、直し方が画面から直に読める。
-    // **素性を先、様子を後**にする。この欄は1行に収める作りで、溢れた右端は「…」に
-    // なって消える。実測で、説明と起動元を末尾に置くと幅1500pxでも起動元が切れた。
-    // 消えてよいのは「いま何をしているか」（次のティックでまた出る）で、
-    // 「どの機体か」「誰が起動したか」は消えてはいけない。
-    const bits = [];
-    if (o.description) bits.push(o.description);
-    // 起動元は実測（meta.json の toolUseId が親のログの tool_use と一致した相手）。
-    // 分かったときだけ出す。分からない機体に「指令塔」などと補わないこと。
-    if (o.parentName) bits.push(tr('live.orphan_parent', { name: o.parentName }));
-    bits.push(o.model || tr('card.unknown_model'));
-    if (o.tool) bits.push(o.tool + (o.toolLabel ? ' ' + o.toolLabel : ''));
-    if (o.toolCalls !== null && o.toolCalls !== undefined) {
-      bits.push(tr('live.tools_n', { n: fmtNum(o.toolCalls) }));
+    const a = orphanAgent(o);
+    alive.add(a.id);
+    let e = t.orphanCards.get(a.id);
+    if (!e) {
+      e = buildAgentDom(a);
+      // 起動元は実測。記録には無くても、親のログに残っていて名前だけ分かることがある。
+      // 分かったときだけ出す。分からない機体に「指令塔」などと補わないこと。
+      const cap = document.createElement('div');
+      cap.className = 'bay-parent';
+      e.root.appendChild(cap);
+      e.bayParent = cap;
+      t.orphanCards.set(a.id, e);
+      t.els.bayBody.appendChild(e.root);
     }
-    // **黙っていることを言う。** この欄は記録が無い＝完了の合図も無い機体を並べるので、
-    // 終わった機体もそのまま残る（ログに終わりの印は無い。実測: 終了直後の最後の行は
-    // ただの assistant/text で、終端を示す行は書かれない）。だから「終わったかどうか」は
-    // 沈黙の長さでしか読めない。カードと同じ言い方で、その長さをそのまま出す。
-    if (o.state && o.state !== 'active' && o.idleSec !== null && o.idleSec !== undefined) {
-      bits.push(tr(o.state === 'stalled' ? 'live.stalled' : 'live.quiet',
-                   { s: fmtSec(o.idleSec) }));
-    }
-    row.textContent = bits.join('  /  ');
-    row.title = o.agentId + '  /  ' + bits.join('  /  ');
-    el.appendChild(row);
+    updateAgent(t, e, a);
+    e.bayParent.hidden = !o.parentName;
+    e.bayParent.textContent = o.parentName ? tr('live.orphan_parent', { name: o.parentName }) : '';
+    e.bayParent.title = e.bayParent.textContent;
+    e.root.title = o.agentId;
+  }
+  for (const [id, e] of t.orphanCards) {
+    if (alive.has(id)) continue;
+    e.root.remove();
+    t.orphanCards.delete(id);
   }
 }
 
 function updateClocks(t) {
   if (!t.state) return;
-  paintOrphans(t);
+  // 区画をここで描くのは、出す値（沈黙の長さ・ツール回数）が毎秒変わるのに
+  // stateSig がそれらを見ていない＝ render() が走らないため（stateSig のコメント参照）。
+  paintOrphanBay(t);
   if (t.state.mission.phase === 'running') {
     t.els.elapsed.textContent = fmtSec(elapsedFrom(t.state.mission.startedAt, t.refNow));
   } else if (t.state.mission.summary) {
@@ -4325,6 +4578,7 @@ function setupLang() {
 function relabelAll() {
   applyZoom();                       // 「自動 100%」の接頭辞と +/− の説明
   applyLogPanel();   // 開閉ボタンの title（表示/非表示）を今の言語で入れ直す
+  applyBayPanel();   // 下部区画の開閉ボタンの文言も同じ理由で入れ直す
 
   // タブは中身が同じなら組み直さない作りなので、署名を捨てて作り直させる
   tabsSig = null;
@@ -4426,9 +4680,12 @@ async function tick() {
     }
 
     // --- 増えたチームの器を作り、内容が変わったチームだけ描き直す
-    for (const ts of list) {
-      const slug = slugOf(ts);
+    for (const raw of list) {
+      const slug = slugOf(raw);
       if (slug === null) continue;
+      // 木に置ける孤児をここで混ぜる。以降の sig 比較・描画・時計は、
+      // 混ぜたあとの状態を見る（タブの機体数は raw のままなので数は増えない）。
+      const ts = withPlacedOrphans(raw);
       const key = tabKey(slug, null);
       let t = teams.get(key);
       if (!t) t = createTeam(slug, null, true);

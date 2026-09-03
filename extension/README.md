@@ -22,7 +22,7 @@ Claude Code のサブエージェントの動きを系統樹で見る「Subagent
 | Subagent Dashboard: サーバーを停止 | この拡張が起動したサーバーを止める |
 | Subagent Dashboard: 本体を配置／更新 | 同梱している本体を配置先へ置く |
 | Subagent Dashboard: 初期設定を実行 | 初期設定（`install.py`）を確認のうえ実行する |
-| Subagent Dashboard: 初期設定のフラグをリセット | 「もう済んでいる」記録を消し、次回また確認を出す |
+| Subagent Dashboard: 初期設定のフラグをリセット | 「もう済んでいる」記録を消し、次回また実行する |
 | Subagent Dashboard: ログを表示 | 起動の経過と Python 側の出力を見る |
 
 サーバーが動いていなければ拡張が起動します。すでに動いていればそれを使い回すので、プロセスが増えていくことはありません。ポートが埋まっていれば次の番号へ繰り上げ、その番号で画面を開きます。
@@ -48,7 +48,7 @@ Claude Code のサブエージェントの動きを系統樹で見る「Subagent
 | `agentDashboard.autoStartServer` | `true` | 開くときサーバーが居なければ立てる |
 | `agentDashboard.showStatusBar` | `true` | ステータスバーにボタンを出す |
 | `agentDashboard.stopServerOnExit` | `true` | VSCode 終了時に、この拡張が立てたサーバーを止める |
-| `agentDashboard.runSetupOnFirstRun` | `true` | 初めて使うとき、初期設定（`install.py`）を実行してよいか尋ねる |
+| `agentDashboard.runSetupOnFirstRun` | `true` | 初めて使うとき、初期設定（`install.py`）を実行する。**尋ねません**（入れた＝使う、という前提）。自分で実行したいときは切る |
 | `agentDashboard.autoUpdateOnNewVersion` | `true` | 拡張を新しくしたとき、本体の更新を尋ねる |
 
 `home` と `pythonPath` はユーザー設定にしか書けません。開いているフォルダ側の設定から実行対象を差し替えられないようにするためです。

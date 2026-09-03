@@ -1,0 +1,14 @@
+{
+  "updatedAt": "2026-09-02T16:53:39+09:00",
+  "sessions": [
+    {
+      "sessionId": "82c684a9-727d-4a7e-a09b-daf186db21cd",
+      "startedAt": null,
+      "endedAt": "2026-09-02T16:53:39+09:00",
+      "headline": "実物で見つけた2件（指令塔への誤った実測表示／孤児の沈黙）を d1929b3 にコミットした。版は上げていない",
+      "auto": false,
+      "fileCount": 0,
+      "toolCallCount": 0
+    }
+  ]
+}

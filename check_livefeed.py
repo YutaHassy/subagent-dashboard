@@ -557,6 +557,8 @@ def main() -> int:
         check("起動元は結ばれた記録の名前で出る", orph["ko1"].get("parentName"), "偵察班 地形走査")
         check("親が分からない機体には起動元を補わない",
               orph["hitori"].get("parentAgentId"), None)
+        check("親が分からない機体には記録IDも付かない（木に置けない）",
+              orph["hitori"].get("parentRecordId"), None)
         check("対応づけ用の手がかりは孤児にも漏れない",
               sorted(k for o in orph.values() for k in o if k.startswith("_")), [])
 
@@ -596,6 +598,8 @@ def main() -> int:
               orph["mago25"].get("parentAgentId"), "oya25")
         check("起動元は結ばれた記録の名前で出る",
               orph["mago25"].get("parentName"), "親の仕事")
+        # 画面が系統樹のどこに置くかは、この記録IDだけで決まる。無ければ置かない。
+        check("親の記録IDが分かる", orph["mago25"].get("parentRecordId"), "A")
 
         print()
         print("[26] 起動呼び出しのIDが一致したら、それだけで決まる")
@@ -869,6 +873,87 @@ def main() -> int:
             pass
         grew = set(p.name for p in (data_home / "missions").iterdir()) - seen
         check("錠は missions/ にディレクトリを作らない", sorted(grew), [])
+
+        print()
+        print("[30] 記録が1件も無くても、動いている機体は一覧に出る")
+        # add を全部打ち忘れた（あるいは hook が発火しなかった）ミッション。
+        # 指令塔しか記録が無いので、結ぶ相手は1体もいない。**そこで空を返すと、
+        # この一覧がいちばん要る場面で何も出なくなる。**
+        work30 = tmp / "work30"
+        work30.mkdir(parents=True, exist_ok=True)
+        path30 = str(work30.resolve())
+        slug30 = dashlib.slug_for_path(work30.resolve())
+        session30 = "30303030-2222-3333-4444-555555555555"
+        sub30 = live_root / slug30 / session30 / "subagents"
+        t30 = now - 120
+        write_agent(sub30, "solo30", start=t30, cwd=path30, session=session30,
+                    model="sonnet", description="誰にも登録されていない機体",
+                    tools=[("Read", {"file_path": "/x.py"}, 1)])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t30", project_path=path30,
+                      started=t30 - 5, agents=[command("claude-opus-5", t30 - 5)])
+        st = dashlib.build_state("t30")
+        check("指令塔しか記録が無くても、動いている機体は出る",
+              [o["agentId"] for o in st["sources"]["liveOrphans"]], ["solo30"])
+        check("その説明も読める",
+              [o["description"] for o in st["sources"]["liveOrphans"]],
+              ["誰にも登録されていない機体"])
+        check("記録のほうは指令塔だけのまま（数を水増ししない）",
+              sorted(a["id"] for a in st["agents"]), ["COMMAND"])
+
+        print()
+        print("[31] 終わった記録が抱えている実機は、記録に無い機体として出さない")
+        # 完了の合図でカードから live は外れるが、実機のログは残る。拾わないと、
+        # 系統樹に完了として並んでいる機体が、下の区画にもう一度出る。
+        work31 = tmp / "work31"
+        work31.mkdir(parents=True, exist_ok=True)
+        path31 = str(work31.resolve())
+        slug31 = dashlib.slug_for_path(work31.resolve())
+        session31 = "31313131-2222-3333-4444-555555555555"
+        sub31 = live_root / slug31 / session31 / "subagents"
+        t31 = now - 300
+        write_agent(sub31, "fin31", start=t31, cwd=path31, session=session31,
+                    model="sonnet", description="終わった調べもの",
+                    tools=[("Read", {"file_path": "/f.py"}, 1)])
+        write_agent(sub31, "run31", start=t31, cwd=path31, session=session31,
+                    model="sonnet", description="まだ動いている調べもの",
+                    tools=[("Read", {"file_path": "/r.py"}, 2)])
+        write_agent(sub31, "none31", start=t31, cwd=path31, session=session31,
+                    model="sonnet", description="誰も知らない機体",
+                    tools=[("Read", {"file_path": "/n.py"}, 3)])
+        reset(livefeed)
+        finrec = dict(rec("FIN", "終わった調べもの", "claude-sonnet-5", t31),
+                      status="done",
+                      result={"headline": "", "tokens": None, "toolCalls": None,
+                              "elapsedSec": 10, "finishedAt": None})
+        write_mission(data_home / "missions", "t31", project_path=path31,
+                      started=t31 - 5,
+                      agents=[command("claude-opus-5", t31 - 5), finrec,
+                              rec("RUN", "まだ動いている調べもの", "claude-sonnet-5", t31)])
+        st = dashlib.build_state("t31")
+        by = {a["id"]: a for a in st["agents"]}
+        check("残るのは、どの記録も知らない機体だけ",
+              [o["agentId"] for o in st["sources"]["liveOrphans"]], ["none31"])
+        check("走っている記録は横取りされていない",
+              (by["RUN"]["live"] or {}).get("agentId"), "run31")
+        check("終わった記録に実測は載せない（完了通知の値と混ぜない）",
+              by["FIN"]["live"], None)
+
+        # 同じ名前の完了記録が2件あるときは、どちらのものか決まらない。
+        # **決まらないなら結ばない。** 片方に付けたら、それは推測になる。
+        reset(livefeed)
+        finrec2 = dict(rec("FIN2", "終わった調べもの", "claude-sonnet-5", t31),
+                       status="done",
+                       result={"headline": "", "tokens": None, "toolCalls": None,
+                               "elapsedSec": 10, "finishedAt": None})
+        write_mission(data_home / "missions", "t31", project_path=path31,
+                      started=t31 - 5,
+                      agents=[command("claude-opus-5", t31 - 5), finrec, finrec2,
+                              rec("RUN", "まだ動いている調べもの", "claude-sonnet-5", t31)])
+        st = dashlib.build_state("t31")
+        check("名前が重なっていたら、どちらにも結ばない",
+              sorted(o["agentId"] for o in st["sources"]["liveOrphans"]),
+              ["fin31", "none31"])
 
     finally:
         os.environ.pop("AGENT_DASHBOARD_DATA_HOME", None)

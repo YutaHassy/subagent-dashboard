@@ -232,7 +232,7 @@ Typing "Subagent Dashboard" in the command palette (`Ctrl+Shift+P`) does the sam
 | Subagent Dashboard: Stop the server | Stop the server this extension started |
 | Subagent Dashboard: Deploy or update the tool | Put the bundled tool in its deploy location |
 | Subagent Dashboard: Run initial setup | Run initial setup (`install.py`) after confirmation |
-| Subagent Dashboard: Reset the setup flag | Clear the "already done" record so it asks again next time |
+| Subagent Dashboard: Reset the setup flag | Clear the "already done" record so it runs again next time |
 | Subagent Dashboard: Show the log | See the startup progress and the output from the Python side |
 
 If the server is not running, the extension starts it. If one is already running it reuses it, so processes do not pile up. If the port is taken it moves up to the next number and opens the screen on that one.

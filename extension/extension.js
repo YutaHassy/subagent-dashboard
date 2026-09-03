@@ -50,14 +50,17 @@ const PANEL_TYPE = 'agentDashboard.panel';
  * ワークスペースを移っても・拡張を入れ直しても「もう済んでいる」ことを覚えている。
  */
 const SETUP_DONE_KEY = 'initialSetupDone';      // 一度でも成功したら true
-const SETUP_SKIP_KEY = 'initialSetupSkipped';   // 「今後たずねない」が選ばれたら true
+// 「今後たずねない」の記録（initialSetupSkipped）は廃止した。**尋ねなくなったので、
+// 断る手段も無くなった**——拡張を入れた＝使う、という前提に変えたため。
+// 古い版で立てた値が globalState に残っていても、もう誰も読まない。
+// 自動で走らせたくない環境は、設定 agentDashboard.runSetupOnFirstRun を切る。
 const SETUP_TIMEOUT_MS = 180000;                // install.py の実行にかける上限
 const MACHINE_KEY_STORED = 'lastMachineKey';    // 前回起動したマシンのキーを保存
 
 /**
  * 変更履歴トラッキングの初期設定（changelog_setup.py）の実行記録。
  *
- * **マシン単位の SETUP_DONE_KEY / SETUP_SKIP_KEY とは別軸。** 1台のマシンで複数の
+ * **マシン単位の SETUP_DONE_KEY とは別軸。** 1台のマシンで複数の
  * リポジトリを開く利用者がほとんどなので、ワークスペース（＝プロジェクト）ごとに
  * 判定しないと2つ目以降のリポジトリで一切設定されない。キーはワークスペースの絶対パスを
  * ハッシュ化した値を末尾に付けて作る（例: `changelogSetupDone:<hash>`）。
@@ -68,9 +71,12 @@ const CHANGELOG_SETUP_SKIP_PREFIX = 'changelogSetupSkipped:';
  * 「今後どのワークスペースでもたずねない」。**ハッシュを付けない、全体に効く1本の鍵。**
  *
  * ワークスペース単位の SKIP しか無いと、リポジトリを開くたびに1枚ずつモーダルが出て、
- * 全部まとめて断る手段が設定のトグルだけになる（マシン単位フローの SETUP_SKIP_KEY は
- * 全体に効くので、そちらとの不整合でもある）。ここを立てたら、以後どのワークスペースでも
+ * 全部まとめて断る手段が設定のトグルだけになる。ここを立てたら、以後どのワークスペースでも
  * 自動では持ちかけない（コマンドからの手動実行は今まで通り通る）。
+ *
+ * **マシン単位の初期設定にはこれに当たるものが無い。** あちらは確認そのものを廃止した
+ * （拡張を入れた＝使う）。こちらが残っているのは、書き込む先が利用者のリポジトリの中で、
+ * 断られたら1バイトも書かない、が守るべき順序だから。
  */
 const CHANGELOG_SETUP_SKIP_ALL_KEY = 'changelogSetupSkippedEverywhere';
 const CHANGELOG_SETUP_TIMEOUT_MS = 180000;      // changelog_setup.py の実行にかける上限（install.py と同じ目安）
@@ -327,7 +333,8 @@ async function offerUpdate(context, home) {
  * 失敗には reason を必ず付ける。失敗の紙のボタンは reason で決めており、
  * 文面の文字言い回しに依存させると、文章を直した拍子にボタンが変わってしまう。
  *
- * @param {boolean} interactive 配置してよいか尋ねてよければ true
+ * @param {boolean} interactive 未配置なら、その場で配置してよければ true
+ *   （false は「押した覚えのない操作を勝手に始めない」ための道。タブの復元がそれ）
  * @returns {Promise<{ home: string } | { error: string, reason: string }>}
  */
 async function ensureHome(context, interactive) {
@@ -383,19 +390,12 @@ async function ensureHome(context, interactive) {
     };
   }
 
-  const deploy = t('Deploy');
-  const pick = await vscode.window.showInformationMessage(
-    t('The Subagent Dashboard tool will be placed here:') + `\n${DEPLOY_DIR}\n\n` +
-    t('(The files bundled with the extension are copied. Your records will collect here from now on.)'),
-    { modal: true },
-    deploy
-  );
-  if (pick !== deploy) {
-    return {
-      reason: 'declined',
-      error: t('It was not deployed, so it cannot be opened. You can run it later from "Deploy or update the tool".'),
-    };
-  }
+  // **置いてよいかは訊かない。** 拡張を入れた＝使う、という前提。ここで断られた画面は
+  // 「道具が無いので開けません」としか言えず、入れた人が次に何をすればよいのかも分からない。
+  // 置くのは利用者のホーム配下の1か所で、同梱の荷物をそのまま複製するだけ。
+  // どこへ置いたかはログに残る。
+  log(t('The Subagent Dashboard tool will be placed here:') + ' ' + DEPLOY_DIR + '\n'
+    + t('(The files bundled with the extension are copied. Your records will collect here from now on.)'));
   const placed = deployBundle(context);
   if ('error' in placed) return { reason: 'deployFailed', error: placed.error };
   // 置けたら初期設定を持ちかける。待たない — ここで待つと画面が出るのが遅くなるし、
@@ -728,12 +728,10 @@ async function runSetupSteps(context, home, manualIn) {
     // ---- 環境変数トリガー: AGENT_DASHBOARD_RESET_SETUP または CLAUDE_CODE_RESET_ONBOARDING が '1' ならリセット
     if (process.env.AGENT_DASHBOARD_RESET_SETUP === '1' || process.env.CLAUDE_CODE_RESET_ONBOARDING === '1') {
       await store.update(SETUP_DONE_KEY, false);
-      await store.update(SETUP_SKIP_KEY, false);
       log(t('An environment variable triggered a setup reset.'));
     }
 
     if (store.get(SETUP_DONE_KEY)) { log(t('First-time setup has already run (globalState).')); return; }
-    if (store.get(SETUP_SKIP_KEY)) { log(t('First-time setup is set to "Do not ask again".')); return; }
     setupPrompted = true;
   }
 
@@ -761,36 +759,42 @@ async function runSetupSteps(context, home, manualIn) {
       return;
     }
 
-    // ---- 要件4: 何をするかを見せて、確認を取る
+    // ---- 何をするかを見せる。**「するかどうか」は訊かない。**
+    // 拡張を入れた＝使う、という前提に変えた。初期設定をしないまま入れておく状態は、
+    // 「Ctrl+Shift+D が効かない」「Claude Code が使い方を知らない」という、
+    // 壊れているのと見分けが付かない画面にしかならないため。
+    // 書き込むのは利用者のホーム配下の2か所だけで、CLAUDE.md は目印で囲んだ区画しか
+    // 書き換えないし、--uninstall で戻せる。走ったことは進捗表示と完了通知で分かる。
+    //
+    // 確認を出すのは、利用者が自分でコマンド「初期設定を実行」を呼んだときだけ。
+    // そこは何が書かれるかを読める唯一の場所で、押した本人が閉じれば止められる。
+    // 失敗して「もう一度試す」で戻ってきたときは出さない（manualIn で見るのはそのため。
+    // 押し直しのたびに同じモーダルを出しても、読む内容は増えない）。
     const claudeMd = path.join(claudeConfigDir(), 'CLAUDE.md');
     const keybindings = vscodeKeybindingsPath();
-    const yes = manual ? t('Run') : t('Set up');
-    const notAgain = t('Do not ask again');
-    const buttons = manual ? [yes] : [yes, notAgain];
-
-    const pick = await vscode.window.showInformationMessage(
-      t('The first-time setup for Subagent Dashboard will run. Is that OK?'),
-      {
-        modal: true,
-        detail:
-          t('Settings will be written into these two files.') + '\n\n' +
-          `1. ${claudeMd}\n` +
-          t('   Text that teaches Claude Code how to use Subagent Dashboard. Only the block between\n   the markers is rewritten, so nothing else already written there is lost.') + '\n\n' +
-          `2. ${keybindings}\n` +
-          t('   Makes Ctrl+Shift+D open Subagent Dashboard. If that key is already taken, it is left alone.') + '\n\n' +
-          t('To undo it: python "{path}" --uninstall', { path: installer }),
-      },
-      ...buttons
-    );
-
-    if (pick === notAgain) {
-      if (store) await store.update(SETUP_SKIP_KEY, true);
-      log(t('First-time setup: "Do not ask again" was chosen. You can still run it any time from the command "Run initial setup".'));
-      return;
-    }
-    if (pick !== yes) {
-      log(t('First-time setup was skipped. You can run it any time from the command "Run initial setup".'));
-      return;
+    if (manualIn && attempt === 1) {
+      const yes = t('Run');
+      const pick = await vscode.window.showInformationMessage(
+        t('The first-time setup for Subagent Dashboard will run. Is that OK?'),
+        {
+          modal: true,
+          detail:
+            t('Settings will be written into these two files.') + '\n\n' +
+            `1. ${claudeMd}\n` +
+            t('   Text that teaches Claude Code how to use Subagent Dashboard. Only the block between\n   the markers is rewritten, so nothing else already written there is lost.') + '\n\n' +
+            `2. ${keybindings}\n` +
+            t('   Makes Ctrl+Shift+D open Subagent Dashboard. If that key is already taken, it is left alone.') + '\n\n' +
+            t('To undo it: python "{path}" --uninstall', { path: installer }),
+        },
+        yes
+      );
+      if (pick !== yes) {
+        log(t('First-time setup was skipped. You can run it any time from the command "Run initial setup".'));
+        return;
+      }
+    } else if (!manualIn && attempt === 1) {
+      log(t('Running the first-time setup without asking (installing the extension is taken to mean it will be used). Files: {a} / {b}',
+        { a: claudeMd, b: keybindings }));
     }
 
     const python = await resolvePython();
@@ -815,10 +819,7 @@ async function runSetupSteps(context, home, manualIn) {
 
     // ---- 要件3: 成功と失敗で出し分ける
     if (r.kind === 'ok') {
-      if (store) {
-        await store.update(SETUP_DONE_KEY, true);
-        await store.update(SETUP_SKIP_KEY, false);
-      }
+      if (store) await store.update(SETUP_DONE_KEY, true);
       log(t('First-time setup finished.'));
       const openIt = t('Open Subagent Dashboard');
       const viewLog1 = t('View log');
@@ -2571,8 +2572,7 @@ function activate(context) {
           log(t('The machine changed ({from} -> {to}). Resetting the first-time setup.',
             { from: lastMachineKey, to: currentMachineKey }));
           await store.update(SETUP_DONE_KEY, false);
-          await store.update(SETUP_SKIP_KEY, false);
-          setupPrompted = false;  // リセット時には再度確認を出す
+          setupPrompted = false;  // リセット時にはもう一度走らせる
         }
         // 初回やマシン変更後は現在のマシンキーを記録
         if (!lastMachineKey || lastMachineKey !== currentMachineKey) {
@@ -2629,7 +2629,6 @@ function activate(context) {
           return;
         }
         await store.update(SETUP_DONE_KEY, false);
-        await store.update(SETUP_SKIP_KEY, false);
         const currentMachineKey = await getMachineKey();
         await store.update(MACHINE_KEY_STORED, currentMachineKey);
         setupPrompted = false;
