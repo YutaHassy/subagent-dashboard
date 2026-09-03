@@ -674,8 +674,14 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
     running = [a for a in agents
                if a.get("status") == "running"
                and dashlib.as_str(a.get("id")) != dashlib.COMMAND_ID]
-    if not running:
-        return []
+    # **running が空でも、ここで止めない。**
+    # 記録が1件も無いミッション（add を全部打ち忘れた／hook が発火しなかった）は、
+    # 記録に無い実機の一覧がいちばん要る場面そのものなのに、ここで返すとその場面で
+    # だけ何も出なくなる——画面は「機体0体」と言い切り、実際には動いている機体が
+    # あることに気づく手段が消える。実測（2026-09-03）: hook が発火しないまま
+    # 3体を起動したミッションで、孤児が0件になった。
+    # 以降の対応づけの輪はどれも running を回すだけなので、空なら結ばれる相手が
+    # いない＝候補は全員そのまま孤児として下まで流れる。
 
     now = time.time()
     started = parse_ts(dashlib.as_str(mission.get("startedAt")))
@@ -855,6 +861,46 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         if len(_sticky) > 64:      # 終わったミッションのぶんを溜め込まない
             for k in list(_sticky)[:-32]:
                 _sticky.pop(k, None)
+
+    # 終わった記録が抱えている実機。**これは「記録に無い機体」ではない。**
+    # 完了の合図を受け取るとカードから live を外すが、実機のログはそのまま残る
+    # （ログに終端の印は無い。終了直後の最後の行はただの assistant/text）。
+    # 拾わないと、系統樹に完了として並んでいる機体が、そのまま下の区画に
+    # もう一度出る（実測 2026-09-03: 調査を終えた3体が木と区画の両方に出た）。
+    #
+    # 使うのは確実な2つだけ——起動呼び出しのIDの一致と、名前と description の完全一致。
+    # **走っている記録の対応づけが全部終わったあとに回す**ので、ここで横取りは起きない。
+    # 名前で結ぶほうに compatible() の門を通さないのは、この規則が拾う相手が
+    # 「もう終わっている機体」で、記録が後から足されること（打ち忘れに気づいて
+    # あとで add する）が普通にあるため——開始時刻のずれで落とすと、まさにその
+    # 打ち忘れの場面で二重に出たままになる。代わりに**双方向の一意**を求める。
+    # 結んでも live は載らない（上の輪は running だけを回る）。孤児から外れることと、
+    # その機体を親に持つ孫の置き場所が決まることの2つが目的。
+    finished = [a for a in agents
+                if a.get("status") == "done"
+                and dashlib.as_str(a.get("id")) != dashlib.COMMAND_ID]
+    fin_names = {}
+    for rec in finished:
+        nm = dashlib.as_str(rec.get("name")).strip()
+        if nm:
+            fin_names[nm] = fin_names.get(nm, 0) + 1
+    for rec in sorted(finished, key=lambda r: dashlib.as_str(r.get("id"))):
+        rid = dashlib.as_str(rec.get("id"))
+        if rid in pairs:
+            continue
+        hits = []
+        tuid = dashlib.as_str(rec.get("toolUseId")).strip()
+        if tuid:
+            hits = [c for c in cands
+                    if c["agentId"] not in used and c["_toolUseId"] == tuid]
+        if len(hits) != 1:
+            name = dashlib.as_str(rec.get("name")).strip()
+            hits = ([c for c in cands
+                     if c["agentId"] not in used and c["description"].strip() == name]
+                    if name and fin_names.get(name) == 1 else [])
+        if len(hits) == 1:
+            pairs[rid] = hits[0]["agentId"]
+            used.add(hits[0]["agentId"])
 
     # 記録に無い実機の親を、実測で辿る。meta.json の toolUseId はその機体を起動した
     # Agent 呼び出しのIDで、同じIDは親のログに tool_use として現れる。だから親子は
