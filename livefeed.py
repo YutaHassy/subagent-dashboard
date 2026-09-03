@@ -740,9 +740,29 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
     sticky_key = slug + "|" + dashlib.as_str(mission.get("startedAt"))
     prev = _sticky.get(sticky_key, {})
 
+    # 0. 起動呼び出しのIDが一致するもの。**推測がいっさい入らない唯一の規則**で、
+    #    ほかのどれよりも強い。記録側の toolUseId は hook が自動で登録したときに入り
+    #    （update_state.py hook）、実機側は meta.json に書かれている。同じ Agent
+    #    呼び出しから出た2つの値なので、一致は「同じもの」を意味する。
+    #
+    #    **compatible() の門を通さない。** あの門はモデル表記と時刻のずれで
+    #    「たぶん違う」を落とすためのもので、確実な手がかりに重ねる意味がない。
+    #    重ねると、モデル名の書き方が違うだけで確実な対応づけを捨てることになる。
+    for rec in sorted(running, key=lambda r: r["id"]):
+        tuid = dashlib.as_str(rec.get("toolUseId")).strip()
+        if not tuid:
+            continue
+        hits = [c for c in cands
+                if c["agentId"] not in used and c["_toolUseId"] == tuid]
+        if len(hits) == 1:
+            pairs[rec["id"]] = hits[0]["agentId"]
+            used.add(hits[0]["agentId"])
+
     # 1. 名前が Agent ツールの description と完全に一致するもの。運用でこの2つを
     #    そろえてもらえば、ここだけで決まる（Workflow 経由には description が無い）。
     for rec in sorted(running, key=lambda r: r["id"]):
+        if rec["id"] in pairs:
+            continue
         name = dashlib.as_str(rec.get("name")).strip()
         if not name:
             continue

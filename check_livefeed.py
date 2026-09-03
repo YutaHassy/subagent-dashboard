@@ -14,8 +14,11 @@
 
 from __future__ import annotations
 
+import argparse
+import io
 import json
 import os
+import subprocess
 import shutil
 import sys
 import tempfile
@@ -593,6 +596,279 @@ def main() -> int:
               orph["mago25"].get("parentAgentId"), "oya25")
         check("起動元は結ばれた記録の名前で出る",
               orph["mago25"].get("parentName"), "親の仕事")
+
+        print()
+        print("[26] 起動呼び出しのIDが一致したら、それだけで決まる")
+        # hook が自動で登録した記録には toolUseId が入る。実機の meta.json にも
+        # 同じ値が入っている。**同じ Agent 呼び出しから出た2つの値**なので、
+        # 一致は「同じもの」を意味する。名前も時刻もモデルも見る必要がない。
+        work26 = tmp / "work26"
+        work26.mkdir(parents=True, exist_ok=True)
+        path26 = str(work26.resolve())
+        slug26 = dashlib.slug_for_path(work26.resolve())
+        session26 = "26262626-2222-3333-4444-555555555555"
+        sub26 = live_root / slug26 / session26 / "subagents"
+        t26 = now - 150
+        write_agent(sub26, "alfa26", start=t26, cwd=path26, session=session26,
+                    model="sonnet", description="作業その一",
+                    tool_use_id="toolu_AAA111",
+                    tools=[("Read", {"file_path": "/a.py"}, 1)])
+        write_agent(sub26, "bravo26", start=t26, cwd=path26, session=session26,
+                    model="sonnet", description="作業その二",
+                    tool_use_id="toolu_BBB222",
+                    tools=[("Read", {"file_path": "/b.py"}, 1)])
+        reset(livefeed)
+        # わざと**全部ずらす**。名前は一致しない、モデルは違う、開始時刻は窓の外。
+        # これで規則1〜4はどれも発火しない。それでも結ばれるなら、結んだのは規則0。
+        hard = dict(rec("A", "名前はぜんぜん違う", "claude-opus-5", t26 - 2000),
+                    toolUseId="toolu_AAA111")
+        write_mission(data_home / "missions", "t26", project_path=path26, started=t26 - 5,
+                      agents=[command("claude-opus-5", t26 - 5),
+                              hard,
+                              rec("B", "作業その二", "claude-sonnet-5", t26)])
+        st = dashlib.build_state("t26")
+        by = {a["id"]: a for a in st["agents"]}
+        check("IDが一致すれば、名前もモデルも時刻も違っていて結ばれる",
+              (by["A"]["live"] or {}).get("agentId"), "alfa26")
+        check("IDを持たない記録は、いままでどおり名前で結ばれる",
+              (by["B"]["live"] or {}).get("agentId"), "bravo26")
+        check("全員結ばれたので孤児は出ない",
+              [o["agentId"] for o in st["sources"]["liveOrphans"]], [])
+
+        reset(livefeed)
+        # 覚えのないIDを持っていても、ほかの規則の邪魔をしない。
+        write_mission(data_home / "missions", "t26", project_path=path26, started=t26 - 5,
+                      agents=[command("claude-opus-5", t26 - 5),
+                              dict(rec("A", "作業その一", "claude-sonnet-5", t26),
+                                   toolUseId="toolu_NOPE99"),
+                              rec("B", "作業その二", "claude-sonnet-5", t26)])
+        st = dashlib.build_state("t26")
+        by = {a["id"]: a for a in st["agents"]}
+        check("当たらないIDは素通りして、名前で結ばれる",
+              (by["A"]["live"] or {}).get("agentId"), "alfa26")
+
+        print()
+        print("[27] hook が起動と完了を自分で書く")
+        # hook の payload は Claude Code が渡してくるものをそのまま使う。ここで
+        # 確かめるのは「渡されたものを、そのまま記録に落とせるか」だけ。
+        import update_state  # noqa: F401  （[27][29] で使う）
+        work27 = tmp / "work27"
+        work27.mkdir(parents=True, exist_ok=True)
+        path27 = str(work27.resolve())
+        slug27 = dashlib.slug_for_path(work27.resolve())
+        session27 = "27272727-2222-3333-4444-555555555555"
+        sub27 = live_root / slug27 / session27 / "subagents"
+        t27 = now - 100
+        # hook は「いま居るディレクトリ」でプロジェクトを決めるので、記録の slug は
+        # そのディレクトリから出るものでなければならない（運用では start を
+        # そのディレクトリで打つので自然にそうなる）。
+        write_mission(data_home / "missions", slug27, project_path=path27, started=t27,
+                      agents=[command("claude-opus-5", t27)])
+
+        def fire(payload: dict) -> None:
+            """hook を1回呼ぶ。cwd は呼ぶ前の場所に必ず戻す。"""
+            keep_in, keep_cwd = sys.stdin, os.getcwd()
+            sys.stdin = io.StringIO(json.dumps(payload, ensure_ascii=False))
+            try:
+                update_state.cmd_hook(argparse.Namespace(project=None))
+            except SystemExit:
+                pass
+            finally:
+                sys.stdin = keep_in
+                os.chdir(keep_cwd)
+
+        def agents_of(slug: str) -> dict:
+            got = json.loads((data_home / "missions" / slug / "state.json")
+                             .read_text(encoding="utf-8"))
+            return {a["id"]: a for a in got["agents"]}
+
+        fire({"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": path27,
+              "tool_use_id": "toolu_ABC12345",
+              "tool_input": {"description": "偵察その一", "model": "claude-sonnet-5",
+                             "prompt": "地図を作る"}})
+        got = agents_of(slug27)
+        check("起動が記録される", sorted(got), ["AUTO-ABC12345", "COMMAND"])
+        one = got["AUTO-ABC12345"]
+        check("名前は description のまま", one["name"], "偵察その一")
+        check("モデルは渡されたもの", one["model"], "claude-sonnet-5")
+        check("任務は指示文のまま", one["mission"], "地図を作る")
+        check("親は指令塔", one["parentId"], "COMMAND")
+        check("起動呼び出しのIDを控えている", one["toolUseId"], "toolu_ABC12345")
+        check("状態は稼働中", one["status"], "running")
+
+        fire({"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": path27,
+              "tool_use_id": "toolu_ABC12345",
+              "tool_input": {"description": "偵察その一（打ち直し）"}})
+        check("同じ呼び出しが2回来ても増えない", len(agents_of(slug27)), 2)
+        check("同じ呼び出しが2回来ても上書きしない",
+              agents_of(slug27)["AUTO-ABC12345"]["name"], "偵察その一")
+
+        # 下請けが自分で起動した孫。呼び出し元の meta.json にある toolUseId から
+        # 親の記録が決まる。ここが効かないと系統樹が1列になる。
+        write_agent(sub27, "child27", start=t27 + 5, cwd=path27, session=session27,
+                    model="sonnet", description="偵察その一",
+                    tool_use_id="toolu_ABC12345")
+        fire({"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": path27,
+              "tool_use_id": "toolu_DEF67890", "agent_id": "child27",
+              "tool_input": {"description": "偵察その一の下請け", "prompt": "細部を見る"}})
+        got = agents_of(slug27)
+        check("孫も記録される", sorted(got),
+              ["AUTO-ABC12345", "AUTO-DEF67890", "COMMAND"])
+        check("孫の親は、起動した機体の記録",
+              got["AUTO-DEF67890"]["parentId"], "AUTO-ABC12345")
+
+        fire({"hook_event_name": "PostToolUse", "tool_name": "Agent", "cwd": path27,
+              "tool_use_id": "toolu_ABC12345", "duration_ms": 99000,
+              "tool_response": {"agentId": "child27", "totalTokens": 12345,
+                                "totalToolUseCount": 7, "totalDurationMs": 42000,
+                                "resolvedModel": "claude-sonnet-5"}})
+        one = agents_of(slug27)["AUTO-ABC12345"]
+        check("完了になる", one["status"], "done")
+        check("所要は機体自身の時間（ツール呼び出しの時間ではない）",
+              one["result"]["elapsedSec"], 42)
+        check("トークンは渡されたまま", one["result"]["tokens"], 12345)
+        check("ツール回数は渡されたまま", one["result"]["toolCalls"], 7)
+        check("見出しは空のまま（合図に一行要約は入っていない）",
+              one["result"]["headline"], "")
+
+        fire({"hook_event_name": "PostToolUse", "tool_name": "Agent", "cwd": path27,
+              "tool_use_id": "toolu_NOTHERE", "tool_response": {"totalTokens": 1}})
+        check("覚えのない完了は何もしない", len(agents_of(slug27)), 3)
+
+        fire({"hook_event_name": "PreToolUse", "tool_name": "Read", "cwd": path27,
+              "tool_use_id": "toolu_READ0001", "tool_input": {"file_path": "/x"}})
+        check("Agent 以外のツールでは何も書かない", len(agents_of(slug27)), 3)
+
+        # ダッシュボードを使っていない場所で起動しても、何も作らない。
+        work27b = tmp / "work27b"
+        work27b.mkdir(parents=True, exist_ok=True)
+        fire({"hook_event_name": "PreToolUse", "tool_name": "Agent",
+              "cwd": str(work27b.resolve()), "tool_use_id": "toolu_ELSE0001",
+              "tool_input": {"description": "よその仕事"}})
+        check("start していない場所には記録を作らない",
+              (data_home / "missions" / dashlib.slug_for_path(work27b.resolve())
+               / "state.json").exists(), False)
+
+        print()
+        print("[29] hook がどのミッションに書くかを決める")
+        # **cwd だけで決めると、--project で分けたチームが丸ごと記録されない。**
+        # `start --project <名前>` のミッションは cwd から出る slug の下には無いので、
+        # そこだけを見にいくと1件も書けず、そのチームの機体が全部
+        # 「記録に無い稼働中の機体」になる。
+        work29 = tmp / "work29"
+        work29.mkdir(parents=True, exist_ok=True)
+        path29 = str(work29.resolve())
+        slug29 = dashlib.slug_for_path(work29.resolve())
+        session29 = "29292929-2222-3333-4444-555555555555"
+        sub29 = live_root / slug29 / session29 / "subagents"
+        t29 = now - 100
+
+        # cwd から出る slug には記録を作らない。--project で分けた2本だけを作る。
+        write_mission(data_home / "missions", "alfa29", project_path=path29,
+                      started=t29, agents=[command("claude-opus-5", t29)])
+        write_mission(data_home / "missions", "bravo29", project_path=path29,
+                      started=t29, keep_others=True,
+                      agents=[command("claude-opus-5", t29)])
+        check("cwd から出る記録はそもそも無い",
+              (data_home / "missions" / slug29 / "state.json").exists(), False)
+
+        def phase(slug: str, value: str) -> None:
+            f = data_home / "missions" / slug / "state.json"
+            got = json.loads(f.read_text(encoding="utf-8"))
+            got["mission"]["phase"] = value
+            f.write_text(json.dumps(got, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # --- 稼働中が1本だけなら、名前が違ってもそこへ書く
+        phase("bravo29", "done")
+        fire({"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": path29,
+              "tool_use_id": "toolu_ONLYONE1",
+              "tool_input": {"description": "1本だけのとき"}})
+        check("--project で分けていても、稼働中が1本ならそこへ書く",
+              sorted(agents_of("alfa29")), ["AUTO-ONLYONE1", "COMMAND"])
+        check("もう片方には書かない", sorted(agents_of("bravo29")), ["COMMAND"])
+
+        # --- 完了は、起動時に書いた場所へ必ず戻る（両方が稼働中でも迷わない）
+        phase("bravo29", "running")
+        fire({"hook_event_name": "PostToolUse", "tool_name": "Agent", "cwd": path29,
+              "tool_use_id": "toolu_ONLYONE1",
+              "tool_response": {"totalTokens": 500, "totalToolUseCount": 2,
+                                "totalDurationMs": 3000}})
+        check("完了は起動時に書いた側へ戻る",
+              agents_of("alfa29")["AUTO-ONLYONE1"]["status"], "done")
+        check("完了で実測値が入る",
+              agents_of("alfa29")["AUTO-ONLYONE1"]["result"]["tokens"], 500)
+
+        # --- 2本とも稼働中なら、上位の機体はどちらのものか決められない
+        before = (sorted(agents_of("alfa29")), sorted(agents_of("bravo29")))
+        fire({"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": path29,
+              "tool_use_id": "toolu_AMBIG001",
+              "tool_input": {"description": "どちらのチームか分からない"}})
+        check("2本とも稼働中なら、上位の機体は書かない",
+              (sorted(agents_of("alfa29")), sorted(agents_of("bravo29"))), before)
+
+        # --- 2本とも稼働中でも、下請けが起動した機体は親と同じ側へ入る
+        kid_rid = update_state.hook_id_for("toolu_BRAVOKID")
+        got = json.loads((data_home / "missions" / "bravo29" / "state.json")
+                         .read_text(encoding="utf-8"))
+        got["agents"].append(dict(rec(kid_rid, "ブラボーの下請け", "claude-sonnet-5", t29),
+                                  toolUseId="toolu_BRAVOKID"))
+        (data_home / "missions" / "bravo29" / "state.json").write_text(
+            json.dumps(got, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_agent(sub29, "kid29", start=t29 + 5, cwd=path29, session=session29,
+                    model="sonnet", description="ブラボーの下請け",
+                    tool_use_id="toolu_BRAVOKID")
+        fire({"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": path29,
+              "tool_use_id": "toolu_GRANDKID", "agent_id": "kid29",
+              "tool_input": {"description": "ブラボーの孫"}})
+        check("孫は、呼び出し元の記録があるほうのミッションへ入る",
+              "AUTO-GRANDKID" in agents_of("bravo29"), True)
+        check("もう片方には入らない", "AUTO-GRANDKID" in agents_of("alfa29"), False)
+        check("孫の親は呼び出し元の記録",
+              agents_of("bravo29")["AUTO-GRANDKID"]["parentId"], kid_rid)
+
+        print()
+        print("[28] 同時に何体も起動しても、記録が消えない")
+        # 1回のメッセージで6体まとめて起動すると、hook が6プロセス同時に
+        # state.json を読み書きする。錠が無ければ、あとから書いたほうが
+        # 先に書かれた記録を丸ごと消す。**消えても誰も気づかない**壊れ方なので、
+        # 実際にプロセスを6つ並べて確かめる。
+        work28 = tmp / "work28"
+        work28.mkdir(parents=True, exist_ok=True)
+        path28 = str(work28.resolve())
+        slug28 = dashlib.slug_for_path(work28.resolve())
+        write_mission(data_home / "missions", slug28, project_path=path28,
+                      started=now - 60, agents=[command("claude-opus-5", now - 60)])
+        env = dict(os.environ)
+        procs = []
+        for i in range(6):
+            body = json.dumps({
+                "hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": path28,
+                "tool_use_id": "toolu_PARA000%d" % i,
+                "tool_input": {"description": "並行その%d" % i},
+            }, ensure_ascii=False)
+            procs.append(subprocess.Popen(
+                [sys.executable, str(Path.cwd() / "update_state.py"), "hook"],
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, env=env, cwd=path28))
+            procs[-1].stdin.write(body.encode("utf-8"))
+            procs[-1].stdin.close()
+        for pr in procs:
+            pr.wait(timeout=120)
+        got = agents_of(slug28)
+        check("6体ぜんぶ残っている",
+              sorted(k for k in got if k != "COMMAND"),
+              ["AUTO-PARA000%d" % i for i in range(6)])
+
+        # **錠を missions/ の中に置いてはいけない。** 置くと、まだ無いプロジェクトの
+        # ディレクトリが錠のために先にでき、list_slugs() がそれを数える。すると
+        # start --project <新しい名前> が「もうある」と誤認し、**作業場所（path）を
+        # 空のまま記録する**（実測で踏んだ）。空だとそのミッションは稼働中の実測を
+        # 一生読めず、あとから補う手段も無い。
+        seen = set(p.name for p in (data_home / "missions").iterdir())
+        with dashlib.state_lock("まだ無いプロジェクト28"):
+            pass
+        grew = set(p.name for p in (data_home / "missions").iterdir()) - seen
+        check("錠は missions/ にディレクトリを作らない", sorted(grew), [])
 
     finally:
         os.environ.pop("AGENT_DASHBOARD_DATA_HOME", None)

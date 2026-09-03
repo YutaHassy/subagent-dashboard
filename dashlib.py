@@ -44,6 +44,7 @@ server.py と update_state.py が共有する。プロジェクトの識別・�
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -51,6 +52,7 @@ import re
 import shutil
 import sys
 import threading
+import time
 import unicodedata
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -683,6 +685,8 @@ def resolve_data_home() -> Path:
 
 DATA_HOME = resolve_data_home()
 MISSIONS_DIR = DATA_HOME / "missions"
+#: state.json の錠置き場。**missions/ の中に置いてはいけない**（理由は state_lock）。
+LOCKS_DIR = DATA_HOME / "locks"
 
 #: 利用者が足した CLI の一覧。記録と同じ場所に置く（本体を入れ替えても残るように）。
 #: 差し替えるときは agents_file() 経由で読むこと。定義がここなのは DATA_HOME より
@@ -1903,14 +1907,92 @@ def empty_state(project: dict | None = None) -> dict:
 
 
 def write_state(slug: str, state: dict) -> None:
-    """一時ファイルに書いてから差し替える。読み込み側が書きかけのJSONを読むことがない。"""
+    """一時ファイルに書いてから差し替える。読み込み側が書きかけのJSONを読むことがない。
+
+    一時ファイルの名前にプロセスIDを入れてあるのは、**同時に2つが書くとき**のため。
+    名前が固定だと、片方が書いている最中にもう片方が同じ名前を truncate して開き、
+    混ざった中身が os.replace で本番へ入る。差し替えそのものが不可分でも、
+    差し替える中身が壊れていたら意味がない。
+    """
     state["updatedAt"] = now_iso()
     state["log"] = state["log"][-MAX_LOG:]
     mission_dir(slug).mkdir(parents=True, exist_ok=True)
     target = state_file(slug)
-    tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, target)
+    tmp = target.with_name(target.name + ".%d.tmp" % os.getpid())
+    try:
+        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, target)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+#: state.json の錠を待つ上限と、置き去りの錠を壊すまでの時間（秒）。
+#: 待ちは短くてよい。ここで待たされるのは hook で、その先にあるのは
+#: 「サブエージェントが起動するかどうか」だからである。
+STATE_LOCK_WAIT_SEC = 5.0
+STATE_LOCK_STALE_SEC = 30.0
+
+
+@contextlib.contextmanager
+def state_lock(slug: str):
+    """state.json の「読んで・直して・書く」を、プロセスをまたいで直列化する。
+
+    **これが無いと記録が黙って消える。** 1回のメッセージで6体まとめて起動すると
+    hook が6プロセス同時にここへ来る。錠が無ければ、あとから書いたほうが
+    「自分が読んだ時点の state」で上書きするので、先に書かれた5体が消える。
+    os.replace が守ってくれるのは1回の書き込みだけで、読んでから書くまでの間は
+    守らない。
+
+    **取れなくても最後には進む。** 記録が1つ競り負けるのは困るが、hook が固まって
+    Agent の起動そのものが止まるほうがずっと悪い。上限まで待ったら錠を無視して
+    進む（置き去りの錠なら壊す）。
+    """
+    # **錠を missions/<slug>/ の中に置かない。** そこへ作ると、まだ存在しない
+    # プロジェクトのディレクトリが錠のために先にでき、list_slugs() は missions/ 直下の
+    # ディレクトリ名をそのまま数えるので、それを「もうあるプロジェクト」と見る。
+    # すると start --project <新しい名前> の resolve_project が既存扱いに倒れ、
+    # **作業場所（path）が空のまま記録される**（実測で踏んだ）。path が空だと、
+    # そのミッションは稼働中の実測を一生読めない（あとから補う手段も無い）。
+    try:
+        LOCKS_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        yield        # 錠を置けない。掛けずに進む（止めるよりまし）
+        return
+    path = LOCKS_DIR / (slug + ".lock")
+    fd = None
+    deadline = time.time() + STATE_LOCK_WAIT_SEC
+    while True:
+        try:
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            # 前の持ち主が落ちて残った錠は、古くなった時点で壊してよい。
+            try:
+                if (time.time() - path.stat().st_mtime) > STATE_LOCK_STALE_SEC:
+                    path.unlink()
+                    continue
+            except OSError:
+                pass
+            if time.time() >= deadline:
+                break   # 待ち切った。錠なしで進む（止めるよりまし）
+            time.sleep(0.02)
+        except OSError:
+            break       # 錠を作れない置き場（読み取り専用など）。錠なしで進む
+    try:
+        yield
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------- 正規化とマージ
@@ -1964,6 +2046,10 @@ def normalize_agent(a, source: str):
         "finishedAt": as_str(a.get("finishedAt")) or None,
         "result": result,
         "source": source,  # 'main' = state.json / 'self' = 孫の自己申告
+        # この機体を起動した Agent 呼び出しのID。hook が自動で登録したときだけ入る。
+        # 実機の meta.json の toolUseId と突き合わせれば、名前も時刻も見ずに
+        # 対応づけが決まる（livefeed.assign_live の規則0）。
+        "toolUseId": as_str(a.get("toolUseId")) or None,
     }
 
 

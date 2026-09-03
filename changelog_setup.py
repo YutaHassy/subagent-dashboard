@@ -71,6 +71,11 @@ HOOK_EVENT_TYPES = ("PreToolUse", "PostToolUse", "Stop")
 
 #: 「もう設定済みか」を判定する目印。この文字列を command に含むエントリが
 #: 既にあれば、そのイベント種別には何も足さない（べき等・重複防止）。
+#:
+#: **目印は merge_hooks / unmerge_hooks の引数である。** ここは変更履歴用の既定値に
+#: すぎない。settings.local.json には別系統の hook（サブエージェントの自動登録）も
+#: 入りうるので、判定を定数に固定すると、2系統目で**べき等性が壊れて毎回重複追加され、
+#: 取り消しでは一件も消えない**（どちらも黙って起きる）。
 HOOK_MARKER = "changelog_cli.py"
 
 
@@ -120,25 +125,32 @@ def build_hook_specs(py: str, cli_path: str) -> dict:
     }
 
 
-def _entry_has_marker(entry) -> bool:
+def _entry_has_marker(entry, marker=HOOK_MARKER) -> bool:
+    """このエントリは自分たちが足したものか。
+
+    marker は文字列でも文字列のタプルでもよい。タプルのときは**全部**含むことを
+    求める。1語だけで見分けようとすると、その語を含む利用者自身の hook を
+    自分のものと取り違えて、取り消しのときに他人の設定を消してしまう。
+    """
     if not isinstance(entry, dict):
         return False
     hooks_list = entry.get("hooks")
     if not isinstance(hooks_list, list):
         return False
+    needles = (marker,) if isinstance(marker, str) else tuple(marker)
     for h in hooks_list:
         if isinstance(h, dict):
             cmd = h.get("command")
-            if isinstance(cmd, str) and HOOK_MARKER in cmd:
+            if isinstance(cmd, str) and all(n in cmd for n in needles):
                 return True
     return False
 
 
-def _array_has_marker(arr) -> bool:
-    return isinstance(arr, list) and any(_entry_has_marker(e) for e in arr)
+def _array_has_marker(arr, marker=HOOK_MARKER) -> bool:
+    return isinstance(arr, list) and any(_entry_has_marker(e, marker) for e in arr)
 
 
-def merge_hooks(settings: dict, specs: dict) -> tuple[dict, dict]:
+def merge_hooks(settings: dict, specs: dict, marker=HOOK_MARKER) -> tuple[dict, dict]:
     """settings（dict）に specs の3エントリをマージした新しい dict を返す。
 
     引数の settings は変更しない（deepcopy して返す）。**既存の他のエントリ・
@@ -173,7 +185,7 @@ def merge_hooks(settings: dict, specs: dict) -> tuple[dict, dict]:
                 "（壊れているか、想定と違う形式です。手動での確認をお願いします）。"
             )
 
-        if _array_has_marker(arr):
+        if _array_has_marker(arr, marker):
             added[event_type] = False
             continue
         arr.append(copy.deepcopy(spec))
@@ -182,7 +194,7 @@ def merge_hooks(settings: dict, specs: dict) -> tuple[dict, dict]:
     return out, added
 
 
-def unmerge_hooks(settings: dict, specs: dict) -> tuple[dict, dict]:
+def unmerge_hooks(settings: dict, specs: dict, marker=HOOK_MARKER) -> tuple[dict, dict]:
     """merge_hooks が足したエントリ（command に changelog_cli.py を含むもの）だけを
     取り除く。他の hook エントリ・他のキーには一切触れない。
 
@@ -201,7 +213,7 @@ def unmerge_hooks(settings: dict, specs: dict) -> tuple[dict, dict]:
         arr = hooks.get(event_type)
         if not isinstance(arr, list):
             continue
-        kept = [e for e in arr if not _entry_has_marker(e)]
+        kept = [e for e in arr if not _entry_has_marker(e, marker)]
         removed[event_type] = len(arr) - len(kept)
         if kept:
             hooks[event_type] = kept
@@ -422,7 +434,7 @@ def do_setup(project_root: Path, gitignore_mode: str, *, print_only: bool) -> in
     print()
 
     print("  [2] settings.local.json  " + str(settings_path))
-    for event_type in HOOK_EVENT_TYPES:
+    for event_type in specs:
         if added[event_type]:
             spec = specs[event_type]
             print(f"      hooks.{event_type}: 追加します"
@@ -502,7 +514,7 @@ def do_uninstall_setup(project_root: Path, gitignore_mode: str, *, print_only: b
     print("  プロジェクト        : " + str(project_root))
     print()
     print("  [1] settings.local.json  " + str(settings_path))
-    for event_type in HOOK_EVENT_TYPES:
+    for event_type in specs:
         print(f"      hooks.{event_type}: "
               + (f"{removed[event_type]}件のエントリを取り除きます" if removed[event_type] else "対象なし"))
     print()

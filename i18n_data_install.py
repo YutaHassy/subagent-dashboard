@@ -246,6 +246,70 @@ BLOCK_KO = """## Subagent Dashboard
 # のブロック（上）とは独立していて、書き先は CLAUDE.md だけ。
 # 差し込み {py} {cli} は install.py 側で .format() する。
 
+AUTOREG_BLOCK_EN = '''## Subagent Dashboard — automatic registration is on in this project
+
+The hooks in this project's `.claude/settings.local.json` record every subagent for you: one entry the moment you launch it, and the measured totals when it comes back.
+
+- **Do not run `add` or `done` yourself here.** The hook has already written that record; running them again puts a second card on the screen for a unit that is already there.
+- **You still open and close the mission by hand**, because where the work begins and ends is a judgement only you can make:
+  ```
+  {py} {us} start --title "<name of the work>" --model <your own model ID>
+  {py} {us} finish --headline "<one-line summary of the whole thing>"
+  ```
+- **The name on the card is the Agent call's `description`, and the mission text is the beginning of the prompt you sent.** Write the description you would want to read on the screen.
+- **No headline is recorded when a unit comes back**, because the completion signal carries no one-line summary. If you want one on a card, add it afterwards with `done --id <the AUTO- id> --headline "..."` — that is the one time `done` is yours to run.
+- **If two missions are running in this same folder at once** (you split them with `start --project <name>`), a unit you launch yourself cannot be placed — nothing in the call says which team it belongs to, so the hook records nothing and it shows up as a running unit that is not in the records. Register those by hand with `add --project <name>`. Units that a subagent launches are placed correctly on their own, from the parent's record.
+- Free text you do write (`--title` / `--headline`) goes in the language these instructions are written in.
+'''
+
+AUTOREG_BLOCK_JA = '''## Subagent Dashboard — このプロジェクトでは自動登録が入っています
+
+このプロジェクトの `.claude/settings.local.json` の hook が、サブエージェントを1体ずつ記録します。起動した瞬間に1件、帰ってきたときに実測値が入ります。
+
+- **ここでは `add` と `done` を自分で打たないでください。** その記録は hook が既に書いています。打つと、すでに画面にある機体のカードがもう1枚増えます。
+- **ミッションの開始と締めだけは手で打ってください。** どこが作業の区切りかは、あなたにしか決められないからです:
+  ```
+  {py} {us} start --title "<作業の名前>" --model <自分のモデル ID>
+  {py} {us} finish --headline "<全体の一行要約>"
+  ```
+- **カードに出る名前は Agent 呼び出しの `description`、任務はあなたが渡した指示文の冒頭がそのまま入ります。** 画面で読みたい名前を description に書いてください。
+- **帰ってきたときの見出しは記録されません。** 完了の合図に一行要約が入っていないからです。カードに見出しを出したいときは、あとから `done --id <自動で付いた AUTO- のID> --headline "..."` で足してください——`done` を打ってよいのはこのときだけです。
+- **同じフォルダで2本のミッションを同時に走らせているとき**（`start --project <名前>` で分けたとき）、あなた自身が起動した機体は置き場所を決められません。どちらのチームのものかが呼び出しのどこにも書かれていないので、hook は何も記録せず、その機体は「記録に無い稼働中の機体」として出ます。そのときだけ `add --project <名前>` で手で登録してください。下請けが起動した機体は、親の記録から自動で正しい側に入ります。
+- 自分で書く自由記述（`--title` / `--headline`）は、この運用ルールが書かれている言語で書いてください。
+'''
+
+AUTOREG_BLOCK_ZH = '''## Subagent Dashboard — 本项目已启用自动登记
+
+本项目 `.claude/settings.local.json` 中的 hook 会逐个记录子代理：启动的那一刻写入一条，返回时写入实测值。
+
+- **在这里不要自己运行 `add` 和 `done`。** 那条记录 hook 已经写好了。再运行一次，会让画面上已有的机体多出一张卡片。
+- **只有任务的开始和收尾需要手动执行**，因为工作从哪里开始、到哪里结束，只有你能判断:
+  ```
+  {py} {us} start --title "<工作的名称>" --model <你自己的模型 ID>
+  {py} {us} finish --headline "<整体的一行摘要>"
+  ```
+- **卡片上的名字来自 Agent 调用的 `description`，任务内容取自你发出的指示文开头。** 请把你希望在画面上读到的名字写进 description。
+- **返回时不会记录一行摘要**，因为完成信号里没有这样的内容。若想让卡片上出现摘要，请事后用 `done --id <自动生成的 AUTO- 开头的ID> --headline "..."` 补上——这是唯一该由你运行 `done` 的时候。
+- **在同一个文件夹里同时跑两条任务时**（用 `start --project <名字>` 分开的情况），你自己启动的机体无法确定归属。调用里没有任何地方写着它属于哪一队，因此 hook 不会记录，它会显示为「记录中没有的运行中机体」。这种时候请用 `add --project <名字>` 手动登记。由子代理启动的机体会依据父级的记录自动进入正确的一侧。
+- 你自己写的自由文本（`--title` / `--headline`）请使用这份运用规则所写的语言。
+'''
+
+AUTOREG_BLOCK_KO = '''## Subagent Dashboard — 이 프로젝트에서는 자동 등록이 켜져 있습니다
+
+이 프로젝트의 `.claude/settings.local.json` 에 있는 hook 이 서브에이전트를 한 대씩 기록합니다. 기동한 순간에 한 건, 돌아왔을 때 실측값이 들어갑니다.
+
+- **여기서는 `add` 와 `done` 을 직접 실행하지 마세요.** 그 기록은 hook 이 이미 썼습니다. 다시 실행하면 화면에 이미 있는 기체의 카드가 한 장 더 늘어납니다.
+- **임무의 시작과 마무리만 손으로 실행하세요.** 작업이 어디서 시작하고 어디서 끝나는지는 당신만 판단할 수 있기 때문입니다:
+  ```
+  {py} {us} start --title "<작업의 이름>" --model <자신의 모델 ID>
+  {py} {us} finish --headline "<전체의 한 줄 요약>"
+  ```
+- **카드에 나오는 이름은 Agent 호출의 `description`, 임무는 당신이 건넨 지시문의 앞부분이 그대로 들어갑니다.** 화면에서 읽고 싶은 이름을 description 에 쓰세요.
+- **돌아왔을 때의 한 줄 요약은 기록되지 않습니다.** 완료 신호에 한 줄 요약이 들어 있지 않기 때문입니다. 카드에 요약을 내고 싶다면 나중에 `done --id <자동으로 붙은 AUTO- 로 시작하는 ID> --headline "..."` 으로 더하세요 — `done` 을 실행해도 되는 것은 이때뿐입니다.
+- **같은 폴더에서 두 개의 임무를 동시에 돌리고 있을 때** (`start --project <이름>` 으로 나눈 경우), 당신이 직접 기동한 기체는 어느 쪽인지 정할 수 없습니다. 호출 어디에도 어느 팀의 것인지 쓰여 있지 않기 때문에 hook 은 아무것도 기록하지 않고, 그 기체는 「기록에 없는 가동 중인 기체」로 나옵니다. 그때만 `add --project <이름>` 으로 직접 등록해 주세요. 서브에이전트가 기동한 기체는 부모의 기록에서 자동으로 올바른 쪽에 들어갑니다.
+- 직접 쓰는 자유 기술 (`--title` / `--headline`) 은 이 운용 규칙이 쓰인 언어로 써 주세요.
+'''
+
 CHANGELOG_BLOCK_EN = """## Claude Code Changelog Tracking
 
 Some projects have Claude Code changelog tracking configured (project-local, under `.claude/changelog/` in that project). It is a separate feature from Subagent Dashboard above: it records what *you* changed in that project and why, not subagent missions. If `.claude/changelog/` does not exist in the current project, none of this applies to you here.
@@ -311,6 +375,7 @@ CATALOG: dict[str, dict[str, str]] = {}
 # ============================================================ 日本語
 CATALOG["ja"] = {
     # ---- install: CLAUDE.md に書き込む本文（変更履歴トラッキングのブロック）
+    AUTOREG_BLOCK_EN: AUTOREG_BLOCK_JA,
     CHANGELOG_BLOCK_EN: CHANGELOG_BLOCK_JA,
 
     '    (only the marked block is updated; anything already there is kept — including the Subagent Dashboard block above)':
@@ -571,6 +636,7 @@ CATALOG["ja"] = {
 # ============================================================ 中文（简体）
 CATALOG["zh"] = {
     # ---- install: CLAUDE.md に書き込む本文（変更履歴トラッキングのブロック）
+    AUTOREG_BLOCK_EN: AUTOREG_BLOCK_ZH,
     CHANGELOG_BLOCK_EN: CHANGELOG_BLOCK_ZH,
 
     '    (only the marked block is updated; anything already there is kept — including the Subagent Dashboard block above)':
@@ -826,6 +892,7 @@ CATALOG["zh"] = {
 # ============================================================ 한국어
 CATALOG["ko"] = {
     # ---- install: CLAUDE.md に書き込む本文（変更履歴トラッキングのブロック）
+    AUTOREG_BLOCK_EN: AUTOREG_BLOCK_KO,
     CHANGELOG_BLOCK_EN: CHANGELOG_BLOCK_KO,
 
     '    (only the marked block is updated; anything already there is kept — including the Subagent Dashboard block above)':

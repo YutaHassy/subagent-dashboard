@@ -264,6 +264,12 @@ When you run missions in parallel in the same directory, give each `start` a uni
 
 CHANGELOG_BLOCK_ID = "changelog"
 
+#: 自動登録が入っているプロジェクトの運用ルール（第3のブロック）。
+#: 書き込み先は**そのプロジェクトの CLAUDE.md** で、機械ぜんぶに配る
+#: 運用ルールとは別。自動登録はプロジェクトごとに入れるものなので、
+#: 「ここでは add を打たない」も、そのプロジェクトにだけ書く。
+AUTOREG_BLOCK_ID = "autoreg"
+
 
 def build_changelog_block(py: str) -> str:
     """変更履歴トラッキング機能の運用ルール（CLAUDE.md 用、第2のブロック）。
@@ -296,6 +302,37 @@ When it is configured for the current project:
   Run `{py} {cli} status` first if you need the current session's id — it lists any session for this project that still has unsummarized entries. A Stop hook exists as a safety net that blocks the end of a session if nothing has been summarized yet; treat hitting that as a fallback you would rather avoid, not the normal way this gets done.
 - **Write only what you can actually back up from the raw log. Never invent a headline or body.** If you are not sure what happened in the session, run `{py} {cli} status --session <id>` (or `list`) first and summarize from what it shows — do not guess or pad the description to sound more complete than it is.
 """).format(py=py, cli=cli)
+    return begin + "\n" + body + end
+
+
+def build_autoreg_block(py: str) -> str:
+    """自動登録が入っているプロジェクト用の運用ルール（CLAUDE.md 用、第3のブロック）。
+
+    **これを書かないと、自動登録は「重複を増やす機能」になる。** 運用ルールは
+    「起動したら add を打て」と言い続けるので、hook が書いた記録の隣に手打ちの
+    記録がもう1件並ぶ。1体が2枚のカードに見えるのは、記録として正しくても
+    画面としては壊れている。
+
+    書き込み先は autoreg_setup.py が決める（そのプロジェクトの CLAUDE.md）。
+    ここは本文を組み立てるだけ。
+    """
+    us = quote(str(HERE / "update_state.py"))
+    begin, end = block_markers(AUTOREG_BLOCK_ID)
+    body = t("""## Subagent Dashboard — automatic registration is on in this project
+
+The hooks in this project's `.claude/settings.local.json` record every subagent for you: one entry the moment you launch it, and the measured totals when it comes back.
+
+- **Do not run `add` or `done` yourself here.** The hook has already written that record; running them again puts a second card on the screen for a unit that is already there.
+- **You still open and close the mission by hand**, because where the work begins and ends is a judgement only you can make:
+  ```
+  {py} {us} start --title "<name of the work>" --model <your own model ID>
+  {py} {us} finish --headline "<one-line summary of the whole thing>"
+  ```
+- **The name on the card is the Agent call's `description`, and the mission text is the beginning of the prompt you sent.** Write the description you would want to read on the screen.
+- **No headline is recorded when a unit comes back**, because the completion signal carries no one-line summary. If you want one on a card, add it afterwards with `done --id <the AUTO- id> --headline "..."` — that is the one time `done` is yours to run.
+- **If two missions are running in this same folder at once** (you split them with `start --project <name>`), a unit you launch yourself cannot be placed — nothing in the call says which team it belongs to, so the hook records nothing and it shows up as a running unit that is not in the records. Register those by hand with `add --project <name>`. Units that a subagent launches are placed correctly on their own, from the parent's record.
+- Free text you do write (`--title` / `--headline`) goes in the language these instructions are written in.
+""").format(py=py, us=us)
     return begin + "\n" + body + end
 
 

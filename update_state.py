@@ -15,6 +15,9 @@ state.json の書き換えは必ずこのCLI経由で行う。時刻・世代・
     log --who "指令塔" --text "..."        イベントログに1行足す
     status / projects / history / demo / reset [--purge] / remove [--yes]
 
+    hook                                   Claude Code の hook から呼ばれる（人は打たない）
+                                           Agent 呼び出しを見て add / done を自動で書く
+
 start のたびに、それまでの state.json と agents/ は
 missions/<slug>/history/<runId>/ へ退避される（過去のミッションは消えない）。
 一覧は history、残す件数は環境変数 AGENT_DASHBOARD_HISTORY_KEEP（既定 20）。
@@ -402,6 +405,9 @@ def cmd_add(args) -> None:
         # 当てる。ここで訳文を書き込むと、記録した言語がそのまま state.json に残る。
         "model": args.model or (existing or {}).get("model") or "",
         "mission": args.mission or (existing or {}).get("mission") or "",
+        # 実機との対応づけを名前や時刻ではなくIDで決めるための手がかり。
+        # 手で打つときは普通は空で、hook が自動登録したときだけ入る。
+        "toolUseId": (args.tool_use_id or (existing or {}).get("toolUseId") or ""),
         "status": status,
         "startedAt": ((existing or {}).get("startedAt")
                       or (None if status == "standby" else now_iso())),
@@ -649,6 +655,340 @@ def cmd_finish(args) -> None:
         notice = dashlib.free_text_lang_notice([("--headline", args.headline)], fixable=True)
         if notice:
             print(notice)
+
+
+# ---------------------------------------------------------------- hook（自動登録）
+
+#: hook が作る記録IDの頭。手で打つIDと混ざらないように分けてある。
+HOOK_ID_PREFIX = "AUTO-"
+
+#: サブエージェントを起動するツールの名前（livefeed.SPAWN_TOOLS と同じ並び）。
+HOOK_SPAWN_TOOLS = ("Agent", "Task")
+
+#: 任務として控える指示文の長さ。指示文は数千字あることもあるが、カードに出るのは
+#: 冒頭だけなので、そこで切って「…」を付ける。**要約はしない**（書いてあるとおりの
+#: 頭から何文字か、という事実だけを残す）。
+HOOK_MISSION_MAX = 160
+
+
+def hook_id_for(tool_use_id: str) -> str:
+    """Agent 呼び出しのID → 記録のID。
+
+    **同じ呼び出しからは必ず同じIDが出る**こと、それがこの関数の全部である。
+    起動時（PreToolUse）と完了時（PostToolUse）は別のプロセスで、間に状態を
+    持ち回る場所が無い。ID そのものを鍵にすることで持ち回りが要らなくなる。
+
+    末尾8文字だけ使うのは、カードに出るIDを読める長さに収めるため。
+    元のIDは24文字前後あり、そのまま出すと画面で名前より目立ってしまう。
+    """
+    core = tool_use_id.strip()
+    for head in ("toolu_", "call_", "tool_"):
+        if core.startswith(head):
+            core = core[len(head):]
+            break
+    core = "".join(ch for ch in core if ch.isalnum())
+    return HOOK_ID_PREFIX + (core[-8:] if len(core) > 8 else (core or "0"))
+
+
+def _hook_get(payload: dict, *names):
+    """hook の項目を取り出す。綴りは snake_case と camelCase の両方を見る。
+
+    どちらで来るかは Claude Code 側の都合で、こちらからは決められない。
+    片方だけを見て取りこぼすと、**何も起きないだけで誰も気づかない**。
+    """
+    for n in names:
+        if isinstance(payload, dict) and n in payload:
+            return payload[n]
+    return None
+
+
+def _hook_clip(text: str) -> str:
+    """指示文を1行に潰して、頭だけ残す。切ったときは「…」を付ける。"""
+    one = " ".join(dashlib.as_str(text).split())
+    if len(one) <= HOOK_MISSION_MAX:
+        return one
+    return one[:HOOK_MISSION_MAX] + "…"
+
+
+def _hook_caller_meta(caller_id: str, transcript: str) -> dict:
+    """呼び出し元のサブエージェントの meta.json を読む。読めなければ空の dict。
+
+    まず記録ファイルの隣を見る。呼び出し元がサブエージェントなら、その記録は
+    subagents/agent-<id>.jsonl なので meta.json は同じフォルダにある。そこに
+    無いときだけ、記録置き場ぜんぶを探す（探索は数十msかかるので後回しにする）。
+    """
+    import livefeed  # 記録置き場の場所を知っているのはこちら
+    name = "agent-" + caller_id + ".meta.json"
+    seen = []
+    if transcript:
+        here = Path(transcript).parent
+        seen += [here / name, here / "subagents" / name]
+    for cand in seen:
+        got = livefeed._read_meta(cand)
+        if got:
+            return got
+    try:
+        for hit in livefeed.projects_root().glob("*/*/subagents/**/" + name):
+            got = livefeed._read_meta(hit)
+            if got:
+                return got
+    except OSError:
+        pass
+    return {}
+
+
+def _hook_caller_record_id(payload: dict) -> str:
+    """この Agent 呼び出しを出した機体の、記録上のID。主セッションからなら空。
+
+    payload に agent_id が入っているのは**呼び出し元がサブエージェントのとき**
+    だけである（主セッションが呼んだときは入らない）。入っていたら、その機体の
+    meta.json にある toolUseId から記録のIDを作る——起動時に控えたIDと同じ関数を
+    通すので、必ず同じ値になる。
+
+    **記録置き場を探すので安くはない。** 1回の hook で1度だけ呼び、結果を持ち回ること。
+    """
+    caller = dashlib.as_str(_hook_get(payload, "agent_id", "agentId"))
+    if not caller:
+        return ""
+    meta = _hook_caller_meta(
+        caller, dashlib.as_str(_hook_get(payload, "transcript_path", "transcriptPath")))
+    tuid = dashlib.as_str(meta.get("toolUseId"))
+    return hook_id_for(tuid) if tuid else ""
+
+
+def _hook_parent_id(state: dict, caller_rid: str) -> str:
+    """親の記録ID。呼び出し元の記録がこのミッションに無ければ指令塔の直下。
+
+    無いのは、hook を入れる前に起動した機体などがこれに当たる。
+    **分からない親をでっち上げない。**
+    """
+    if caller_rid and find_agent(state, caller_rid) is not None:
+        return caller_rid
+    return COMMAND_ID
+
+
+def _same_dir(a: str, b: str) -> bool:
+    """2つのパスが同じ場所を指すか。Windows は大文字小文字を区別しない。"""
+    if not a or not b:
+        return False
+    try:
+        pa, pb = Path(a).resolve(), Path(b).resolve()
+    except OSError:
+        return False
+    return os.path.normcase(str(pa)) == os.path.normcase(str(pb))
+
+
+def _hook_missions() -> list:
+    """記録のあるミッションを (slug, state) で全部返す。読めないものは飛ばす。
+
+    件数はプロジェクトの数だけ（実測で十数件）。1回の起動につき1度読むだけなので、
+    ここを惜しんで「cwd から決まる1つ」だけを見ると、--project で名前を分けた
+    ミッションに1件も書けなくなる。
+    """
+    out = []
+    for slug in dashlib.list_slugs():
+        ok, value, _err = dashlib.read_json_safe(state_file(slug))
+        if ok and isinstance(value, dict):
+            out.append((slug, value))
+    return out
+
+
+def _hook_target(payload: dict, want_id: str, caller_rid: str) -> dict | None:
+    """この機体をどのミッションに書くか。決められなければ None（何も書かない）。
+
+    **cwd だけで決めてはいけない。** `start --project <名前>` で分けたミッションの
+    記録は cwd から出る slug の下には無いので、cwd だけを見ると、並行させた側の
+    機体が1件も記録されない（＝そのチームが丸ごと「記録に無い稼働中の機体」になる）。
+
+    順に見る。上にあるものほど推測が入らない。
+
+    1. **その機体の記録が既にあるミッション。** 完了（PostToolUse）はこれで必ず
+       決まる。起動時に書いた場所へそのまま書き戻す。
+    2. **呼び出し元の記録があるミッション。** 下請けが起動した機体は、親と同じ
+       チームに属する。実測（meta.json の toolUseId）で決まるので推測は無い。
+    3. **cwd を作業場所にしている稼働中のミッションが1本だけなら、それ。**
+       `--project` で名前を分けていても、ここで拾える。
+    4. **2本以上あるなら決めない。** `--project` で分けた並行ミッションは、
+       定義上どちらも同じ場所で走っている。上位の機体がどちらのものかは
+       payload のどこにも書かれていない。**たぶんこちら、で書かない。**
+       その機体は画面に「記録に無い稼働中の機体」として出る。
+    5. 稼働中が1本も無ければ、いままでどおり cwd から決まるプロジェクト。
+    """
+    missions = _hook_missions()
+
+    def pick(slug: str, state: dict) -> dict:
+        info = state.get("project") if isinstance(state.get("project"), dict) else {}
+        return {"slug": slug,
+                "name": dashlib.as_str(info.get("name")) or slug,
+                "path": dashlib.as_str(info.get("path"))}
+
+    for rid in (want_id, caller_rid):
+        if not rid:
+            continue
+        for slug, state in missions:
+            if find_agent(state, rid) is not None:
+                return pick(slug, state)
+
+    cwd = str(Path.cwd().resolve())
+    here = [(slug, st) for slug, st in missions
+            if (st.get("mission") or {}).get("phase") == "running"
+            and _same_dir(dashlib.as_str((st.get("project") or {}).get("path")), cwd)]
+    if len(here) == 1:
+        return pick(*here[0])
+    if len(here) > 1:
+        print(t("Dashboard: {n} missions are running in this folder, so there is no "
+                "way to tell which one this unit belongs to. Nothing was recorded "
+                "(it will show up as a running unit that is not in the records).")
+              .format(n=len(here)), file=sys.stderr)
+        return None
+
+    project = dashlib.resolve_project(None)
+    return project if state_file(project["slug"]).exists() else None
+
+
+def _hook_add(state: dict, payload: dict, tool_use_id: str, caller_rid: str) -> str:
+    """起動を記録する（PreToolUse）。すでにある呼び出しなら何もしない。"""
+    rid = hook_id_for(tool_use_id)
+    if find_agent(state, rid) is not None:
+        return ""   # 同じ呼び出しで2回来た。手で直したものを上書きしない。
+
+    inp = _hook_get(payload, "tool_input", "toolInput")
+    inp = inp if isinstance(inp, dict) else {}
+    parent_id = _hook_parent_id(state, caller_rid)
+    name = dashlib.as_str(inp.get("description"))
+    agent = {
+        "id": rid,
+        "name": name or rid,
+        "parentId": parent_id,
+        "generation": generation_of(state, parent_id),
+        # model が空のときは subagent_type で代える。どちらも hook が渡してきた
+        # 事実で、こちらで既定のモデル名を補うことはしない。
+        "model": (dashlib.as_str(inp.get("model"))
+                  or dashlib.as_str(_hook_get(inp, "subagent_type", "subagentType"))),
+        "mission": _hook_clip(inp.get("prompt")),
+        "status": "running",
+        "startedAt": now_iso(),
+        "finishedAt": None,
+        "result": None,
+        "toolUseId": tool_use_id,
+    }
+    state["agents"].append(agent)
+
+    parent = find_agent(state, parent_id)
+    parent_name = (t("Command") if parent_id == COMMAND_ID
+                   else (parent or {}).get("name", parent_id))
+    push_log(state, parent_name,
+             t("{name} ({id}) was born — {mission}")
+             .format(name=agent["name"], id=rid,
+                     mission=agent["mission"] or t("no mission recorded")))
+
+    # 完了済みのミッションに機体が足されたら、作業が再開したということ。
+    # 手で add したときと同じ扱いにする（cmd_add と揃えてある）。
+    if state["mission"].get("phase") != "running":
+        state["mission"].update({"phase": "running", "finishedAt": None, "summary": None})
+    return rid
+
+
+def _hook_done(state: dict, payload: dict, tool_use_id: str) -> str:
+    """完了を記録する（PostToolUse）。実測値は hook が渡してきたものだけを使う。"""
+    rid = hook_id_for(tool_use_id)
+    agent = find_agent(state, rid)
+    if agent is None:
+        return ""
+    resp = _hook_get(payload, "tool_response", "toolResponse")
+    resp = resp if isinstance(resp, dict) else {}
+
+    ms = dashlib.as_num(_hook_get(resp, "totalDurationMs", "total_duration_ms"))
+    if ms is None:
+        ms = dashlib.as_num(_hook_get(payload, "duration_ms", "durationMs"))
+    elapsed = int(round(ms / 1000.0)) if ms is not None else elapsed_sec_from(
+        agent.get("startedAt"))
+
+    agent["status"] = "done"
+    agent["finishedAt"] = now_iso()
+    agent["result"] = {
+        "elapsedSec": elapsed,
+        "tokens": dashlib.as_num(_hook_get(resp, "totalTokens", "total_tokens")),
+        "toolCalls": dashlib.as_num(
+            _hook_get(resp, "totalToolUseCount", "total_tool_use_count")),
+        # **見出しは空のままにする。** 完了の合図に一行要約は入っていない。
+        # ここを埋めるには中身を推し量るしかなく、それはこの画面の目的を壊す。
+        "headline": "",
+    }
+    # 実測でモデルが分かったら、そのときだけ書き直す（起動時は種別しか無いことがある）。
+    resolved = dashlib.as_str(_hook_get(resp, "resolvedModel", "resolved_model"))
+    if resolved:
+        agent["model"] = resolved
+
+    bits = [t("elapsed {time}").format(time=fmt_sec(elapsed))]
+    if agent["result"]["tokens"] is not None:
+        bits.append(t("{n} tokens").format(n=fmt_num(agent["result"]["tokens"])))
+    if agent["result"]["toolCalls"] is not None:
+        bits.append(t("{n} tool calls").format(n=agent["result"]["toolCalls"]))
+    push_log(state, agent["name"],
+             t("Back home — {headline} ({detail})")
+             .format(headline=t("no report"), detail=" / ".join(bits)))
+    return rid
+
+
+def cmd_hook(args) -> None:
+    """Claude Code の hook から呼ばれる。標準入力のJSONを見て add / done を書く。
+
+    **何があっても 0 で終わる。** PreToolUse の非0終了は「そのツール呼び出しを
+    拒否する」という意味なので、ここで落ちると**サブエージェントの起動そのものが
+    止まる**。記録が1つ欠けるのは困るが、仕事が止まるほうがずっと悪い。
+    """
+    try:
+        _hook_main(args)
+    except SystemExit:
+        pass
+    except Exception as e:   # noqa: BLE001  （握りつぶすのが仕様）
+        print(t("The dashboard hook did nothing: {err}").format(err=e), file=sys.stderr)
+    sys.exit(0)
+
+
+def _hook_main(args) -> None:
+    raw = sys.stdin.read()
+    payload = json.loads(raw) if raw.strip() else {}
+    if not isinstance(payload, dict):
+        return
+
+    if dashlib.as_str(_hook_get(payload, "tool_name", "toolName")) not in HOOK_SPAWN_TOOLS:
+        return
+    tool_use_id = dashlib.as_str(_hook_get(payload, "tool_use_id", "toolUseId"))
+    if not tool_use_id:
+        return
+    event = dashlib.as_str(_hook_get(payload, "hook_event_name", "hookEventName"))
+    if event not in ("PreToolUse", "PostToolUse"):
+        return
+
+    # 作業場所は hook が教えてくる cwd を信じる（hook がどこで実行されるかは
+    # こちらからは決められない）。プロジェクトの決め方は _hook_target を読むこと。
+    cwd = dashlib.as_str(payload.get("cwd"))
+    if cwd and Path(cwd).is_dir():
+        os.chdir(cwd)
+
+    # 呼び出し元は記録置き場を探すので、1回だけ求めて持ち回る。
+    caller_rid = _hook_caller_record_id(payload)
+    explicit = getattr(args, "project", None)
+    project = (dashlib.resolve_project(explicit) if explicit
+               else _hook_target(payload, hook_id_for(tool_use_id), caller_rid))
+    if project is None:
+        return   # 書き先が決まらない。**たぶんここ、で書かない。**
+    slug = project["slug"]
+    if not state_file(slug).exists():
+        return   # このプロジェクトではダッシュボードを使っていない。何もしない。
+
+    with dashlib.state_lock(slug):
+        state = read_state(slug, project, required=False)
+        rid = (_hook_add(state, payload, tool_use_id, caller_rid)
+               if event == "PreToolUse"
+               else _hook_done(state, payload, tool_use_id))
+        if not rid:
+            return
+        dashlib.write_state(slug, state)
+    print(t("Dashboard: recorded {id} ({event}).").format(id=rid, event=event),
+          file=sys.stderr)
 
 
 def cmd_log(args) -> None:
@@ -1145,6 +1485,24 @@ def non_negative_int(v: str) -> int:
     return n
 
 
+def under_state_lock(fn):
+    """state.json を読んで直して書くコマンドを、プロセスをまたいで直列化する。
+
+    hook が入ると、1回のメッセージで6体まとめて起動したとき6プロセスが同時に
+    state.json を読み書きする。手で打つコマンドがその最中に走ることもある。
+    錠が無ければ、あとから書いたほうが先に書かれた記録を丸ごと消す。
+    """
+    def wrapped(args):
+        try:
+            slug = dashlib.resolve_project(getattr(args, "project", None))["slug"]
+        except ValueError:
+            return fn(args)   # 対象が決まらないなら、いつもどおり fn の中で die させる
+        with dashlib.state_lock(slug):
+            return fn(args)
+    wrapped.__name__ = getattr(fn, "__name__", "wrapped")
+    return wrapped
+
+
 def add_project_arg(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--project",
@@ -1266,7 +1624,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--model", default="",
                    help=t("model ID of the command post"))
     add_project_arg(s)
-    s.set_defaults(func=cmd_start)
+    s.set_defaults(func=under_state_lock(cmd_start))
 
     a = sub.add_parser("add", help=t("register a subagent right after starting it"))
     a.add_argument("--id", required=True, help=t("identifier (for example SCOUT-A)"))
@@ -1276,13 +1634,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help=t("ID of the parent (the command post when omitted)"))
     a.add_argument("--model", default="", help=t("model ID that was used"))
     a.add_argument("--mission", default="", help=t("what the task is"))
+    a.add_argument("--tool-use-id", default="",
+                   help=t("ID of the Agent call that started it "
+                          "(pairs the card with the real unit; usually left out)"))
     # 既定を None にしてあるのは「省略された」と「running を指定した」を区別するため。
     # 区別できないと、打ち直しのたびに done 済みの機体が running へ戻ってしまう。
     a.add_argument("--status", default=None, choices=STATUSES,
                    help=t("initial state (running when omitted; kept as it is "
                           "when the unit already exists)"))
     add_project_arg(a)
-    a.set_defaults(func=cmd_add)
+    a.set_defaults(func=under_state_lock(cmd_add))
 
     d = sub.add_parser("done",
                        help=t("copy the measured values in once the report arrives"))
@@ -1295,20 +1656,20 @@ def build_parser() -> argparse.ArgumentParser:
                    help=t("tool-call count (leave it out if you did not get one)"))
     d.add_argument("--headline", default="", help=t("one-line summary of the result"))
     add_project_arg(d)
-    d.set_defaults(func=cmd_done)
+    d.set_defaults(func=under_state_lock(cmd_done))
 
     f = sub.add_parser("finish",
                        help=t("close the mission once everyone has finished"))
     f.add_argument("--headline", default="",
                    help=t("one-line summary of the whole mission"))
     add_project_arg(f)
-    f.set_defaults(func=cmd_finish)
+    f.set_defaults(func=under_state_lock(cmd_finish))
 
     lg = sub.add_parser("log", help=t("add one line of commentary"))
     lg.add_argument("--who", default=t("Command"))
     lg.add_argument("--text", required=True)
     add_project_arg(lg)
-    lg.set_defaults(func=cmd_log)
+    lg.set_defaults(func=under_state_lock(cmd_log))
 
     st = sub.add_parser("status", help=t("show the current state"))
     add_project_arg(st)
@@ -1348,6 +1709,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help=t("delete for good instead of moving to the trash"))
     add_project_arg(rm)
     rm.set_defaults(func=cmd_remove)
+
+    hk = sub.add_parser(
+        "hook",
+        help=t("called by Claude Code's hooks — do not type this yourself"),
+    )
+    add_project_arg(hk)
+    hk.set_defaults(func=cmd_hook)
 
     ln = sub.add_parser("lang", help=t("show or set the language of these messages"))
     ln.add_argument("code", nargs="?", default=None,
