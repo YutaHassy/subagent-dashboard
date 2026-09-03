@@ -881,6 +881,10 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         if pid:
             # 親がカードに結ばれていればその名前を、まだなら親自身の説明を出す。
             o["parentAgentId"] = pid
+            # 親の**記録上のID**。画面はこれを見て、系統樹のどこに置くかを決める。
+            # 親が記録と結ばれていなければ空になる——そのときは置き場所が一意に
+            # 決まらないので、画面は木に入れず一覧へ回す（推測で置かない）。
+            o["parentRecordId"] = rec_of_agent.get(pid, "")
             o["parentName"] = (name_of_rec.get(rec_of_agent.get(pid, ""), "")
                                or desc_of_agent.get(pid, ""))
         orphans.append(o)

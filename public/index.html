@@ -643,6 +643,11 @@ body {
   color: var(--dim); font-family: Consolas, monospace; white-space: nowrap;
 }
 .badge.self { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+/* 記録に無い機体。**記録のあるカードと一目で見分けられること**が要件。
+   線は実測で引いているが、カードそのものは記録に裏付けが無い。 */
+.badge.b-orphan { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
+.agent.orphan .card { border-style: dashed; opacity: .88; }
+.agent.orphan .card::before { background: var(--amber); }
 .badge.b-wait { color: var(--amber); border-color: rgba(255,190,85,.35); background: rgba(255,190,85,.08); }
 /* 沈黙の札。b-wait と同じで status は上書きしない（動いていないことと、記録上の
    状態が「稼働中」であることは両立する）。無風のほうを強く出す。 */
@@ -1972,7 +1977,7 @@ async function loadRun(t, tb) {
     const res = await fetch(url, { cache: 'no-store' });
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
-    data = normalizeState(body);
+    data = withPlacedOrphans(normalizeState(body));
     if (!data) throw new Error(tr('run.bad_shape'));
   } catch (e) {
     if (!teams.has(t.key)) return;      // 読み込んでいる間に消された記録
@@ -2038,6 +2043,76 @@ function freezeRef(s, tb) {
 
 /** /api/run の応答を render() が触る形にそろえる。1件ずつの読み込みでしか通らないので、
  *  ここは毎秒の負荷にならない。壊れた記録1件で画面全体が落ちないようにするための保険。 */
+/** 系統樹に置いた孤児のカードIDの頭。記録のIDと混ざらないように分ける。 */
+const ORPHAN_ID_PREFIX = 'LIVE:';
+
+/** 記録に無い稼働中の機体のうち、**起動元が実測で分かっていて、その親が画面にいる**
+ *  ものだけを、木に置ける形にして返す。
+ *
+ *  **ここで推測はしない。** 親は「その機体を起動した Agent 呼び出しのID
+ *  （meta.json の toolUseId）が、親のログの tool_use と一致した相手」で、
+ *  サーバーが実測で辿ったものしか渡ってこない。その親が記録と結ばれているときだけ
+ *  記録上のID（parentRecordId）が分かり、置き場所が一意に決まる。
+ *
+ *  親が分からない機体は置かない。「たぶん指令塔の下」で線を引いた瞬間、この画面は
+ *  実測を出す道具ではなくなる。それらは今までどおり木の下の一覧に並ぶ。
+ *
+ *  孤児の下にさらに孤児がぶら下がることがあるので、置けなくなるまで繰り返す
+ *  （親が置かれて初めて子の置き場所が決まる）。
+ */
+function placedOrphans(agents, sources) {
+  const list = (sources && Array.isArray(sources.liveOrphans)) ? sources.liveOrphans : [];
+  if (!list.length) return [];
+  const gen = new Map(agents.map((a) => [a.id, a.generation]));
+  const out = [];
+  let rest = list.slice();
+  for (let pass = 0; pass < 8 && rest.length; pass++) {
+    const left = [];
+    for (const o of rest) {
+      // 親が記録と結ばれていればその記録ID、結ばれていなくても親自身が既に
+      // 置かれていればそのカードID。どちらも実測で辿った相手なので推測は入らない。
+      let pid = o.parentRecordId || '';
+      if (!gen.has(pid) && o.parentAgentId) pid = ORPHAN_ID_PREFIX + o.parentAgentId;
+      if (!gen.has(pid)) { left.push(o); continue; }
+      const id = ORPHAN_ID_PREFIX + o.agentId;
+      gen.set(id, (gen.get(pid) || 0) + 1);
+      out.push({
+        id: id,
+        name: o.description || o.agentId,
+        parentId: pid,
+        generation: gen.get(id),
+        model: o.model || '',
+        mission: '',
+        // 記録が無い＝完了の合図も来ないので、状態は「稼働中」しか名乗れない。
+        // 実際に終わっているかは沈黙の長さでしか読めない（カードの b-idle に出る）。
+        status: 'running',
+        waiting: false,
+        live: o,
+        startedAt: null, finishedAt: null, result: null,
+        // **数えない印。** 記録に無いものを「機体数」や「完了数」に混ぜると、
+        // 締め忘れの判定（全機帰還したか）が狂う。
+        source: 'orphan',
+      });
+    }
+    if (left.length === rest.length) break;   // 1体も置けなかった。これ以上は決まらない
+    rest = left;
+  }
+  return out;
+}
+
+/** 木に置ける孤児を混ぜた状態を返す。元の状態は変えない。
+ *
+ *  **呼び出し口は2つある。** 過去の記録は normalizeState を通って入り、稼働中の
+ *  チームは毎秒の一覧からそのまま入る。片方だけに掛けると、片方の画面でだけ
+ *  孤児が木に出ない——しかもエラーにはならないので気づけない。
+ */
+function withPlacedOrphans(s) {
+  if (!s || !Array.isArray(s.agents)) return s;
+  const extra = placedOrphans(s.agents, s.sources);
+  if (!extra.length) return s;
+  return Object.assign({}, s, { agents: s.agents.concat(extra) });
+}
+
 function normalizeState(s) {
   if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
   const mission = Object.assign({}, (s.mission && typeof s.mission === 'object') ? s.mission : {});
@@ -2054,12 +2129,13 @@ function normalizeState(s) {
                 ? a : Object.assign({}, a, { status: 'standby' }))
     .map((a) => (typeof a.waiting === 'boolean' && a.status === 'running')
                 ? a : Object.assign({}, a, { waiting: false }));
+  const sources = (s.sources && typeof s.sources === 'object') ? s.sources : null;
   return {
     runId:   s.runId || null,
     project: (s.project && typeof s.project === 'object') ? s.project : {},
     mission, agents,
     log:     (Array.isArray(s.log) ? s.log : []).filter((e) => e && typeof e === 'object'),
-    sources: (s.sources && typeof s.sources === 'object') ? s.sources : null,
+    sources: sources,
   };
 }
 
@@ -2616,6 +2692,7 @@ function createAgent(t, a) {
     '<div class="c-top"><span class="c-name"></span><span class="c-id"></span></div>' +
     '<div class="c-badges"><span class="badge b-model"></span>' +
       '<span class="badge b-src self" hidden data-i18n="card.self_reported"></span>' +
+      '<span class="badge b-orphan" hidden data-i18n="card.orphan"></span>' +
       '<span class="badge b-wait" hidden data-i18n="card.awaiting"></span>' +
       '<span class="badge b-idle" hidden></span></div>' +
     '<div class="c-mission"></div>' +
@@ -2640,6 +2717,7 @@ function createAgent(t, a) {
     id:     card.querySelector('.c-id'),
     model:  card.querySelector('.b-model'),
     src:    card.querySelector('.b-src'),
+    orphan: card.querySelector('.b-orphan'),
     mission:card.querySelector('.c-mission'),
     wait:   card.querySelector('.b-wait'),
     idle:   card.querySelector('.b-idle'),
@@ -2682,6 +2760,10 @@ function updateAgent(t, entry, a) {
   // 空 = モデル未指定。サーバーは言語に依存しない空文字で寄こすので、訳すのはここ。
   entry.model.textContent = a.model || tr('card.unknown_model');
   entry.src.hidden = a.source !== 'self';
+  // 記録に無い機体。線は実測で引いているが、**記録としては存在しない**ことを
+  // カード自身に言わせる。ここを出さないと、add を打ち忘れたことに気づけない。
+  if (entry.orphan) entry.orphan.hidden = a.source !== 'orphan';
+  entry.root.classList.toggle('orphan', a.source === 'orphan');
   entry.mission.textContent = a.mission || tr('card.no_mission');
   entry.mission.title = a.mission || '';
 
@@ -2800,7 +2882,9 @@ function render(t, s) {
   // --- ミッションバー
   const isHist = t.runId !== null;      // 過去の記録（history/<runId>）
   const frozen = !t.live;               // もう更新されない画面（記録、または流れてこなくなったもの）
-  const workers = s.agents.filter((a) => a.id !== COMMAND_ID);
+  // 木に置いた孤児は数えない。記録に無いものを機体数や完了数に混ぜると、
+  // 「全機帰還したのに締められていない」の判定が狂う。
+  const workers = s.agents.filter((a) => a.id !== COMMAND_ID && a.source !== 'orphan');
   const doneCount = workers.filter((a) => a.status === 'done').length;
 
   // 全機帰還したのに締められていない状態。動いている画面のときだけ言う
@@ -4188,17 +4272,23 @@ function stateSig(ts) {
     l: ts.log.length,
     s: Object.assign({}, src, {
       liveOrphans: (src.liveOrphans || []).map(
-        (o) => [o.agentId, o.state, o.parentAgentId || '']),
+        (o) => [o.agentId, o.state, o.parentAgentId || '', o.parentRecordId || '']),
     }),
   });
 }
 
 // 記録に無いのに動いている機体。add の打ち忘れがその場で見えるようにする。
-// 系統樹には入れない——親を推測して線を引いたら、それは実測ではなくなる。
+// **起動元が実測で分かったものは系統樹の中にいる**ので、ここには並べない。
+// ここに残るのは「誰が起動したのか分からない機体」だけ——親を推測して線を引いたら、
+// それは実測ではなくなるので、置き場所が決まらないものはこの一覧のままにする。
 function paintOrphans(t) {
   const el = t.els.orphans;
   if (!el) return;
-  const list = (t.state && t.state.sources && t.state.sources.liveOrphans) || [];
+  const all = (t.state && t.state.sources && t.state.sources.liveOrphans) || [];
+  const placed = new Set(((t.state && t.state.agents) || [])
+    .filter((a) => a.source === 'orphan' && a.live)
+    .map((a) => a.live.agentId));
+  const list = all.filter((o) => !placed.has(o.agentId));
   el.textContent = '';
   el.hidden = !list.length;
   if (!list.length) return;
@@ -4426,9 +4516,12 @@ async function tick() {
     }
 
     // --- 増えたチームの器を作り、内容が変わったチームだけ描き直す
-    for (const ts of list) {
-      const slug = slugOf(ts);
+    for (const raw of list) {
+      const slug = slugOf(raw);
       if (slug === null) continue;
+      // 木に置ける孤児をここで混ぜる。以降の sig 比較・描画・時計は、
+      // 混ぜたあとの状態を見る（タブの機体数は raw のままなので数は増えない）。
+      const ts = withPlacedOrphans(raw);
       const key = tabKey(slug, null);
       let t = teams.get(key);
       if (!t) t = createTeam(slug, null, true);

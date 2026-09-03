@@ -1906,6 +1906,26 @@ def empty_state(project: dict | None = None) -> dict:
     }
 
 
+#: 差し替えが弾かれたときに、あきらめるまでの回数と待ち（秒）。
+#: Windows では、他のプロセスがそのファイルを開いている一瞬だけ os.replace が
+#: PermissionError になる（画面のサーバーが読んでいる、ウイルス対策が触っている等）。
+#: そこで例外を上げると、**その1件の記録が黙って消える**——このツールがいちばん
+#: 避けたい壊れ方なので、短く数回だけ待ち直してから諦める。
+REPLACE_TRIES = 12
+REPLACE_WAIT_SEC = 0.05
+
+
+def _replace_with_retry(tmp, target) -> None:
+    for i in range(REPLACE_TRIES):
+        try:
+            os.replace(tmp, target)
+            return
+        except PermissionError:
+            if i == REPLACE_TRIES - 1:
+                raise
+            time.sleep(REPLACE_WAIT_SEC)
+
+
 def write_state(slug: str, state: dict) -> None:
     """一時ファイルに書いてから差し替える。読み込み側が書きかけのJSONを読むことがない。
 
@@ -1921,7 +1941,7 @@ def write_state(slug: str, state: dict) -> None:
     tmp = target.with_name(target.name + ".%d.tmp" % os.getpid())
     try:
         tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        os.replace(tmp, target)
+        _replace_with_retry(tmp, target)
     finally:
         try:
             tmp.unlink()
@@ -1980,7 +2000,11 @@ def state_lock(slug: str):
                 break   # 待ち切った。錠なしで進む（止めるよりまし）
             time.sleep(0.02)
         except OSError:
-            break       # 錠を作れない置き場（読み取り専用など）。錠なしで進む
+            # 読み取り専用の置き場なら何度やっても作れないが、ウイルス対策などが
+            # 一瞬掴んでいるだけのこともある。上限まで待ち直してから諦める。
+            if time.time() >= deadline:
+                break   # 錠なしで進む（止めるよりまし）
+            time.sleep(0.05)
     try:
         yield
     finally:

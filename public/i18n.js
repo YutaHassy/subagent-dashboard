@@ -132,6 +132,7 @@
 
     // --- 機体カード
     'card.self_reported':  'self-reported',
+    'card.orphan':         'not in the records',
     'card.awaiting':       'awaiting report',
     // 稼働中の実測（live）。値は Claude Code がその機体について書いている記録から数えたもの。
     'live.unknown_tool':   'working',
@@ -299,6 +300,7 @@
     'log.hide':            'イベントログを隠す',
 
     'card.self_reported':  '自己申告',
+    'card.orphan':         '記録に無い',
     'card.awaiting':       '報告待ち',
     'live.unknown_tool':   '作業中',
     'live.tools_n':        'ツール {n}',
@@ -455,6 +457,7 @@
     'log.hide':            '隐藏事件日志',
 
     'card.self_reported':  '自行申报',
+    'card.orphan':         '记录中没有',
     'card.awaiting':       '等待回报',
     'live.unknown_tool':   '作业中',
     'live.tools_n':        '工具 {n}',
@@ -611,6 +614,7 @@
     'log.hide':            '이벤트 로그 숨기기',
 
     'card.self_reported':  '자가 보고',
+    'card.orphan':         '기록에 없음',
     'card.awaiting':       '보고 대기',
     'live.unknown_tool':   '작업 중',
     'live.tools_n':        '도구 {n}',

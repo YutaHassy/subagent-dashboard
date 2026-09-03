@@ -557,6 +557,8 @@ def main() -> int:
         check("起動元は結ばれた記録の名前で出る", orph["ko1"].get("parentName"), "偵察班 地形走査")
         check("親が分からない機体には起動元を補わない",
               orph["hitori"].get("parentAgentId"), None)
+        check("親が分からない機体には記録IDも付かない（木に置けない）",
+              orph["hitori"].get("parentRecordId"), None)
         check("対応づけ用の手がかりは孤児にも漏れない",
               sorted(k for o in orph.values() for k in o if k.startswith("_")), [])
 
@@ -596,6 +598,8 @@ def main() -> int:
               orph["mago25"].get("parentAgentId"), "oya25")
         check("起動元は結ばれた記録の名前で出る",
               orph["mago25"].get("parentName"), "親の仕事")
+        # 画面が系統樹のどこに置くかは、この記録IDだけで決まる。無ければ置かない。
+        check("親の記録IDが分かる", orph["mago25"].get("parentRecordId"), "A")
 
         print()
         print("[26] 起動呼び出しのIDが一致したら、それだけで決まる")
