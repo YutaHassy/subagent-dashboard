@@ -381,7 +381,8 @@ def build_payload() -> dict:
         ]
 
     payload = {
-        "version": 2,
+        "version": 2,                 # この payload の形の版（本体の版ではない）
+        "toolVersion": TOOL_VERSION,  # 本体の版。画面の題名の横に出す
         "serverTime": dashlib.now_iso(),
         "currentSlug": current,
         "teams": teams,
@@ -392,8 +393,16 @@ def build_payload() -> dict:
     return payload
 
 
+# 動いている本体の版。VERSION は build_vsix が package.json から作る生成物で、配置版と
+# 拡張の同梱物で食い違うことがある（同じ版なら拡張は上書きしない）。画面に出すのは
+# **いま応答しているサーバーが読んだ値**であって、画面や拡張が持つ値ではない。
+# 起動時に1回読む——コードの差し替えにも再起動が要るので、版だけ先に変わることはない。
+TOOL_VERSION = dashlib.tool_version()
+
+
 def env_info() -> dict:
     return {
+        "toolVersion": TOOL_VERSION,
         "platform": sys.platform,
         "python": sys.version.split()[0],
         "toolRoot": str(dashlib.TOOL_ROOT),

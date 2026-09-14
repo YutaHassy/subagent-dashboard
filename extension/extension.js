@@ -2167,7 +2167,8 @@ class DashboardView {
       await cmdOpen(this.context);
       return;
     }
-    const handled = await runNoticeAction(this.context, action, () => this.refresh());
+    const handled = await runNoticeAction(this.context, action,
+      () => (this.tabMode() ? this.repaintForTab() : this.refresh()));
     if (!handled) log(t('That button was not recognised: {action}', { action }));
   }
 
@@ -2239,17 +2240,73 @@ class DashboardView {
   }
 
   /**
+   * タブへ移す設定（sidebarBehavior = openInTab）での描き直し。**ここでは埋め込まない。**
+   *
+   * 以前は reload() が tabMode でも refresh()（埋め込み）に落ちていた。サイドバーの
+   * WebviewView は閉じても捨てられない（onDidDispose は利用者がビューを明示的に隠した
+   * ときにしか来ない）ので、再起動や設定変更のたびに**見えていないサイドバーの中に
+   * 管制室が埋め込まれ**、次にアイコンを押したときはタブではなく左側に出ていた
+   * （実測 2026-09-14: サーバーを2回再起動したあと、常に左側に出るようになった）。
+   *
+   * タブは openWebview() が使い回す（既にあれば reveal するだけ）ので、ここから開いても
+   * 二重には開かない。開くのは openIn が webview のときだけ——external / simpleBrowser は
+   * 再起動のたびにブラウザを立ち上げることになるので、紙のボタンに任せる。
+   */
+  async repaintForTab() {
+    const view = this.view;
+    if (!view) return;
+    const r = await ensureServer(this.context, true);
+    if (this.view !== view) return;  // 待っている間に閉じられた
+    if ('error' in r) {
+      log(t('Sidebar: {message}', { message: r.error }));
+      view.webview.html = noticeHtml(t('Subagent Dashboard cannot be shown'), r.error, noticeActions(r.reason));
+      this.port = null;
+      return;
+    }
+    this.port = r.port;
+    const mode = String(cfg().get('openIn') || 'webview');
+    if (!panel && mode === 'webview') {
+      try {
+        openWebview(this.context, r.port);
+      } catch (e) {
+        // タブが出せない環境。見えないよりは埋め込みで見えるほうがよい
+        log(t('The webview could not be opened: {err}', { err: e && e.message }));
+        await this.refresh();
+        return;
+      }
+    }
+    if (this.view !== view) return;
+    if (panel) {
+      view.webview.html = noticeHtml(
+        t('Opened in a tab'),
+        t('The icon in the activity bar opens a tab every time you press it. To see it embedded here on the left instead, set agentDashboard.sidebarBehavior to embed.'),
+        [
+          { id: 'reopen', label: t('Open in a tab again'), primary: true },
+          { id: 'settings', label: t('Open the settings') },
+        ]
+      );
+    } else {
+      view.webview.html = noticeHtml(
+        t('The server was restarted'),
+        t('It is not embedded here while agentDashboard.sidebarBehavior is openInTab. Press "Open in a tab again" to show it.'),
+        [
+          { id: 'reopen', label: t('Open in a tab again'), primary: true },
+          { id: 'settings', label: t('Open the settings') },
+        ]
+      );
+    }
+  }
+
+  /**
    * サーバーを立て直したときや設定が変わったときに呼ぶ。投げっぱなしにしない。
    *
-   * **tabMode でもここでは handOffToTab を使わない。** この道はタイトルバーの $(refresh)
-   * （cmdRestart）からも来るので、cmdOpen を通すと更新を押すたびに新しいタブが開く。
-   * そもそも tabMode でサイドバーがまだ見えているのは、移すのに失敗したか閉じ損ねたとき
-   * だけなので、ここは埋め込みで見せるのが復旧としても正しい。
+   * タブへ移す設定では埋め込まず repaintForTab() へ（理由はそちらに書いた）。
+   * 埋め込む設定（embed）だけ、これまでどおり refresh() で左側に描く。
    */
   reload() {
-    if (this.view) {
-      this.refresh().catch((e) => log(t('Error while repainting the sidebar: {err}', { err: e && e.message })));
-    }
+    if (!this.view) return;
+    const p = this.tabMode() ? this.repaintForTab() : this.refresh();
+    p.catch((e) => log(t('Error while repainting the sidebar: {err}', { err: e && e.message })));
   }
 
   /**

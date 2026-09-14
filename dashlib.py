@@ -2197,7 +2197,10 @@ def assign_live_safely(agents: list[dict], project_path: str, mission: dict, slu
     返し、稼働中のチームまで画面から消える。だから何が起きても黙って諦める。
     live が出ないことは、画面が壊れることより、はるかに軽い。
 
-    返り値は「記録に無いのに動いている機体」の一覧。系統樹には入れず別枠で出す
+    返り値は「記録に無いのに動いている機体」の一覧。agents には混ぜず、別枠
+    （sources.liveOrphans）で返す。画面は、起動元を実測で辿れたもの——親の記録ID、または
+    指令塔（meta.json の spawnDepth が 1 で、機体の sessionId がミッションの sessionId と
+    一致）——だけを系統樹に置き、辿れなかったものは別区画に並べる
     （親を推測して系統樹を描くと、それは実測ではなくなる）。
     """
     try:

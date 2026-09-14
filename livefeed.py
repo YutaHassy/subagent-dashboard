@@ -623,18 +623,37 @@ def _peer_records(want_path: str, slug: str, now: float) -> list:
                     p = value.get("project") if isinstance(value.get("project"), dict) else {}
                     recs = [a for a in (value.get("agents") or [])
                             if isinstance(a, dict) and a.get("status") == "running"]
-                    keys[s] = (norm_path(dashlib.as_str(p.get("path"))), recs)
+                    keys[s] = (norm_path(dashlib.as_str(p.get("path"))), recs,
+                               dashlib.as_str(m.get("sessionId")).strip())
             except Exception:
                 keys = {}
             _peer_cache["at"] = now
             _peer_cache["keys"] = keys
         keys = _peer_cache["keys"]
     out = []
-    for s, (p, recs) in keys.items():
+    for s, (p, recs, _sess) in keys.items():
         if s == slug or p != want_path:
             continue
         out.extend(recs)
     return out
+
+
+def _peer_sessions(want_path: str, slug: str, now: float) -> set:
+    """同じ場所で走っている他のミッションの持ち主（mission.sessionId）。
+
+    `--project` で分けた2本を同じセッションから回すと、両方の記録が同じ sessionId を
+    持つ。そのとき spawnDepth=1 の実機は「このセッションが起動した」までは実測でも、
+    **どちらのミッションの子か**は決められない。ここで集めた値と一致するなら、
+    指令塔直下に置くのをやめて一覧に回す（両方の木に同じ機体を置くのは「置いた」では
+    なく「推測した」）。_peer_records と同じ台帳を読むので、読み取りは増えない。
+    """
+    if not want_path:
+        return set()
+    _peer_records(want_path, slug, now)      # 台帳を温める（TTL 内なら何もしない）
+    with _LOCK:
+        keys = _peer_cache["keys"]
+    return {sess for s, (p, _recs, sess) in keys.items()
+            if s != slug and p == want_path and sess}
 
 
 def _tick_taken(now: float) -> dict:
@@ -717,6 +736,9 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         m["_prompt"] = c.get("prompt") or ""
         m["_toolUseId"] = c.get("toolUseId") or ""
         m["_parentAgentId"] = c.get("parentAgentId") or ""
+        # 指令塔が直接起動した子かどうかを決める2つ（下の孤児処理で使う）。
+        m["_spawnDepth"] = c.get("spawnDepth")
+        m["_sessionId"] = c.get("sessionId") or ""
         m["_spawns"] = list(acc["spawns"])
         cands.append(m)
     if not cands:
@@ -904,8 +926,8 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
 
     # 記録に無い実機の親を、実測で辿る。meta.json の toolUseId はその機体を起動した
     # Agent 呼び出しのIDで、同じIDは親のログに tool_use として現れる。だから親子は
-    # **推測ではなく実測**で決まる（系統樹に線を引かないのは変えない。ここで出すのは
-    # 素性だけで、線を引けば「どの世代のどこに置くか」という推測が必ず入るため）。
+    # **推測ではなく実測**で決まる。画面が木に置くのは parentRecordId が付いたものだけで、
+    # 付けられなかったものは一覧に回る（「たぶんこの下」では置かない）。
     owner = {}
     for c in cands:
         for tid in (c.get("_spawns") or ()):
@@ -915,6 +937,38 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
     desc_of_agent = dict(known_desc)
     for c in cands:
         desc_of_agent[c["agentId"]] = c["description"]
+
+    # 指令塔が直接起動した機体。**これも実測で決まる。** meta.json の spawnDepth は
+    # Claude Code 自身が書く起動の深さで、1 は「主セッションが起動した」の意味。
+    # その主セッションがこのミッションの持ち主（mission.sessionId は start が書いた
+    # 事実）なら、起動元はこのミッションの指令塔そのもの。指令塔のログは subagents/ の
+    # 下に無いので上の owner では辿れず、ここで見ないと**指令塔の子は全員が親不明**
+    # になる——その下の孫も連鎖で置けなくなり、木は空のまま一覧だけが伸びる。
+    # 実測（2026-09-14）: hook が発火しない状態で子3体・孫1体を起動したところ、
+    # 子は spawnDepth=1 で起動IDが指令塔のログに1件ずつあり、孫は spawnDepth=2 で
+    # parentAgentId 付きだったのに、4体とも一覧に落ちた。公式の Agent map は
+    # 同じ transcript から木を描けていた。
+    # 深さが無い（古い meta.json）・記録に sessionId が無い（0.9.1 より前の start）・
+    # 別セッションの機体、のどれかなら付けない。分からないものは今までどおり一覧。
+    # さらに次の2つも付けない:
+    # - 同じ場所で同じセッションが別のミッションも回している（--project で分けた2本）。
+    #   両方の記録が同じ sessionId を持つので「どちらのミッションの子か」が決まらない。
+    #   運用ルールはこの場面を「add --project で手で登録する」と案内している。
+    # Workflow が起動した機体（subagents/workflows/ の下）も同じ規則で置く。
+    # 実測（2026-09-14）: 下請け（general-purpose）には Workflow ツールそのものが無い
+    # （ToolSearch の select でも keyword でも見つからない）。つまり Workflow を回せるのは
+    # 主セッションだけで、workflows/ 配下の機体は全部が指令塔の子。実データでも
+    # workflows/ 配下は全件 spawnDepth=1・parentAgentId 無しで、これと矛盾しない。
+    # 除外していた期間（同日）は、Workflow の 7 体が丸ごと区画に落ちていた。
+    mission_session = dashlib.as_str(mission.get("sessionId")).strip()
+    shared_session = bool(mission_session) and (
+        mission_session in _peer_sessions(want_path, slug, now))
+
+    def spawned_by_command(c: dict) -> bool:
+        return (bool(mission_session)
+                and not shared_session
+                and c.get("_spawnDepth") == 1
+                and dashlib.as_str(c.get("_sessionId")).strip() == mission_session)
 
     orphans = []
     for c in sorted(cands, key=lambda x: x["agentId"]):
@@ -933,6 +987,11 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
             o["parentRecordId"] = rec_of_agent.get(pid, "")
             o["parentName"] = (name_of_rec.get(rec_of_agent.get(pid, ""), "")
                                or desc_of_agent.get(pid, ""))
+        elif spawned_by_command(c):
+            # 起動元は指令塔。指令塔はサブエージェントではないので parentAgentId は
+            # 無く、記録上のIDだけが決まる。画面はこれを見て指令塔の直下に置く。
+            o["parentRecordId"] = dashlib.COMMAND_ID
+            o["parentName"] = name_of_rec.get(dashlib.COMMAND_ID, "")
         orphans.append(o)
     return orphans
 

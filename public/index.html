@@ -76,6 +76,11 @@ body {
   z-index: 5;
 }
 .app-name { flex: none; font-size: 14px; font-weight: 700; letter-spacing: .18em; }
+/* 版は製品名に寄せて小さく薄く。#topbar の gap（14px）ぶん離れると別物に見えるので詰める。 */
+.app-version {
+  flex: none; margin-left: -8px; font-size: 11px; font-weight: 500;
+  letter-spacing: 0; color: var(--dim); white-space: nowrap;
+}
 #team-count {
   flex: none; font-size: 11px; letter-spacing: .1em; color: var(--dim); white-space: nowrap;
   padding: 4px 11px; border-radius: 999px;
@@ -94,6 +99,7 @@ body {
 @media (max-width: 760px) {
   #topbar { gap: 8px; padding: 8px 12px; }
   .app-name { font-size: 12.5px; letter-spacing: .1em; }
+  .app-version { margin-left: -4px; font-size: 10px; }
   .topbar-right { gap: 6px; }
   .screen-btn { padding: 5px 9px; font-size: 11px; }
   .zoom-control { padding: 3px 5px; gap: 2px; }
@@ -102,7 +108,7 @@ body {
 /* さらに狭いところ。ここまで来たら製品名は畳む（切れて読めない名前より、
    押せるボタンを優先する）。画面が何かは切り替えボタンが示している。 */
 @media (max-width: 460px) {
-  .app-name { display: none; }
+  .app-name, .app-version { display: none; }
   #team-count { padding: 3px 8px; }
   .topbar-right { margin-left: 0; flex: 1 1 100%; justify-content: flex-start; }
 }
@@ -1208,6 +1214,10 @@ body {
 
   <header id="topbar">
     <span class="app-name" data-i18n="app.name">Subagent Dashboard</span>
+    <!-- 本体の版。/api/state の toolVersion（サーバーが VERSION から読んだ値）を出す。
+         ここに版を書き込まないこと——配置版と拡張の同梱物で版が食い違ったとき、
+         動いているほうの版が出るのが正しい。届くまでは空のまま隠しておく。 -->
+    <span class="app-version" id="app-version" hidden></span>
     <span id="team-count">—</span>
     <div class="topbar-right">
       <!-- Phase 3で追加。ミッション管制室（既存の全機能）と変更履歴の2画面をここで切り替える。
@@ -1559,6 +1569,7 @@ const elApp        = need('#app');
 const elTeams      = need('#teams');
 const elStandby    = need('#standby');
 const elCount      = need('#team-count');
+const elVersion    = need('#app-version');
 const elTabsPanel  = need('#team-tabs');
 const elTabBar     = need('#tab-bar');
 const elHistClear  = need('#history-clear');
@@ -2453,6 +2464,11 @@ const ORPHAN_ID_PREFIX = 'LIVE:';
  *  （meta.json の toolUseId）が、親のログの tool_use と一致した相手」で、
  *  サーバーが実測で辿ったものしか渡ってこない。その親が記録と結ばれているときだけ
  *  記録上のID（parentRecordId）が分かり、置き場所が一意に決まる。
+ *  指令塔が直接起動した機体も同じ扱い——meta.json の spawnDepth が 1 で、その機体の
+ *  sessionId がミッションの持ち主（start が書いた mission.sessionId）と一致するとき、
+ *  サーバーが parentRecordId に COMMAND を入れて渡してくる。どちらも Claude Code
+ *  自身が書いた値の一致で、推測ではない（2026-09-14: これが無いと指令塔の子は全員
+ *  親不明になり、その孫も連鎖で置けず、公式の Agent map に系統樹で負けた）。
  *
  *  親が分からない機体は置かない。「たぶん指令塔の下」で線を引いた瞬間、この画面は
  *  実測を出す道具ではなくなる。それらは今までどおり木の下の一覧に並ぶ。
@@ -4999,6 +5015,13 @@ async function tick() {
 
     failCount = 0;
     setConn(true);
+
+    // 本体の版。サーバーが VERSION から読んだ値で、画面は持たない。値が変わるのは
+    // サーバーを入れ替えたときだけなので、同じなら DOM に触らない。
+    if (typeof next.toolVersion === 'string' && next.toolVersion) {
+      const v = 'v' + next.toolVersion;
+      if (elVersion.textContent !== v) { elVersion.textContent = v; elVersion.hidden = false; }
+    }
 
     // サーバーが返すのは「稼働中のチーム全部 ＋ .current が指すチーム」で、
     // 開始が新しい順に並んでいる。並べ替えはサーバーの責任なので、こちらではしない。

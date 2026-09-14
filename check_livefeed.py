@@ -109,7 +109,7 @@ def write_agent(subagents: Path, agent_id: str, *, start: float, cwd: str,
 
 def write_mission(missions: Path, slug: str, *, project_path: str, started: float,
                   agents: list, keep_others: bool = False,
-                  phase: str = "running", orphans=None) -> None:
+                  phase: str = "running", orphans=None, session: str = "") -> None:
     if not keep_others:
         # 同じ場所で何本ものミッションが同時に「稼働中」で残っているのは、実運用では
         # 起きない形（起きるときは --project で分けた2本まで）。検査は場面ごとに
@@ -139,6 +139,9 @@ def write_mission(missions: Path, slug: str, *, project_path: str, started: floa
     }
     if orphans is not None:
         state["orphans"] = orphans
+    if session:
+        # start が書く持ち主の印（0.9.1 以降）。省くと sessionId の無い古い記録になる。
+        state["mission"]["sessionId"] = session
     (missions / slug / "state.json").write_text(
         json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -1025,6 +1028,121 @@ def main() -> int:
               [o["agentId"] for o in st["sources"]["liveOrphans"]], ["live33"])
         check("その機体に「もう動いていない」印は付かない",
               [o.get("frozen") for o in st["sources"]["liveOrphans"]], [None])
+
+        print()
+        print("[34] 指令塔が直接起動した機体は、記録に無くても指令塔の直下に置ける")
+        # 実物（2026-09-14）: hook が発火しない状態で子3体・孫1体を起動すると、子の
+        # meta.json は spawnDepth=1 で親の記載が無く、起動IDは指令塔のログ
+        # （<sessionId>.jsonl。subagents/ の下には無い）にだけ現れる。孫は spawnDepth=2 で
+        # parentAgentId 付き。それまでは子3体が親不明→孫も連鎖で置けず、4体とも一覧に
+        # 落ちていた。公式の Agent map は同じ transcript から木を描けていた。
+        # spawnDepth と sessionId はどちらも Claude Code 自身が書く値で、記録の
+        # sessionId は start が書いた持ち主の印。一致は「このミッションの主セッションが
+        # 起動した」を意味し、推測ではない。
+        work34 = tmp / "work34"
+        work34.mkdir(parents=True, exist_ok=True)
+        path34 = str(work34.resolve())
+        slug34 = dashlib.slug_for_path(work34.resolve())
+        session34 = "34343434-2222-3333-4444-555555555555"
+        other34 = "34343434-9999-3333-4444-555555555555"
+        sub34 = live_root / slug34 / session34 / "subagents"
+        t34 = now - 100
+        write_agent(sub34, "ko34a", start=t34, cwd=path34, session=session34,
+                    model="haiku", description="偵察A 直下の子",
+                    spawn_depth=1, tool_use_id="toolu_cmd34a",   # 指令塔のログにしか無いID
+                    tools=[("Read", {"file_path": "/a.py"}, 1)])
+        write_agent(sub34, "ko34b", start=t34, cwd=path34, session=session34,
+                    model="sonnet", description="分隊長B 孫を率いる",
+                    spawn_depth=1, tool_use_id="toolu_cmd34b",
+                    tools=[("Agent", {"description": "孫B-1"}, 1)])
+        write_agent(sub34, "mago34", start=t34 + 2, cwd=path34, session=session34,
+                    model="haiku", description="孫B-1",
+                    spawn_depth=2, tool_use_id="ko34b-tu0", parent_agent_id="ko34b",
+                    tools=[("Read", {"file_path": "/b.py"}, 1)])
+        # 深さが分からない機体（古い meta.json の形）
+        write_agent(sub34, "fukasa34", start=t34, cwd=path34, session=session34,
+                    model="haiku", description="深さ不明",
+                    spawn_depth=None, tools=[("Read", {"file_path": "/c.py"}, 1)])
+        # 同じ作業場所だが別セッションが起動した機体
+        write_agent(live_root / slug34 / other34 / "subagents", "yoso34",
+                    start=t34, cwd=path34, session=other34,
+                    model="haiku", description="別セッションの子",
+                    spawn_depth=1, tools=[("Read", {"file_path": "/d.py"}, 1)])
+        # Workflow が起動した機体。下請けには Workflow ツールが無い（実測 2026-09-14）ので、
+        # workflows/ 配下は全部が指令塔の子。実データも全件 spawnDepth=1・親の記載無し。
+        write_agent(sub34, "wf34", start=t34, cwd=path34, session=session34,
+                    model="haiku", description="", workflow_run="run34",
+                    spawn_depth=1, tools=[("Read", {"file_path": "/e.py"}, 1)])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t34", project_path=path34,
+                      started=t34 - 5, session=session34,
+                      agents=[command("claude-opus-5", t34 - 5)])
+        st = dashlib.build_state("t34")
+        orph = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}
+        check("6体とも記録に無い機体として出る",
+              sorted(orph), ["fukasa34", "ko34a", "ko34b", "mago34", "wf34", "yoso34"])
+        check("指令塔が起動した子は、記録上の親が COMMAND になる",
+              [orph[k].get("parentRecordId") for k in ("ko34a", "ko34b")],
+              ["COMMAND", "COMMAND"])
+        check("起動元は指令塔の名前で出る",
+              [orph[k].get("parentName") for k in ("ko34a", "ko34b")], ["指令塔", "指令塔"])
+        check("指令塔はサブエージェントではないので parentAgentId は付かない",
+              [orph[k].get("parentAgentId") for k in ("ko34a", "ko34b")], [None, None])
+        check("孫は従来どおり実測の親（記録に無い子）を指す",
+              (orph["mago34"].get("parentAgentId"), orph["mago34"].get("parentRecordId")),
+              ("ko34b", ""))
+        check("孫が COMMAND 直下に化けない",
+              orph["mago34"].get("parentName"), "分隊長B 孫を率いる")
+        check("深さが分からない機体には付けない",
+              orph["fukasa34"].get("parentRecordId"), None)
+        check("別セッションが起動した機体には付けない",
+              orph["yoso34"].get("parentRecordId"), None)
+        check("Workflow の機体も指令塔の直下（下請けには Workflow ツールが無い）",
+              orph["wf34"].get("parentRecordId"), "COMMAND")
+        check("対応づけ用の手がかりは孤児にも漏れない",
+              sorted(k for o in orph.values() for k in o if k.startswith("_")), [])
+
+        # 同じセッションが --project で2本目を同じ場所で回している。両方の記録が同じ
+        # sessionId を持つので、spawnDepth=1 の機体が「どちらのミッションの子か」は
+        # 決まらない。運用ルールはこの場面を「add --project で手で登録」と案内している。
+        # 両方の木の指令塔直下に同じ機体を置くのは「置いた」ではなく「推測した」。
+        write_mission(data_home / "missions", "t34b", project_path=path34,
+                      started=t34 - 5, session=session34, keep_others=True,
+                      agents=[command("claude-opus-5", t34 - 5)])
+        reset(livefeed)
+        both = {}
+        for slug_ in ("t34", "t34b"):
+            st = dashlib.build_state(slug_)
+            both[slug_] = {o["agentId"]: o.get("parentRecordId")
+                           for o in st["sources"]["liveOrphans"]}
+        check("同じセッションの別ミッションが同じ場所で稼働中なら、どちらの木にも置かない",
+              [both["t34"].get("ko34a"), both["t34b"].get("ko34a")], [None, None])
+        check("孫の実測の親（記録に無い子）は、その場面でも変わらない",
+              [both["t34"].get("mago34"), both["t34b"].get("mago34")], ["", ""])
+
+        # 締めたあと。finish が焼き付けた孤児は、指令塔直下の印もそのまま残る。
+        reset(livefeed)
+        write_mission(data_home / "missions", "t34c", project_path=path34,
+                      started=t34 - 5, session=session34, phase="done",
+                      orphans=[{"agentId": "baked34", "description": "焼き付けた指令塔の子",
+                                "model": "haiku", "tokens": 10, "toolCalls": 1,
+                                "elapsedSec": 3, "parentRecordId": "COMMAND",
+                                "parentName": "指令塔"}],
+                      agents=[dict(command("claude-opus-5", t34 - 5), status="done")])
+        st = dashlib.build_state("t34c")
+        got = st["sources"]["liveOrphans"]
+        check("焼き付けた指令塔直下の印は、締めたあとも残る",
+              [(o.get("parentRecordId"), o.get("frozen")) for o in got], [("COMMAND", True)])
+
+        # 記録に sessionId が無い（0.9.1 より前の start）なら、持ち主を確かめられない。
+        # そのときは今までどおり一覧に回す——「たぶんこの指令塔の子」では置かない。
+        reset(livefeed)
+        write_mission(data_home / "missions", "t34", project_path=path34,
+                      started=t34 - 5, agents=[command("claude-opus-5", t34 - 5)])
+        st = dashlib.build_state("t34")
+        orph = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}
+        check("記録に sessionId が無ければ、指令塔の子でも置かない",
+              [orph[k].get("parentRecordId") for k in ("ko34a", "ko34b")], [None, None])
 
     finally:
         os.environ.pop("AGENT_DASHBOARD_DATA_HOME", None)

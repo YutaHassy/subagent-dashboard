@@ -2,6 +2,14 @@
 
 Claude Code の変更履歴の自動記録（`changelog_cli.py summarize` により生成。手で編集しても次の summarize で上書きされる）。
 
+## 2026-09-04 08:10:34 — GitHub最新版をGitLabに同期(ミラー)
+
+c:\PythonFiles\拡張機能開発\Subagent Dashboard\Subagent Dashboard リポジトリで、GitHub(origin)とGitLabの差分を調査。ローカルmainをorigin/mainにfast-forward(592d7b9→f0bd0f6, 0.9.4)し、GitLabのmainへpush。GitLabに無かったタグv0.6.2/v0.9.4を追加、GitHub限定の新規ブランチfeature/changelog-trackingもGitLabへ作成。push後にdiffで両者が完全一致することを確認。feature/any-ai-cli-supportとfeature/wiring-underは元々一致していたため未変更。ローカル限定の実験ブランチ(feature/live-agent-feed等)はGitHubに存在しないため同期対象外。
+
+- セッション: `2a98caaa-5d4d-4e87-9186-d45a031f3e7f`
+
+---
+
 ## 2026-09-04 01:43:31 — 最終読み合わせで3件の食い違いを発見。エージェントが読む注入文面だけ demo が抜けていた
 
 【0.9.4 の版上げと変更履歴 — 完了】
