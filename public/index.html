@@ -337,9 +337,17 @@ body {
         background: rgba(255,255,255,.035); border: 1px solid var(--line);
         font-size: 11px; color: var(--dim); }
 .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); flex: none; }
-.conn.ok i   { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s ease-in-out infinite; }
+.conn.ok i   { background: var(--green); box-shadow: 0 0 8px var(--green); }
 .conn.bad i  { background: #ff6b6b; box-shadow: 0 0 8px #ff6b6b; }
 .conn.bad    { color: #ffb0b0; border-color: rgba(255,107,107,.4); }
+/* 応答が途切れかけている／実測の読み取りが失敗している。どちらも「まだ繋がってはいる」。 */
+.conn.stale i, .conn.warn i { background: var(--amber, #ffb347); box-shadow: 0 0 8px var(--amber, #ffb347); }
+.conn.stale, .conn.warn     { color: #ffd59a; border-color: rgba(255,179,71,.4); }
+/* 拍。応答を1つ受け取るたびに1回だけ光る——止まったら光らない。
+   常時の点滅にしないのは、画面が固まっていても動いて見えてしまうため。 */
+.conn i.beat { animation: beat .6s ease-out; }
+@keyframes beat { 0% { transform: scale(1.7); opacity: 1; } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .conn i.beat { animation: none; } }
 
 .help-link {
   display: grid; place-items: center; flex: none; width: 30px; height: 30px;
@@ -652,10 +660,12 @@ body {
 .agent.done .card { opacity: .62; filter: saturate(.25); }
 .agent.done .card::before { background: var(--green); }
 
-.c-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
 .c-name { font-size: 14px; font-weight: 700; letter-spacing: .02em;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.c-id { font-size: 10px; color: var(--dim); font-family: Consolas, monospace; flex: none; }
+/* ID は名前の下に独立した行で置く。"LIVE:" + 17桁のようにハイフンの無い長い塊もあるので、
+   省略せず anywhere で途中から折り返す（ID は見比べるためのものなので、切ると役に立たない）。 */
+.c-id { font-size: 10px; color: var(--dim); font-family: Consolas, monospace;
+        margin: 1px 0 3px; overflow-wrap: anywhere; }
 .c-badges { display: flex; gap: 5px; margin: 5px 0 7px; flex-wrap: wrap; }
 .badge {
   font-size: 10px; padding: 2px 7px; border-radius: 5px;
@@ -699,20 +709,23 @@ body {
 /* hidden 属性を効かせる。ブラウザ既定の [hidden]{display:none} は作成者の
    display:flex に負けるので、結果が無いときも空の「▸」の行が残ってしまう。 */
 .c-result[hidden] { display: none; }
+/* 報告なしで終わった（実測で検知した）機体。見出しと取り違えないよう色を落とす。 */
+.c-result.detected { color: var(--dim); }
 
 /* 稼働中に読んだ実測（live）。Claude Code がサブエージェントごとに書いている記録から
    数えた実数で、推定ではない。それでも .c-metrics（完了通知として受け取って記録した値）
    とは出所が違うので、位置と書体を分けて、ひと目で別物と分かるようにする。
    トークンだけは「最後の行のコンテキスト長」という近似なので ≈ を付ける
    （実測誤差 -0.002%。ツール回数と経過秒は数え上げなので近似ではない）。 */
+/* コマンド（.lv-tool）とツール数（.lv-num）は上下2行。コマンドにカードの幅を全部渡す。 */
 .c-live {
-  display: flex; align-items: baseline; gap: 7px; margin-top: 7px;
+  margin-top: 7px;
   font-size: 11px; line-height: 1.45; color: #9ed3c6;
 }
 .c-live[hidden] { display: none; }
-.c-live .lv-tool { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-live .lv-tool { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-live .lv-tool b { color: #ddf3ec; font-weight: 700; }
-.c-live .lv-num { flex: none; font-family: Consolas, monospace; opacity: .82; }
+.c-live .lv-num { font-family: Consolas, monospace; opacity: .82; }
 .c-live.quiet   { color: #ddc79a; }
 .c-live.stalled { color: #ffadad; }
 
@@ -789,7 +802,7 @@ body {
 .orphan-bay {
   --robot-w: 47px;    /* 木の 94px の半分。高さは calc(--robot-w * 166 / 120) が追従する */
   /* 「1行に収まること」をやめて、折り返しを前提に半分（116px）まで詰めた。
-     モデル札・.c-id とも、下の .orphan-bay .badge / .orphan-bay .c-id で折り返しを許している
+     モデル札は下の .orphan-bay .badge で、.c-id は自身の overflow-wrap で折り返しを許している
      ので、25文字のモデル名 claude-haiku-4-5-20251001 も「claude-haiku-」「4-5-20251001」の
      2行（ハイフンの区切りで割れる）、.c-id の LIVE:+17桁も2行に収まる——実測
      （headless Chromium, 最悪ケース機体で計測）で、その2行とも右端はカードの内側に収まり、
@@ -803,10 +816,8 @@ body {
    ハイフンは overflow-wrap: break-word だけで折り返しの起点になる（実測: 25文字の
    claude-haiku-4-5-20251001 が「claude-haiku-」「4-5-20251001」の2行に割れ、はみ出さない）。 */
 .orphan-bay .badge { white-space: normal; overflow-wrap: break-word; }
-/* .c-id は "LIVE:" + 17桁で、ハイフンなど自然な区切りが無い1つの塊。break-word では
-   割る場所が無く1行のままはみ出すので、anywhere で強制的に途中から折り返す
-   （実測でカードの内側に収まる2行になることを確認）。 */
-.orphan-bay .c-id { white-space: normal; overflow-wrap: anywhere; }
+/* .c-id（"LIVE:" + 17桁の区切りの無い塊）の折り返しは、木と共用の .c-id 自身が
+   overflow-wrap: anywhere で持っている（実測でカードの内側に収まる2行になることを確認）。 */
 /* 所要時間・トークン・ツールは区画では出さない（要件）。
    **DOM からは消さず、CSS で隠す。** .c-metrics の中の要素は buildAgentDom が掴んだ参照を
    updateAgent と updateAgentClock が毎秒書きに行く（entry.time/timeK/tok/tool）。木と共用の
@@ -815,12 +826,6 @@ body {
    中に CSS アニメーションを持つ要素は無いので、display:none で巻き戻る心配も無い
    （ロボを畳むのに高さ 0 を使っているのは、そちらにはアニメーションがあるから）。 */
 .orphan-bay .c-metrics { display: none; }
-/* 区画の ID は "LIVE:" + 実機の agentId 17桁で、10px の等幅でも 121px を専有する。
-   .c-id は flex:none なので縮まず、狭いカードでは**隣の名前のほうが 0 まで潰れる**
-   （いまの 232px でも名前は 78px しか無い）。区画だけ ID を独立行に落として、
-   名前に幅を全部渡す。カードは小さくなるのに、名前は今より読める。 */
-.orphan-bay .c-top { flex-wrap: wrap; }
-.orphan-bay .c-id  { flex: 1 0 100%; }
 /* 区画のカードに任務は無い（orphanAgent が mission:'' を固定で入れる。記録が無いので
    任務を名乗れない）。木では updateAgent がそこへ「（任務未記載）」と書くが、**区画では
    その行ごと出さない。** 記録が無いと分かっている機体に「記載が無い」と毎行言わせても、
@@ -1553,6 +1558,7 @@ function boot() {
   try { applyBayPanel(); } catch (e) { markBroken(tr('broken.boot', { msg: (e && e.message) || e })); }
   tick();
   setInterval(tick, POLL_MS);
+  setInterval(checkPulse, 1000);   // ハートビートの見張り（tick の成否とは独立）
   // 変更履歴画面(Phase 3)。ここが落ちてもミッション管制室側は止めない。
   try { initChangelog(); } catch (e) { markBroken('changelog init: ' + ((e && e.message) || e)); }
 }
@@ -2437,7 +2443,13 @@ function freezeRef(s, tb) {
 
 /** /api/run の応答を render() が触る形にそろえる。1件ずつの読み込みでしか通らないので、
  *  ここは毎秒の負荷にならない。壊れた記録1件で画面全体が落ちないようにするための保険。 */
-/** 焼き付けた孤児の実測値を、完了したカードが読む形にする。
+/** 記録に無い機体が、もう動いていないか。締めたときに焼き付けたもの（frozen）と、
+ *  稼働中でもサーバーが実測で終わりを読んだもの（ended）の2つ。 */
+function orphanDone(o) {
+  return !!(o && (o.frozen || o.ended));
+}
+
+/** 焼き付けた（または実測で終わった）孤児の実測値を、完了したカードが読む形にする。
  *
  *  **測った値だけを写す。** 見出しは持たせない——記録が無い機体には完了の合図も
  *  無いので、名乗れる一行がそもそも存在しない。
@@ -2446,7 +2458,7 @@ function freezeRef(s, tb) {
  *  締める前は確かに測れて画面に出ていた数字なので、捨てるほうが嘘に近い。
  */
 function frozenResult(o) {
-  if (!o || !o.frozen) return null;
+  if (!orphanDone(o)) return null;
   const num = (v) => (v === undefined ? null : v);
   return {
     elapsedSec: num(o.elapsedSec), tokens: num(o.tokens),
@@ -2499,14 +2511,15 @@ function placedOrphans(agents, sources) {
         generation: gen.get(id),
         model: o.model || '',
         mission: '',
-        // 記録が無い＝完了の合図も来ないので、動いているあいだは「稼働中」しか名乗れない。
-        // 実際に終わっているかは沈黙の長さでしか読めない（カードの b-idle に出る）。
-        // 締めるときに焼き付けたもの（frozen）だけは別で、そのミッションはもう
-        // 終わっている——完了した記録の中で稼働中の顔をしていたら、それは嘘になる。
-        status: o.frozen ? 'done' : 'running',
+        // 記録が無くても、終わったことは Claude Code の記録から実測で読める（o.ended。
+        // 起動した側のログに届く完了の合図か、機体自身の最後の end_turn）。
+        // 締めるときに焼き付けたもの（frozen）も、そのミッションはもう終わっている——
+        // 完了した記録の中で稼働中の顔をしていたら、それは嘘になる。
+        status: orphanDone(o) ? 'done' : 'running',
         waiting: false,
         live: o,
-        startedAt: null, finishedAt: null, result: frozenResult(o),
+        detected: o.ended ? (o.endStatus || 'completed') : undefined,
+        startedAt: null, finishedAt: o.endedAt || null, result: frozenResult(o),
         // **数えない印。** 記録に無いものを「機体数」や「完了数」に混ぜると、
         // 締め忘れの判定（全機帰還したか）が狂う。
         source: 'orphan',
@@ -3151,7 +3164,8 @@ function buildAgentDom(a) {
   // 1つ目の見出し（経過／所要）だけは状態で入れ替わるので、updateAgent が
   // data-i18n 属性ごと差し替える（そうしないと apply() が「経過」で塗り戻す）。
   card.innerHTML =
-    '<div class="c-top"><span class="c-name"></span><span class="c-id"></span></div>' +
+    // 名前と ID は別の行。横に並べると ID（flex:none で縮まない）に押されて名前が潰れる。
+    '<div class="c-name"></div><div class="c-id"></div>' +
     '<div class="c-badges"><span class="badge b-model"></span>' +
       '<span class="badge b-src self" hidden data-i18n="card.self_reported"></span>' +
       '<span class="badge b-orphan" hidden data-i18n="card.orphan"></span>' +
@@ -3166,7 +3180,8 @@ function buildAgentDom(a) {
     // 稼働中の実測は .c-metrics の中ではなく後ろに置く。中に足すと
     // entry.timeK（.metric .mk の1つ目）が別の見出しを掴んで、言語を切り替えたときに
     // 「経過／所要」の訳が当たらなくなる（切り替えるまで表に出ない壊れ方をする）。
-    '<div class="c-live" hidden><span class="lv-tool"></span><span class="lv-num"></span></div>' +
+    // コマンドとツール数も別の行。同じ行だとコマンドが右の数字に押されてすぐ省略される。
+    '<div class="c-live" hidden><div class="lv-tool"></div><div class="lv-num"></div></div>' +
     '<div class="c-result" hidden></div>';
   if (i18nOk) window.I18N.apply(card);
 
@@ -3250,9 +3265,20 @@ function updateAgent(t, entry, a) {
   entry.timeK.setAttribute('data-i18n', timeKey);
   entry.timeK.textContent = tr(timeKey);
 
+  // done を打たれずに終わった機体（サーバーが Claude Code の記録から実測で読んだ）。
+  // 報告の一行は無いので、見出しの場所に「報告なし・実測で検知」と出どころを言う。
+  // 黙って普通の完了と同じ顔にすると、done の打ち忘れに気づく手段が消える。
+  const detectedNote = a.status === 'done' && !r.headline && a.detected
+    ? (a.detected === 'completed' ? tr('card.detected')
+                                  : tr('card.detected_stopped', { status: a.detected }))
+    : '';
+  entry.result.classList.toggle('detected', !!detectedNote);
   if (a.status === 'done' && r.headline) {
     entry.result.hidden = false;
     entry.result.textContent = r.headline;
+  } else if (detectedNote) {
+    entry.result.hidden = false;
+    entry.result.textContent = detectedNote;
   } else {
     entry.result.hidden = true;
   }
@@ -4778,8 +4804,8 @@ function stateSig(ts) {
 
 /** 記録に無いのに動いている機体を、木と同じ姿のカードにして返す。
  *
- *  名乗れる状態は running だけ。記録が無い＝完了の合図も来ないので、
- *  終わったかどうかは沈黙の長さ（live.state / live.idleSec）でしか読めない。 */
+ *  記録が無いので done は打たれないが、終わったことはサーバーが Claude Code の記録から
+ *  実測で読む（o.ended）。読めたものだけ完了として描く。 */
 function orphanAgent(o) {
   return {
     id: ORPHAN_ID_PREFIX + o.agentId,
@@ -4787,9 +4813,10 @@ function orphanAgent(o) {
     parentId: null, generation: 0,
     model: o.model || '',
     mission: '',                 // 記録が無いので任務は名乗れない（カードは「未記載」を出す）
-    status: o.frozen ? 'done' : 'running', waiting: false,
+    status: orphanDone(o) ? 'done' : 'running', waiting: false,
     live: o,
-    startedAt: null, finishedAt: null, result: frozenResult(o),
+    detected: o.ended ? (o.endStatus || 'completed') : undefined,
+    startedAt: null, finishedAt: o.endedAt || null, result: frozenResult(o),
     source: 'orphan',
   };
 }
@@ -4815,7 +4842,13 @@ function paintOrphanBay(t) {
   // 締めたあとの記録では、これらはもう動いていない。現在形のままにすると、
   // 完了した記録が「いま動いている機体がある」と言い続けることになる。
   const frozen = list.length > 0 && list.every((o) => o.frozen);
-  if (t.els.bayNote) t.els.bayNote.textContent = tr(frozen ? 'live.bay_note_frozen' : 'live.bay_note');
+  // 稼働中のミッションでも、並んでいる機体が全部終わっていれば「動いている」とは言わない
+  // （カードは完了と出ているのに、注記だけが現在形のままになる）。
+  const ended = !frozen && list.length > 0 && list.every(orphanDone);
+  if (t.els.bayNote) {
+    t.els.bayNote.textContent = tr(frozen ? 'live.bay_note_frozen'
+                                   : ended ? 'live.bay_note_ended' : 'live.bay_note');
+  }
 
   // 要るぶんだけ作り、居なくなったぶんを片付ける。毎秒呼ばれる経路なので、
   // 毎回作り直すとロボのアニメーションが1秒ごとに 0 から始まってしまう。
@@ -4977,7 +5010,45 @@ function relabelAll() {
  *  取り残されないよう、同じ引数でもう一度呼び直すために控えておく。 */
 let lastConn = { ok: null, msg: undefined };
 
+// ---- ハートビート
+// 「繋がっているか」を、要求の成否ではなく**最後に正常な応答を受け取ってから何秒か**で決める。
+// 要求の成否だけだと、サーバーが接続を受けたまま返事をしない（固まった）とき何も出ない:
+// 後続の要求に追い越された失敗は捨てる作り（reqSeq）なので、毎秒新しい要求が出るかぎり
+// 失敗は一度も表に出ず、「接続中」のまま画面だけが止まる。完了した機体が稼働中のまま
+// 見えていても、それが画面の停止なのか記録の問題なのか区別できなかった。
+const FETCH_TIMEOUT_MS = 5000;   // これより遅い応答は待たずに打ち切る（固まったサーバー対策）
+const PULSE_STALE_MS   = 3000;   // 最後の正常応答からこれだけ空いたら「応答待ち」
+const PULSE_DEAD_MS    = 8000;   // これを超えたら「応答なし」
+
+let lastOkAt = 0;        // 最後に正常な応答を受け取った時刻（ブラウザの時計。0＝まだ一度も無い）
+let lastBeat = null;     // その応答の heartbeat（サーバーの pid・起動時刻・拍の通番・実測の成否）
+
 function setConn(ok, msg) {
+  // 最後に出した状態を控える。言語を変えたときにこの表示だけ取り残されないよう、
+  // 切り替え側が同じ引数でもう一度呼べるようにするため。
+  lastConn = { ok, msg };
+  paintConn();
+}
+
+/** 応答を1つ受け取った。拍を打ち、見張りの基準を進める。
+ *  同じ拍の通番が続くのは、どこかで古い応答を掴まされているということなので数えない。 */
+function recordBeat(hb) {
+  const same = hb && lastBeat && hb.bootedAt === lastBeat.bootedAt && hb.seq === lastBeat.seq;
+  if (same) return;
+  lastOkAt = Date.now();
+  if (!hb || !lastBeat || hb.bootedAt !== lastBeat.bootedAt || hb.seq > lastBeat.seq) lastBeat = hb || null;
+  // 点を1回だけ光らせる。常に点滅させておくと、止まっていても動いて見える。
+  const dot = $('#conn i');
+  if (dot) { dot.classList.remove('beat'); void dot.offsetWidth; dot.classList.add('beat'); }
+}
+
+/** 実測（Claude Code の記録の読み取り）が失敗しているなら、その理由。 */
+function beatLiveError(hb) {
+  const lv = hb && hb.live;
+  return (lv && lv.error) ? String(lv.error) : '';
+}
+
+function paintConn() {
   const el = $('#conn');
   const txt = $('#conn-text');
   if (!el || !txt) return;
@@ -4989,26 +5060,73 @@ function setConn(ok, msg) {
     txt.textContent = tr('conn.broken');
     return;
   }
-  el.className = 'conn ' + (ok ? 'ok' : 'bad');
-  // 最後に出した状態を控える。言語を変えたときにこの表示だけ取り残されないよう、
-  // 切り替え側が同じ引数でもう一度呼べるようにするため。
-  lastConn = { ok, msg };
-  const reason = msg || tr('conn.lost');
-  txt.textContent = ok ? tr('conn.connected')
-                       : (failCount > 1 ? tr('conn.lost_n', { msg: reason, n: failCount }) : reason);
+  if (lastConn.ok === null) return;          // まだ何も分かっていない（「接続中…」のまま）
+  const age = lastOkAt ? Date.now() - lastOkAt : null;
+  const secs = age === null ? 0 : Math.round(age / 1000);
+  const liveErr = beatLiveError(lastBeat);
+  let cls, text;
+  if (!lastConn.ok || (age !== null && age >= PULSE_DEAD_MS)) {
+    cls = 'bad';
+    const reason = lastConn.ok ? tr('conn.silent', { s: secs }) : (lastConn.msg || tr('conn.lost'));
+    text = (!lastConn.ok && failCount > 1) ? tr('conn.lost_n', { msg: reason, n: failCount }) : reason;
+  } else if (age !== null && age >= PULSE_STALE_MS) {
+    cls = 'stale';
+    text = tr('conn.stale', { s: secs });
+  } else if (liveErr) {
+    cls = 'warn';
+    text = tr('conn.live_error');
+  } else {
+    cls = 'ok';
+    text = tr('conn.connected');
+  }
+  el.className = 'conn ' + cls;
+  txt.textContent = text;
+  const hb = lastBeat || {};
+  let tip = lastOkAt
+    ? tr('conn.tip', { at: fmtClock(new Date(lastOkAt).toISOString()), pid: hb.pid || '?',
+                       boot: fmtClock(hb.bootedAt), seq: hb.seq || '?' })
+    : '';
+  if (liveErr) tip += (tip ? '\n' : '') + tr('conn.tip_live_error', { msg: liveErr });
+  el.title = tip;
+}
+
+/** 見張り。tick() とは別に毎秒回し、応答が途絶えた秒数をそのまま出す。 */
+function checkPulse() {
+  if (lastConn.ok !== null) paintConn();
 }
 
 // 応答の追い越しを捨てるための通番。サーバーはスレッドごとに応答するので順序保証がなく、
 // 古い応答が後から着弾すると、更新されたはずの画面が全チームまとめて黙って巻き戻る。
 let reqSeq = 0;
+// 画面に反映した最後の応答の通番。捨てるのは「これより古い応答」だけにする。
+// 以前は「最新の要求への応答でなければ捨てる」だったので、応答が毎回 POLL_MS より
+// 遅いと、どの応答も返ってくる前に次の要求に追い越されて全部捨てられ、画面が一度も
+// 描き直されなかった（接続表示は緑のまま）。
+let appliedSeq = 0;
+// 応答待ちの要求があるか。重ねて投げると、遅いサーバーをさらに遅くするだけなので、
+// 返ってくるまで次は投げない（固まっていれば FETCH_TIMEOUT_MS で打ち切られる）。
+let inFlight = false;
 
 async function tick() {
+  if (inFlight) {
+    for (const [, t] of teams) if (t.live) updateClocks(t);
+    return;
+  }
+  inFlight = true;
   const seq = ++reqSeq;
+  // 返事の来ない要求を打ち切る。打ち切らないと await が永久に戻らず、失敗としても数えられない。
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS) : null;
   try {
-    const res = await fetch('/api/state?t=' + Date.now(), { cache: 'no-store' });
+    const res = await fetch('/api/state?t=' + Date.now(),
+                            { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const next = await res.json();
-    if (seq !== reqSeq) return; // 新しい要求に追い越された古い応答は捨てる
+    if (seq <= appliedSeq) return; // すでに反映した応答より古いものは捨てる
+    appliedSeq = seq;
+    // 拍は、画面に反映した応答でだけ打つ。「繋がっている」ではなく
+    // 「画面が新しい中身を受け取っている」を示すため。
+    recordBeat(next && next.heartbeat);
 
     const st = Date.parse(next.serverTime);
     if (!Number.isNaN(st)) clockSkew = st - Date.now();
@@ -5102,10 +5220,14 @@ async function tick() {
                         : tr('count.standby'))
                         + (runs ? tr('count.runs', { n: runs }) : '');
   } catch (e) {
-    if (seq !== reqSeq) return; // 追い越された要求の失敗で接続表示を汚さない
+    if (seq <= appliedSeq) return; // 反映済みの応答より古い要求の失敗で接続表示を汚さない
     failCount++;
     // 直前の内容を保持したまま、接続表示だけ落とす
-    setConn(false, e && e.message ? e.message : tr('conn.fetch_failed'));
+    setConn(false, e && e.name === 'AbortError' ? tr('conn.timeout')
+                   : (e && e.message ? e.message : tr('conn.fetch_failed')));
+  } finally {
+    if (timer) clearTimeout(timer);
+    inFlight = false;
   }
   // 止まった画面（記録・流れてこなくなったミッション）は動かさない。
   // 時計は読み込んだときに1回入れて、そこで止める。

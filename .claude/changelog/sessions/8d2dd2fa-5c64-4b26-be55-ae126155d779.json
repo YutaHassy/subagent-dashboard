@@ -1,0 +1,11 @@
+{
+  "sessionId": "8d2dd2fa-5c64-4b26-be55-ae126155d779",
+  "startedAt": null,
+  "endedAt": "2026-09-23T17:48:17+09:00",
+  "summarizedUpToSeq": 0,
+  "headline": "カードの並びを変更：名前と ID を別の行に、稼働中のコマンドとツール数も別の行に分けた",
+  "body": "public/index.html: buildAgentDom の .c-top（名前＋ID の横並び）をやめて .c-name と .c-id を別の行にし、.c-id は overflow-wrap:anywhere で折り返すようにした。.c-live の .lv-tool（コマンド）と .lv-num（ツール数・トークン）を上下2行にした。.orphan-bay 向けの .c-top 折り返しと .c-id の上書きは不要になったので削除し、コメントを直した。public/manual.html の見本カードの CSS とマークアップも同じ並びにそろえた。OPERATION.ja.md 8.1節の図と「左／右」の説明を「上の行／下の行」に書き換えた。check_wiring.py の説明文にある例のクラス名 c-top を、実在する c-badges に差し替えた。check_wiring.py と check_i18n.py は合格。",
+  "auto": false,
+  "filesTouched": [],
+  "toolCallCounts": {}
+}

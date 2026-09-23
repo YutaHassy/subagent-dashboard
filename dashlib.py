@@ -2120,6 +2120,10 @@ def normalize_agent(a, source: str):
         # 実機の meta.json の toolUseId と突き合わせれば、名前も時刻も見ずに
         # 対応づけが決まる（livefeed.assign_live の規則0）。
         "toolUseId": as_str(a.get("toolUseId")) or None,
+        # done が打たれず、Claude Code の記録から実測で終わりを読んだ機体（finish が焼き付ける）。
+        # 落とすと、締めたあとの画面と履歴で「報告なし・実測で検知」の注記が消え、
+        # 普通の完了と見分けが付かなくなる。
+        "detected": as_str(a.get("detected")) or None,
     }
 
 
@@ -2205,11 +2209,67 @@ def assign_live_safely(agents: list[dict], project_path: str, mission: dict, slu
     """
     try:
         import livefeed
-        return livefeed.assign_live(agents, project_path, mission, slug)
-    except Exception:
+        got = livefeed.assign_live(agents, project_path, mission, slug)
+        # 成功しても失敗の記録は消さない。1リクエストでチームの数だけここを通るので、
+        # 消すと「後から処理されたチームが成功した」だけで別のチームの失敗が隠れる。
+        # 失敗が今も続いているかは、失敗の時刻の新しさで判断する（live_failure）。
+        LIVE_HEALTH["okAt"] = now_iso()
+        return got
+    except Exception as e:
+        # 黙って諦めるが、諦めたことは隠さない。画面のハートビートがこれを出すので、
+        # 「実測が止まっている」ことと「本当に誰も動いていない」ことを見分けられる。
+        LIVE_HEALTH.update({"errorAt": now_iso(), "errorTs": time.time(),
+                            "error": (type(e).__name__ + ": " + str(e))[:300]})
         for a in agents:
             a["live"] = None
         return []
+
+
+#: 実測の読み取り（livefeed）の最後の成否。サーバーのハートビートが画面へ渡す。
+#: プロセスの中だけの値で、記録には書かない。
+LIVE_HEALTH = {"okAt": None, "errorAt": None, "errorTs": 0.0, "error": None}
+
+#: この秒数以内に失敗していれば「実測の読み取りが失敗している」とみなす。
+#: 画面は毎秒問い合わせるので、失敗が続いていればこの窓の中に必ず次の失敗が来る。
+LIVE_FAILURE_WINDOW_SEC = 5.0
+
+
+def live_failure() -> str | None:
+    """実測の読み取りが今も失敗しているなら、その理由。直っていれば None。"""
+    if LIVE_HEALTH.get("error") and time.time() - (LIVE_HEALTH.get("errorTs") or 0) < LIVE_FAILURE_WINDOW_SEC:
+        return LIVE_HEALTH["error"]
+    return None
+
+
+def settle_detected(agents: list[dict]) -> int:
+    """記録は running のままだが、実測で終わっていた機体を、**画面の上でだけ**完了にする。
+
+    done は親が打つか hook が書くかでしか入らない。打ち忘れ・Workflow・hook の不発で
+    running のまま残った機体は、ここが無いと永久に「稼働中」と出る（2026-09-23 実測。
+    9月の記録で、締めたミッションに稼働中のまま残った機体が 63 体あった）。
+
+    **記録（state.json）は書き換えない。** サーバーは読むだけ、という線は動かさない。
+    焼き付けるのは finish のとき（update_state.py が同じ判定を記録へ写す）。
+    数値は live の実測値だけを写し、見出しは空（完了の合図に一行要約は無い）。
+    どこから来た完了かを detected に残すので、画面は「報告なし・実測で検知」と言える。
+    """
+    n = 0
+    for a in agents:
+        lv = a.get("live")
+        if (a.get("status") != "running" or as_str(a.get("id")) == COMMAND_ID
+                or not isinstance(lv, dict) or not lv.get("ended")):
+            continue
+        a["status"] = "done"
+        a["finishedAt"] = lv.get("endedAt")
+        a["result"] = {
+            "elapsedSec": lv.get("elapsedSec"),
+            "tokens": lv.get("tokens"),
+            "toolCalls": lv.get("toolCalls"),
+            "headline": "",
+        }
+        a["detected"] = lv.get("endStatus") or "completed"
+        n += 1
+    return n
 
 
 def frozen_orphans(base: dict) -> list:
@@ -2353,6 +2413,8 @@ def _build_state(slug: str, state_path: Path, agents_path: Path, *, live: bool =
     live_orphans: list = []
     if live:
         live_orphans = assign_live_safely(agents, as_str(project.get("path")), mission, slug)
+        if settle_detected(agents):
+            assign_waiting(agents)   # 子が終わった親は、もう「子を待っている」ではない
     if not live_orphans:
         # 締めるときに焼き付けたぶん。稼働中は上の実測が勝つので、ここが効くのは
         # 「終わった記録を見ているとき」だけ（履歴も、締めたあとの現在のミッションも）。

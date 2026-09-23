@@ -1,6 +1,15 @@
 {
-  "updatedAt": "2026-09-04T08:10:34+09:00",
+  "updatedAt": "2026-09-23T17:48:17+09:00",
   "sessions": [
+    {
+      "sessionId": "8d2dd2fa-5c64-4b26-be55-ae126155d779",
+      "startedAt": null,
+      "endedAt": "2026-09-23T17:48:17+09:00",
+      "headline": "カードの並びを変更：名前と ID を別の行に、稼働中のコマンドとツール数も別の行に分けた",
+      "auto": false,
+      "fileCount": 0,
+      "toolCallCount": 0
+    },
     {
       "sessionId": "2a98caaa-5d4d-4e87-9186-d45a031f3e7f",
       "startedAt": null,

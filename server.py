@@ -48,6 +48,7 @@ import errno
 import json
 import os
 import sys
+import threading
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -387,6 +388,7 @@ def build_payload() -> dict:
         "currentSlug": current,
         "teams": teams,
         "tabs": tabs,
+        "heartbeat": heartbeat(),
     }
     if tabs_error:
         payload["tabsError"] = tabs_error
@@ -398,6 +400,34 @@ def build_payload() -> dict:
 # **いま応答しているサーバーが読んだ値**であって、画面や拡張が持つ値ではない。
 # 起動時に1回読む——コードの差し替えにも再起動が要るので、版だけ先に変わることはない。
 TOOL_VERSION = dashlib.tool_version()
+
+# ハートビート。画面は「最後に正常な応答を受けてから何秒か」で生死を判断するが、
+# それだけでは「応答はあるが中身が止まっている」を見分けられない。そこで次を返す:
+#   seq      … 応答ごとに1つ進む拍の通番。同じ値が続いたら、どこかで古い応答を見ている
+#   bootedAt … このサーバープロセスが起きた時刻。変わったら再起動した（別の版に入れ替わった）
+#   pid      … 同上。2つのサーバーが同じポートを取り合っていないかの手がかり
+#   live     … 実測（Claude Code の記録の読み取り）の最後の成否。例外は握りつぶされるので、
+#              ここに出さないと「実測が壊れている」と「誰も動いていない」が区別できない
+_BOOTED_AT = dashlib.now_iso()
+_beat_lock = threading.Lock()
+_beat_seq = 0
+
+
+def heartbeat() -> dict:
+    global _beat_seq
+    with _beat_lock:
+        _beat_seq += 1
+        seq = _beat_seq
+    health = dashlib.LIVE_HEALTH
+    return {
+        "seq": seq,
+        "bootedAt": _BOOTED_AT,
+        "pid": os.getpid(),
+        # error は「今も失敗している」ときだけ入る（直近の窓の中に失敗があるか）。
+        # 過去の失敗は errorAt として残すので、ツールチップで履歴だけは読める。
+        "live": {"okAt": health.get("okAt"), "errorAt": health.get("errorAt"),
+                 "error": dashlib.live_failure()},
+    }
 
 
 def env_info() -> dict:

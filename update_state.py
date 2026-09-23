@@ -704,8 +704,13 @@ def cmd_done(args) -> None:
                 '--headline "<one-line summary of the whole mission>"'))
 
 
-def snapshot_orphans(slug: str) -> list:
-    """締める直前の「記録に無い稼働中の機体」を、そのまま持ち帰る。
+def snapshot_live(slug: str) -> tuple[list, dict]:
+    """締める直前の画面の姿を、そのまま持ち帰る。
+
+    返すのは2つ:
+    - 記録に無い稼働中の機体（sources.liveOrphans）
+    - 記録は running のままだが、実測で終わっていた機体（id -> 画面上の姿）。
+      dashlib.settle_detected が画面の上でだけ完了にしたもの。
 
     採り方を画面と同じ経路（build_state）にそろえてあるのは、ここで別の判定を
     書き足すと、締めた瞬間に画面の内容と食い違うものが記録に残るため。
@@ -716,10 +721,67 @@ def snapshot_orphans(slug: str) -> list:
     """
     try:
         payload = dashlib.build_state(slug)
-        got = payload.get("sources", {}).get("liveOrphans")
-        return got if isinstance(got, list) else []
     except Exception:
-        return []
+        return [], {}
+    got = (payload.get("sources") or {}).get("liveOrphans")
+    # 記録へ永久に書くのは、**身元の裏付けがある対応づけ**で結んだ機体だけ。
+    # 起動IDの一致・名前と description の一致・指示文に名前か任務が現れる、の3つ。
+    # 「候補が1つしか残らなかった」（only）は画面では結ぶが、ここでは使わない——
+    # finish は別のプロセスなので、画面のサーバーが持つ前回の対応（引き継ぎ）も無く、
+    # たまたま1体だけ残った別の機体の数字を done として焼き付けかねない
+    # （measure_for が「身元の裏付けは候補が1体のときも必須」としているのと同じ理由）。
+    detected = {dashlib.as_str(a.get("id")): a for a in (payload.get("agents") or [])
+                if isinstance(a, dict) and a.get("status") == "done" and a.get("detected")
+                and isinstance(a.get("result"), dict)
+                and isinstance(a.get("live"), dict)
+                and a["live"].get("pairedBy") in BACKED_PAIRINGS}
+    return (got if isinstance(got, list) else []), detected
+
+
+#: 身元の裏付けがある対応づけの規則（livefeed.assign_live の live.pairedBy）。
+BACKED_PAIRINGS = ("toolUseId", "name", "prompt")
+
+
+def snapshot_orphans(slug: str) -> list:
+    """snapshot_live の孤児だけ。"""
+    return snapshot_live(slug)[0]
+
+
+def settle_detected_records(state: dict, detected: dict, at: str) -> list:
+    """実測で終わっていた機体を、記録の上でも done にする。書き換えた機体の列を返す。
+
+    画面は締める前からこれらを完了として描いている（dashlib.settle_detected）。
+    ここで写さないと、締めた瞬間に同じ機体が「稼働中」へ戻り、そのまま履歴に残る。
+    写すのは画面が出していた実測値だけで、見出しは空のまま（推し量って埋めない）。
+    """
+    out = []
+    for a in state.get("agents") or []:
+        if a.get("id") == COMMAND_ID or a.get("status") != "running":
+            continue
+        got = detected.get(dashlib.as_str(a.get("id")))
+        if not got:
+            continue
+        r = got["result"]
+        a["status"] = "done"
+        a["finishedAt"] = dashlib.as_str(got.get("finishedAt")) or at
+        a["result"] = {
+            "elapsedSec": r.get("elapsedSec"),
+            "tokens": r.get("tokens"),
+            "toolCalls": r.get("toolCalls"),
+            "headline": "",
+        }
+        a["detected"] = dashlib.as_str(got.get("detected")) or "completed"
+        bits = [t("elapsed {time}").format(time=fmt_sec(r.get("elapsedSec")))]
+        if r.get("tokens") is not None:
+            bits.append(t("{n} tokens").format(n=fmt_num(r["tokens"])))
+        if r.get("toolCalls") is not None:
+            bits.append(t("{n} tool calls").format(n=r["toolCalls"]))
+        push_log(state, a.get("name") or a["id"],
+                 t("Back home — {headline} ({detail})")
+                 .format(headline=t("no report (finish detected from Claude Code's records)"),
+                         detail=" / ".join(bits)))
+        out.append(a)
+    return out
 
 
 def cmd_finish(args) -> None:
@@ -734,7 +796,11 @@ def cmd_finish(args) -> None:
 
     # **phase を done にする前に採る。** assign_live は稼働中のミッションしか見ないので、
     # 順番を逆にすると必ず空になり、記録に無いまま動いていた機体は跡形もなく消える。
-    frozen = snapshot_orphans(slug)
+    frozen, detected = snapshot_live(slug)
+    at = now_iso()
+    # done を打たれなかったが実測で終わっていた機体。未完了の警告より先に写す
+    # （終わっている機体を「未完了」と言わないため）。
+    settled = settle_detected_records(state, detected, at)
 
     workers = [a for a in state["agents"] if a.get("id") != COMMAND_ID]
     unfinished = [a for a in workers if a.get("status") != "done"]
@@ -753,7 +819,6 @@ def cmd_finish(args) -> None:
     ]
     total_tokens = sum(token_values) if token_values else None
 
-    at = now_iso()
     elapsed = elapsed_sec_from(state["mission"].get("startedAt"))
     headline = args.headline or t("all units back home")
 
@@ -818,6 +883,10 @@ def cmd_finish(args) -> None:
     print(pad(t("  Total tokens"), w) + fmt_num(total_tokens)
           + (t(" (nothing measured)") if total_tokens is None else ""))
     print(pad(t("  Elapsed"), w) + fmt_sec(elapsed))
+    if settled:
+        print(pad(t("  Detected as done"), w)
+              + t("{n} (no done was recorded, but Claude Code's records show they finished)")
+              .format(n=len(settled)))
     if frozen:
         print(pad(t("  Units with no record"), w)
               + t("{n} (frozen into the record as they were)").format(n=len(frozen)))
@@ -1162,6 +1231,14 @@ def _hook_done(state: dict, payload: dict, tool_use_id: str) -> str:
         return ""
     resp = _hook_get(payload, "tool_response", "toolResponse")
     resp = resp if isinstance(resp, dict) else {}
+    # **バックグラウンド起動の PostToolUse は「起動した」であって「終わった」ではない。**
+    # Agent は既定でバックグラウンドで動くので、ツールの結果は起動の直後に
+    # {status:"async_launched", isAsync:true} で返る。ここで done にすると、動き出した
+    # ばかりの機体が完了として並ぶ。終わりは画面が Claude Code の記録から実測で読む
+    # （livefeed.settle）ので、ここでは何もしない。
+    if (dashlib.as_str(resp.get("status")) == "async_launched"
+            or resp.get("isAsync") is True):
+        return ""
 
     ms = dashlib.as_num(_hook_get(resp, "totalDurationMs", "total_duration_ms"))
     if ms is None:

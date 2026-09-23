@@ -913,9 +913,24 @@ def count_our_keybindings(path: Path) -> int:
 
 
 def write_text_atomic(path: Path, text: str) -> None:
+    """text は改行が "\\n" の文字列（read_text で読んだもの）。**改行は元のファイルに合わせる。**
+
+    write_text は Windows で "\\n" を "\\r\\n" に変えて書く。読むときは read_text が
+    "\\r\\n" も "\\n" に畳むので、LF のファイルに版マーク1行を書き足しただけで
+    **全行が CRLF に変わる**（実測 2026-09-14: 利用者の ~/.claude/CLAUDE.md、211 行が
+    丸ごと差分になった）。触っていない行まで書き換えるのは、この道具の仕事ではない。
+    元のファイルに "\\r\\n" があればそれに、無ければ "\\n" に揃える。新規のファイルは "\\n"。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    newline = "\n"
+    try:
+        if path.is_file() and b"\r\n" in path.read_bytes():
+            newline = "\r\n"
+    except OSError:
+        pass
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    with tmp.open("w", encoding="utf-8", newline=newline) as fh:
+        fh.write(text)
     os.replace(tmp, path)
 
 

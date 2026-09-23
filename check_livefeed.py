@@ -146,6 +146,34 @@ def write_mission(missions: Path, slug: str, *, project_path: str, started: floa
         json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def append_rows(path: Path, rows: list) -> None:
+    """jsonl に行を足す（Claude Code は追記しかしない）。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+
+def note(agent_id: str, status: str = "completed") -> str:
+    """Claude Code が起動した側へ書く完了通知の文面（実物と同じ並び）。"""
+    return ("<task-notification>\n<task-id>%s</task-id>\n<tool-use-id>toolu_x</tool-use-id>\n"
+            "<output-file>C:\\tmp\\%s.output</output-file>\n<status>%s</status>\n"
+            "<summary>Agent finished</summary>\n</task-notification>" % (agent_id, agent_id, status))
+
+
+def assistant_text(agent_id: str, session: str, cwd: str, at: float,
+                   stop="end_turn", tokens=(3, 0, 0)) -> dict:
+    """ツールを呼ばずに締めた assistant 行（サブエージェントの最後の報告）。
+    stop=None は stop_reason を書かない版の形（実データで 2.1.251〜2.1.263 に多い）。"""
+    tin, tcc, tcr = tokens
+    return {"agentId": agent_id, "isSidechain": True, "sessionId": session, "cwd": cwd,
+            "type": "assistant", "timestamp": iso(at),
+            "message": {"role": "assistant", "stop_reason": stop,
+                        "content": [{"type": "text", "text": "報告です"}],
+                        "usage": {"input_tokens": tin, "cache_creation_input_tokens": tcc,
+                                  "cache_read_input_tokens": tcr, "output_tokens": 5}}}
+
+
 def reset(livefeed, *, sticky: bool = True) -> None:
     """シナリオの切れ目で、モジュールが持っている状態を初期化する。
 
@@ -160,6 +188,7 @@ def reset(livefeed, *, sticky: bool = True) -> None:
     livefeed._peer_cache["keys"] = {}
     if sticky:
         livefeed._sticky.clear()
+        livefeed._sticky_how.clear()
 
 
 def command(model: str, started: float, status: str = "running") -> dict:
@@ -1143,6 +1172,349 @@ def main() -> int:
         orph = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}
         check("記録に sessionId が無ければ、指令塔の子でも置かない",
               [orph[k].get("parentRecordId") for k in ("ko34a", "ko34b")], [None, None])
+
+        # ------------------------------------------------------------ 終わったことの実測
+        # 2026-09-23: done を打たれなかった機体は、実際には終わっていても永久に「稼働中」で、
+        # 静か→無風と色が変わるだけだった（9月の記録で、締めたミッションに稼働中のまま
+        # 残った機体が 63 体）。Claude Code は子が終わると起動した側のログに合図を書くので、
+        # それを実測の終端として読む。形は手元の実データ（2.1.241〜2.1.280）で確かめたもの。
+        print()
+        print("[35] 起動した側のログにある完了の合図で、終わったと読む")
+        work35 = tmp / "work35"
+        work35.mkdir(parents=True, exist_ok=True)
+        path35 = str(work35.resolve())
+        slug35 = dashlib.slug_for_path(work35.resolve())
+        session35 = "35353535-2222-3333-4444-555555555555"
+        sub35 = live_root / slug35 / session35 / "subagents"
+        parent35 = live_root / slug35 / f"{session35}.jsonl"
+        t35 = now - 100
+        for aid in ("n35a", "n35b", "n35c", "n35d", "n35e", "n35s", "n35q", "n35r",
+                    "n35p", "n35u"):
+            write_agent(sub35, aid, start=t35, cwd=path35, session=session35,
+                        model="haiku", description="機体 " + aid,
+                        tools=[("Read", {"file_path": "/" + aid}, 1)])
+            if aid != "n35b":
+                # 本当に終わった機体は assistant 行で終わる。stop_reason を持たない版の形に
+                # して、end_turn の受け皿ではなく合図のほうで終わりを読んでいることを確かめる。
+                append_rows(sub35 / f"agent-{aid}.jsonl",
+                            [assistant_text(aid, session35, path35, t35 + 3, stop=None)])
+        pbase = {"sessionId": session35, "cwd": path35, "isSidechain": False}
+        at35 = iso(t35 + 50)
+        append_rows(parent35, [
+            # (a) 2.1.241〜2.1.270: 本文そのものが通知の user 行
+            dict(pbase, type="user", timestamp=at35,
+                 message={"role": "user", "content": note("n35a")}),
+            # (a') 2.1.245〜: queued_command の attachment。killed などの終わり方もある
+            dict(pbase, type="attachment", timestamp=at35,
+                 attachment={"type": "queued_command", "commandMode": "task-notification",
+                             "prompt": note("n35b", "killed")}),
+            # (b) 2.1.280: hand-back の user 行
+            dict(pbase, type="user", timestamp=at35,
+                 origin={"kind": "peer", "from": "n35c", "handback": True},
+                 message={"role": "user", "content": "[Subagent hand-back] ..."}),
+            # (c) 同期起動: Agent の tool_result
+            dict(pbase, type="user", timestamp=at35,
+                 toolUseResult={"status": "completed", "agentId": "n35d",
+                                "totalDurationMs": 1000},
+                 message={"role": "user", "content": [
+                     {"type": "tool_result", "tool_use_id": "toolu_d", "content": "ok"}]}),
+            # (b') 2.1.280: hand-back が queued_command の attachment.origin に入る形
+            dict(pbase, type="attachment", timestamp=at35,
+                 attachment={"type": "queued_command", "commandMode": "prompt",
+                             "origin": {"kind": "peer", "from": "n35e", "handback": True},
+                             "prompt": "<agent-message from=\"n35e\">..."}),
+            # (a'') queue-operation の enqueue
+            dict(pbase, type="queue-operation", operation="enqueue", timestamp=at35,
+                 content=note("n35s")),
+            # **引用の罠。** ログを読んだ結果として通知の文面が tool_result に入った行、
+            # assistant の本文に書き写した行、バックグラウンド起動の結果。どれも合図ではない。
+            dict(pbase, type="user", timestamp=at35,
+                 toolUseResult={"stdout": note("n35q")},
+                 message={"role": "user", "content": [
+                     {"type": "tool_result", "tool_use_id": "toolu_q", "content": note("n35q")}]}),
+            dict(pbase, type="assistant", timestamp=at35,
+                 message={"role": "assistant", "stop_reason": "tool_use",
+                          "content": [{"type": "text", "text": note("n35q")}]}),
+            dict(pbase, type="user", timestamp=at35,
+                 toolUseResult={"status": "async_launched", "isAsync": True, "agentId": "n35r"},
+                 message={"role": "user", "content": [
+                     {"type": "tool_result", "tool_use_id": "toolu_r", "content": "launched"}]}),
+            # 人や機体が送った文（commandMode=prompt）に通知の文面が入っている。
+            dict(pbase, type="attachment", timestamp=at35,
+                 attachment={"type": "queued_command", "commandMode": "prompt",
+                             "prompt": note("n35p")}),
+            # 本文の途中に引用された通知（貼り付けた文など）。通知そのものは先頭から始まる。
+            dict(pbase, type="user", timestamp=at35,
+                 message={"role": "user", "content": "このログを見て: " + note("n35u")}),
+        ])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t35", project_path=path35,
+                      started=t35 - 5, session=session35,
+                      agents=[command("claude-opus-5", t35 - 5)])
+        st = dashlib.build_state("t35")
+        orph = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}
+        check("6つの置き場所の合図を、どれも終わりとして読む",
+              [orph[k]["ended"] for k in ("n35a", "n35b", "n35c", "n35d", "n35e", "n35s")],
+              [True] * 6)
+        check("終わり方（killed）もそのまま出す",
+              [orph[k]["endStatus"] for k in ("n35a", "n35b", "n35c")],
+              ["completed", "killed", "completed"])
+        check("終わった機体は state も ended（画面の再描画の判定が state を見る）",
+              orph["n35a"]["state"], "ended")
+        check("終わった時刻は合図の行の時刻",
+              orph["n35a"]["endedAt"], livefeed._iso(t35 + 50))
+        check("引用（tool_result・assistant の本文）は合図にしない",
+              (orph["n35q"]["ended"], orph["n35q"]["state"]), (False, "active"))
+        check("バックグラウンド起動の結果（async_launched）は終わりではない",
+              orph["n35r"]["ended"], False)
+        check("commandMode=prompt の文と、本文の途中の引用は合図にしない",
+              (orph["n35p"]["ended"], orph["n35u"]["ended"]), (False, False))
+
+        print()
+        print("[36] 合図のあとに子のログが進んだら（SendMessage で再開）、稼働中に戻る")
+        write_agent(sub35, "n36", start=t35, cwd=path35, session=session35,
+                    model="haiku", description="再開される機体",
+                    tools=[("Read", {"file_path": "/n36"}, 1)])
+        append_rows(sub35 / "agent-n36.jsonl",
+                    [assistant_text("n36", session35, path35, t35 + 3, stop=None)])
+        append_rows(parent35, [dict(pbase, type="user", timestamp=iso(t35 + 20),
+                                    message={"role": "user", "content": note("n36")})])
+        reset(livefeed)
+        st = dashlib.build_state("t35")
+        got = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}["n36"]
+        check("まず合図で終わる", got["ended"], True)
+        n36 = sub35 / "agent-n36.jsonl"
+        b36 = {"agentId": "n36", "isSidechain": True, "sessionId": session35, "cwd": path35}
+        append_rows(n36, [
+            dict(b36, type="user", timestamp=iso(t35 + 30),
+                 message={"role": "user", "content": "The coordinator sent a message: 続けて"}),
+            dict(b36, type="assistant", timestamp=iso(t35 + 31),
+                 message={"role": "assistant", "stop_reason": "tool_use",
+                          "content": [{"type": "tool_use", "id": "n36-more", "name": "Grep",
+                                       "input": {"pattern": "x"}}]}),
+        ])
+        reset(livefeed)
+        st = dashlib.build_state("t35")
+        got = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}["n36"]
+        check("合図より新しい行があれば終わっていない", (got["ended"], got["state"]), (False, "active"))
+        append_rows(n36, [dict(b36, type="user", timestamp=iso(t35 + 32), message={
+            "role": "user", "content": [{"type": "tool_result", "tool_use_id": "n36-more",
+                                         "content": "ok"}]}),
+            assistant_text("n36", session35, path35, t35 + 33)])
+        append_rows(parent35, [dict(pbase, type="user", timestamp=iso(t35 + 35),
+                                    message={"role": "user", "content": note("n36")})])
+        reset(livefeed)
+        st = dashlib.build_state("t35")
+        got = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}["n36"]
+        check("2度目の合図で、また終わる（時刻は新しいほう）",
+              (got["ended"], got["endedAt"]), (True, livefeed._iso(t35 + 35)))
+
+        # 再開したあとに古い通知が遅れて書かれた。子はツールの結果待ち／結果を受けて
+        # 考えている最中なので、completed の合図が新しくても終わりではない。
+        for aid, tail in (("n36o", True), ("n36t", False)):
+            write_agent(sub35, aid, start=t35, cwd=path35, session=session35,
+                        model="haiku", description="遅れた通知を受ける機体 " + aid,
+                        tail_open=tail, tools=[("Bash", {"description": "長い処理"}, 1)])
+            append_rows(parent35, [dict(pbase, type="user", timestamp=iso(t35 + 2),
+                                        message={"role": "user", "content": note(aid)})])
+        reset(livefeed)
+        st = dashlib.build_state("t35")
+        got = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}
+        check("結果待ちのツールがあれば、completed の合図でも終わりにしない",
+              got["n36o"]["ended"], False)
+        check("最後の行がツールの結果（次の一手を考え中）なら終わりにしない",
+              got["n36t"]["ended"], False)
+
+        print()
+        print("[37] 合図が読めなくても、子の最後の assistant 行が end_turn なら終わっている")
+        session37 = "37373737-2222-3333-4444-555555555555"     # 起動した側のログは無い
+        sub37 = live_root / slug35 / session37 / "subagents"
+        write_agent(sub37, "n37", start=t35, cwd=path35, session=session37,
+                    model="haiku", description="最後に報告した機体",
+                    tools=[("Read", {"file_path": "/n37"}, 1)])
+        append_rows(sub37 / "agent-n37.jsonl", [assistant_text("n37", session37, path35, t35 + 5)])
+        # 途中の end_turn（実データで4件）。直後に再開の user 行が来て、また動いている。
+        write_agent(sub37, "n37m", start=t35, cwd=path35, session=session37,
+                    model="haiku", description="途中で一度締めた機体",
+                    tools=[("Read", {"file_path": "/n37m"}, 1)])
+        b37 = {"agentId": "n37m", "isSidechain": True, "sessionId": session37, "cwd": path35}
+        append_rows(sub37 / "agent-n37m.jsonl", [
+            assistant_text("n37m", session37, path35, t35 + 5),
+            dict(b37, type="user", timestamp=iso(t35 + 6),
+                 message={"role": "user", "content": "The coordinator sent a message: 追加で"}),
+            dict(b37, type="assistant", timestamp=iso(t35 + 7),
+                 message={"role": "assistant", "stop_reason": "tool_use",
+                          "content": [{"type": "tool_use", "id": "n37m-x", "name": "Bash",
+                                       "input": {"description": "続き"}}]}),
+        ])
+        # ツールの結果待ちなら end_turn の行があっても終わっていない
+        write_agent(sub37, "n37o", start=t35, cwd=path35, session=session37,
+                    model="haiku", description="結果待ちの機体", tail_open=True,
+                    tools=[("Bash", {"description": "長い処理"}, 1)])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t37", project_path=path35,
+                      started=t35 - 5, session=session37,
+                      agents=[command("claude-opus-5", t35 - 5)])
+        st = dashlib.build_state("t37")
+        orph = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}
+        check("最後が end_turn の機体は終わっている",
+              (orph["n37"]["ended"], orph["n37"]["endedAt"]), (True, livefeed._iso(t35 + 5)))
+        check("途中の end_turn は終わりにしない", orph["n37m"]["ended"], False)
+        check("結果待ちのツールがある機体は終わりにしない", orph["n37o"]["ended"], False)
+
+        print()
+        print("[38] Workflow の子は journal.jsonl の result / failed で終わりを読む")
+        session38 = "38383838-2222-3333-4444-555555555555"
+        sub38 = live_root / slug35 / session38 / "subagents"
+        for aid in ("wf38a", "wf38b", "wf38c"):
+            write_agent(sub38, aid, start=t35, cwd=path35, session=session38,
+                        model="haiku", description="", workflow_run="run38",
+                        tools=[("StructuredOutput", {"result": "x"}, 1)])
+        append_rows(sub38 / "workflows" / "run38" / "journal.jsonl", [
+            {"type": "started", "key": "v2:a", "agentId": "wf38a"},
+            {"type": "result", "key": "v2:a", "agentId": "wf38a", "result": {"summary": "ok"}},
+            {"type": "started", "key": "v2:b", "agentId": "wf38b"},
+            {"type": "failed", "key": "v2:c", "agentId": "wf38c"},
+        ])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t38", project_path=path35,
+                      started=t35 - 5, session=session38,
+                      agents=[command("claude-opus-5", t35 - 5)])
+        st = dashlib.build_state("t38")
+        orph = {o["agentId"]: o for o in st["sources"]["liveOrphans"]}
+        check("result は完了、failed は失敗、started だけなら稼働中",
+              [(orph[k]["ended"], orph[k]["endStatus"]) for k in ("wf38a", "wf38c", "wf38b")],
+              [(True, "completed"), (True, "failed"), (False, None)])
+        check("journal に時刻は無いので、終わった時刻は子の最後の行",
+              orph["wf38a"]["endedAt"], livefeed._iso(t35 + 2))
+
+        print()
+        print("[39] 記録は running のまま実測で終わった機体は、画面の上でだけ完了になる")
+        session39 = "39393939-2222-3333-4444-555555555555"
+        sub39 = live_root / slug35 / session39 / "subagents"
+        parent39 = live_root / slug35 / f"{session39}.jsonl"
+        write_agent(sub39, "n39", start=t35 + 1, cwd=path35, session=session39,
+                    model="sonnet", description="記録ありの偵察",
+                    tools=[("Read", {"file_path": "/a"}, 1), ("Grep", {"pattern": "b"}, 4)],
+                    tokens=(1, 10, 100))
+        append_rows(sub39 / "agent-n39.jsonl",
+                    [assistant_text("n39", session39, path35, t35 + 7, stop=None,
+                                    tokens=(1, 10, 100))])
+        write_agent(sub39, "n39b", start=t35 + 1, cwd=path35, session=session39,
+                    model="sonnet", description="まだ動いている偵察",
+                    tools=[("Read", {"file_path": "/c"}, 1)], tail_open=True)
+        append_rows(parent39, [{"type": "user", "timestamp": iso(t35 + 40),
+                                "sessionId": session39,
+                                "message": {"role": "user", "content": note("n39")}}])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t39", project_path=path35,
+                      started=t35 - 5, session=session39,
+                      agents=[command("claude-opus-5", t35 - 5),
+                              rec("R39", "記録ありの偵察", "claude-sonnet-5", t35 + 1),
+                              rec("R39B", "まだ動いている偵察", "claude-sonnet-5", t35 + 1)])
+        st = dashlib.build_state("t39")
+        ag = {a["id"]: a for a in st["agents"]}
+        check("終わった機体は完了として渡る（detected で出どころが分かる）",
+              (ag["R39"]["status"], ag["R39"].get("detected")), ("done", "completed"))
+        check("数値は実測値そのまま（見出しは空）",
+              ag["R39"]["result"], {"elapsedSec": 6, "tokens": 111, "toolCalls": 2,
+                                    "headline": ""})
+        check("名前で結んだことが live に残る（焼き付けてよい対応づけ）",
+              ag["R39"]["live"]["pairedBy"], "name")
+        check("終わった時刻は合図の時刻", ag["R39"]["finishedAt"], livefeed._iso(t35 + 40))
+        check("動いている機体はそのまま", (ag["R39B"]["status"], ag["R39B"].get("detected")),
+              ("running", None))
+        check("指令塔は触らない", ag["COMMAND"]["status"], "running")
+        disk = json.loads((data_home / "missions" / "t39" / "state.json").read_text(encoding="utf-8"))
+        check("記録（state.json）は書き換えない（サーバーは読むだけ）",
+              [a["status"] for a in disk["agents"]], ["running", "running", "running"])
+
+        print()
+        print("[40] finish は、実測で終わっていた機体を記録にも完了として焼き付ける")
+        reset(livefeed)
+        buf = io.StringIO()
+        keep_out, keep_err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = buf, buf
+        try:
+            update_state.cmd_finish(argparse.Namespace(project="t39", headline="検査", force=True))
+        finally:
+            sys.stdout, sys.stderr = keep_out, keep_err
+        disk = json.loads((data_home / "missions" / "t39" / "state.json").read_text(encoding="utf-8"))
+        dag = {a["id"]: a for a in disk["agents"]}
+        check("終わっていた機体は done・detected 付きで残る",
+              (dag["R39"]["status"], dag["R39"].get("detected"), dag["R39"]["result"]["toolCalls"]),
+              ("done", "completed", 2))
+        check("終わった時刻は合図の時刻", dag["R39"]["finishedAt"], livefeed._iso(t35 + 40))
+        check("動いていた機体は running のまま（終わっていないものを完了にしない）",
+              dag["R39B"]["status"], "running")
+        check("未完了の警告には、終わっていた機体を含めない",
+              ("R39," in buf.getvalue() or "R39)" in buf.getvalue(), "R39B" in buf.getvalue()),
+              (False, True))
+        check("ミッション全体の合計に、焼き付けた実測トークンが入る",
+              disk["mission"]["summary"]["totalTokens"], 111)
+        st = dashlib.build_state("t39")
+        check("締めたあとの画面でも「実測で検知」の印が残る",
+              {a["id"]: a.get("detected") for a in st["agents"]}.get("R39"), "completed")
+
+        print()
+        print("[41] 「候補が1体しか残らなかった」だけの対応は、画面では完了にしても焼き付けない")
+        work42 = tmp / "work42"
+        work42.mkdir(parents=True, exist_ok=True)
+        path42 = str(work42.resolve())
+        slug42 = dashlib.slug_for_path(work42.resolve())
+        session42 = "42424242-2222-3333-4444-555555555555"
+        sub42 = live_root / slug42 / session42 / "subagents"
+        t42 = now - 100
+        write_agent(sub42, "n42", start=t42 + 1, cwd=path42, session=session42,
+                    model="haiku", description="記録と名前が合わない機体",
+                    tools=[("Read", {"file_path": "/z"}, 1)])
+        append_rows(sub42 / "agent-n42.jsonl",
+                    [assistant_text("n42", session42, path42, t42 + 4)])
+        reset(livefeed)
+        write_mission(data_home / "missions", "t42", project_path=path42,
+                      started=t42 - 5, session=session42,
+                      agents=[command("claude-opus-5", t42 - 5),
+                              rec("R42", "別の名前の記録", "claude-haiku-4-5", t42 + 1)])
+        st = dashlib.build_state("t42")
+        ag = {a["id"]: a for a in st["agents"]}
+        check("画面では完了（live と同じ機体の数字）",
+              (ag["R42"]["status"], ag["R42"]["live"]["pairedBy"]), ("done", "only"))
+        reset(livefeed)
+        buf = io.StringIO()
+        keep_out, keep_err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = buf, buf
+        try:
+            update_state.cmd_finish(argparse.Namespace(project="t42", headline="検査", force=True))
+        finally:
+            sys.stdout, sys.stderr = keep_out, keep_err
+        disk = json.loads((data_home / "missions" / "t42" / "state.json").read_text(encoding="utf-8"))
+        check("記録には焼き付けない（身元の裏付けが無い）",
+              {a["id"]: a["status"] for a in disk["agents"]}.get("R42"), "running")
+
+        print()
+        print("[42] hook の PostToolUse がバックグラウンド起動（async_launched）なら done にしない")
+        work41 = tmp / "work41"
+        work41.mkdir(parents=True, exist_ok=True)
+        path41 = str(work41.resolve())
+        slug41 = dashlib.slug_for_path(work41.resolve())
+        write_mission(data_home / "missions", slug41, project_path=path41, started=now - 50,
+                      agents=[command("claude-opus-5", now - 50)])
+        fire({"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": path41,
+              "tool_use_id": "toolu_ASYNC4101",
+              "tool_input": {"description": "裏で動く偵察", "prompt": "調べる"}})
+        fire({"hook_event_name": "PostToolUse", "tool_name": "Agent", "cwd": path41,
+              "tool_use_id": "toolu_ASYNC4101",
+              "tool_response": {"isAsync": True, "status": "async_launched",
+                                "agentId": "a4101", "description": "裏で動く偵察"}})
+        rid41 = update_state.hook_id_for("toolu_ASYNC4101")
+        check("起動しただけでは done にならない", agents_of(slug41)[rid41]["status"], "running")
+        fire({"hook_event_name": "PostToolUse", "tool_name": "Agent", "cwd": path41,
+              "tool_use_id": "toolu_ASYNC4101",
+              "tool_response": {"status": "completed", "totalDurationMs": 4000,
+                                "totalTokens": 900, "totalToolUseCount": 3}})
+        got = agents_of(slug41)[rid41]
+        check("同期起動の完了はこれまでどおり done",
+              (got["status"], got["result"]["toolCalls"]), ("done", 3))
 
     finally:
         os.environ.pop("AGENT_DASHBOARD_DATA_HOME", None)
