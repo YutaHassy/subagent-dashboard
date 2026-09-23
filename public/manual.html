@@ -304,9 +304,10 @@ td code { white-space: nowrap; }
 }
 .card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
                 background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
-.c-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+/* 本体（index.html）と同じく、名前と ID は別の行。 */
 .c-name { font-size: 14px; font-weight: 700; }
-.c-id { font-size: 10px; color: var(--dim); font-family: Consolas, monospace; }
+.c-id { font-size: 10px; color: var(--dim); font-family: Consolas, monospace;
+        margin: 1px 0 3px; overflow-wrap: anywhere; }
 /* バッジは3枚まで並ぶ。本体（index.html）と同じく、折り返しは札の単位で行い、
    札の中の文字は折らない。付けないと 232px の見本カードで「自己申告」が2行に割れる。 */
 .c-badges { display: flex; gap: 5px; margin: 5px 0 7px; flex-wrap: wrap; }
@@ -748,7 +749,7 @@ footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--dim)
   <h2><span class="num">4</span><span data-i18n="m.s4.title">How to read a card</span></h2>
   <div class="card-demo">
     <div class="card">
-      <div class="c-top"><span class="c-name" data-i18n="m.s4.demo_name"></span><span class="c-id">SCOUT-A</span></div>
+      <div class="c-name" data-i18n="m.s4.demo_name"></div><div class="c-id">SCOUT-A</div>
       <div class="c-badges"><span class="b">claude-sonnet-5</span><span class="b self" data-i18n="card.self_reported"></span><span class="b wait" data-i18n="card.awaiting"></span></div>
       <div class="c-mission" data-i18n="m.s4.demo_mission"></div>
       <div class="c-metrics">

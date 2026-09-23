@@ -156,6 +156,11 @@ CATALOG["ja"] = {
     "Warning: {n} agents have not finished ({ids}). "
     "Recording the mission as done anyway.":
         "警告: 未完了のエージェントが {n} 体います（{ids}）。そのまま完了として記録します。",
+    "no report (finish detected from Claude Code's records)":
+        "報告なし（Claude Code の記録から完了を検知）",
+    "  Detected as done": "  実測で完了を検知",
+    "{n} (no done was recorded, but Claude Code's records show they finished)":
+        "{n}（done は打たれていないが、Claude Code の記録では終わっていた）",
     "all units back home": "全機帰還",
     "ended without ever deploying": "未出動のまま終了",
     "Mission complete — {n} units / {tokens} tokens in total / elapsed {time}":
@@ -502,6 +507,11 @@ CATALOG["zh"] = {
     "Warning: {n} agents have not finished ({ids}). "
     "Recording the mission as done anyway.":
         "警告: 有 {n} 个代理尚未完成（{ids}）。仍将按完成记录。",
+    "no report (finish detected from Claude Code's records)":
+        "无报告（从 Claude Code 的记录中检测到完成）",
+    "  Detected as done": "  实测检测到完成",
+    "{n} (no done was recorded, but Claude Code's records show they finished)":
+        "{n}（未记录 done，但 Claude Code 的记录显示已结束）",
     "all units back home": "全员归队",
     "ended without ever deploying": "未出动即结束",
     "Mission complete — {n} units / {tokens} tokens in total / elapsed {time}":
@@ -848,6 +858,11 @@ CATALOG["ko"] = {
     "Warning: {n} agents have not finished ({ids}). "
     "Recording the mission as done anyway.":
         "경고: 완료되지 않은 에이전트가 {n} 대 있습니다({ids}). 그대로 완료로 기록합니다.",
+    "no report (finish detected from Claude Code's records)":
+        "보고 없음(Claude Code 기록에서 완료를 감지)",
+    "  Detected as done": "  실측으로 완료 감지",
+    "{n} (no done was recorded, but Claude Code's records show they finished)":
+        "{n}(done은 기록되지 않았지만 Claude Code 기록상 종료됨)",
     "all units back home": "전원 귀환",
     "ended without ever deploying": "미출동 상태로 종료",
     "Mission complete — {n} units / {tokens} tokens in total / elapsed {time}":

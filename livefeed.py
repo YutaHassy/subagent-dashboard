@@ -86,6 +86,8 @@ _enum_cache = {"at": 0.0, "files": []}
 _describe_cache = {}
 # slug -> {record_id: agent_id}  前回の対応。毎回ゼロから解き直すと数字が入れ替わるので保つ。
 _sticky = {}
+# slug -> {record_id: 結んだ規則}  _sticky と対。引き継いだ対応にも最初の規則を名乗らせる。
+_sticky_how = {}
 # 同じティックのあいだ、どの agentId がどの slug に取られたか（チーム横断の重複防止）
 _ledger = {"at": 0.0, "taken": {}}
 
@@ -220,6 +222,239 @@ def tool_label(inp) -> str:
 SPAWN_TOOLS = ("Agent", "Task")
 
 
+# ---------------------------------------------------------------- 「終わった」の合図
+#
+# 子が終わると、Claude Code は**起動した側のログ**に合図を書く。実測（2026-09-23、
+# 手元の非 Workflow 123 体中 113 体で確認。残り 10 体は起動側のログが途中で切れていた）:
+#
+#   (a) <task-notification> … <task-id>AGENTID</task-id> … <status>completed</status>
+#       2.1.241〜2.1.270 は type=user の message 本文、2.1.245 以降は
+#       type=attachment / attachment.type=queued_command の prompt、
+#       type=queue-operation / operation=enqueue の content にも同じ文面が入る。
+#       status は completed のほか killed / stopped / failed がある。
+#   (b) 2.1.280 の hand-back: origin={kind:"peer", from:AGENTID, handback:true}
+#       （type=user の行そのもの、または queued_command の attachment.origin）。
+#   (c) 同期起動（run_in_background: false）: Agent の tool_result 行の
+#       toolUseResult={status:"completed", agentId}。バックグラウンド起動では同じ場所が
+#       status:"async_launched" で、これは「起動した」であって終わりではない。
+#
+# **文面の引用で騙されないこと。** ログを読んだ機体の tool_result には、この文面が
+# そのまま入りうる（この機能を作ったセッション自身がそうだった）。だから合図として
+# 読むのは上の決まった置き場所だけで、tool_result の中身と assistant の本文は見ない。
+
+_TASK_NOTE = re.compile(r"<task-notification>(.*?)(?:</task-notification>|\Z)", re.S)
+_TASK_ID = re.compile(r"<task-id>\s*([^<\s]+)\s*</task-id>")
+_TASK_STATUS = re.compile(r"<status>\s*([A-Za-z_]+)\s*</status>")
+
+def _may_end(line: bytes) -> bool:
+    """json.loads の前に行を絞る。親のログは数千行・数MBになるので、合図を含みえない
+    行はパースせずに捨てる。toolUseResult は全ツールの結果行に付くので、それだけでは
+    絞れない（Agent の完了なら agentId と completed が同じ行にある）。"""
+    return (b"task-notification" in line or b'"handback"' in line
+            or (b'"toolUseResult"' in line and b'"agentId"' in line
+                and b'"completed"' in line))
+
+
+def _is_tool_result(msg: dict) -> bool:
+    content = msg.get("content")
+    return isinstance(content, list) and any(
+        isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+
+
+def _notes_in(text) -> list:
+    """<task-notification> の文面から (agentId, status) を抜く。
+
+    **通知そのものの行は、本文が <task-notification> で始まる。** 途中に現れるだけなら、
+    人が貼った文・SendMessage の本文・起動時の指示文に引用されたもので、合図ではない。
+    """
+    if not isinstance(text, str) or not text.lstrip().startswith("<task-notification>"):
+        return []
+    out = []
+    for m in _TASK_NOTE.finditer(text):
+        body = m.group(1)
+        tid, st = _TASK_ID.search(body), _TASK_STATUS.search(body)
+        if tid and st:
+            out.append((tid.group(1), st.group(1).lower()))
+    return out
+
+
+def _handback_from(origin) -> str:
+    if (isinstance(origin, dict) and origin.get("kind") == "peer"
+            and origin.get("handback") is True):
+        return dashlib.as_str(origin.get("from"))
+    return ""
+
+
+def end_signals(row: dict) -> list:
+    """1行から、子の「終わった」の合図を (agentId, status) の列で返す。無ければ空。"""
+    if not isinstance(row, dict):
+        return []
+    kind = row.get("type")
+    out = []
+    if kind == "user":
+        aid = _handback_from(row.get("origin"))
+        if aid:
+            out.append((aid, "completed"))
+        tur = row.get("toolUseResult")
+        if isinstance(tur, dict) and dashlib.as_str(tur.get("status")) == "completed":
+            aid = dashlib.as_str(tur.get("agentId"))
+            if aid:
+                out.append((aid, "completed"))
+        msg = row.get("message")
+        if isinstance(msg, dict) and not _is_tool_result(msg):
+            content = msg.get("content")
+            if isinstance(content, str):
+                out += _notes_in(content)
+            elif isinstance(content, list):
+                for b in content:
+                    if isinstance(b, dict) and b.get("type") == "text":
+                        out += _notes_in(b.get("text"))
+    elif kind == "attachment":
+        att = row.get("attachment")
+        if isinstance(att, dict) and att.get("type") == "queued_command":
+            aid = _handback_from(att.get("origin"))
+            if aid:
+                out.append((aid, "completed"))
+            # commandMode が "prompt" なのは人や機体が送った文で、通知ではない。
+            # commandMode が無い版もあるので、そのときは文面の形（先頭）だけで決める。
+            mode = att.get("commandMode")
+            if mode in (None, "task-notification"):
+                out += _notes_in(att.get("prompt"))
+    elif kind == "queue-operation" and row.get("operation") == "enqueue":
+        out += _notes_in(row.get("content"))
+    return out
+
+
+# 起動した側（主セッション）のログ。path -> {"size", "mtime", "offset", "ends"}
+_parent_cache = {}
+
+
+def read_parent_ends(path: Path) -> dict:
+    """主セッションのログから、子の「終わった」の合図を増分で集める。
+
+    read_agent_file と同じ作法（追記のみ・最後の改行まで・縮んだら読み直し）。
+    ただし中身を育てるのは合図の表だけで、行は _may_end を通ったものしかパースしない。
+    読めなければ前回までの表（無ければ空）を返す。例外は外に出さない。
+    """
+    key = str(path)
+    try:
+        st = path.stat()
+    except OSError:
+        with _LOCK:
+            _parent_cache.pop(key, None)
+        return {}
+    with _LOCK:
+        cached = _parent_cache.get(key)
+    if (cached and cached["size"] == st.st_size and cached["mtime"] == st.st_mtime_ns
+            and cached["offset"] >= st.st_size):
+        return cached["ends"]
+    if cached and st.st_size >= cached["offset"]:
+        offset, ends = cached["offset"], dict(cached["ends"])
+    else:
+        offset, ends = 0, {}
+
+    consumed = 0
+    try:
+        with path.open("rb") as fh:
+            fh.seek(offset)
+            while True:
+                chunk = fh.read(MAX_READ_BYTES)
+                if not chunk:
+                    break
+                cut = chunk.rfind(b"\n")
+                if cut < 0 and len(chunk) < MAX_READ_BYTES:
+                    # 末尾の書きかけの行。次の呼び出しでやり直す。ここで読み飛ばしへ進むと、
+                    # 読むあいだに書き手がその行を書き終えたとき、行ごと消費して二度と読まない。
+                    break
+                if cut < 0:
+                    # 窓より長い1行（画像入りの tool_result など）。改行まで飛ばす。
+                    # 合図の行は短いので、これが合図だったことは実測で一度も無い。
+                    skipped = len(chunk)
+                    while True:
+                        nxt = fh.read(MAX_READ_BYTES)
+                        if not nxt:
+                            skipped = -1          # 書きかけ。次の呼び出しでやり直す
+                            break
+                        k = nxt.find(b"\n")
+                        if k >= 0:
+                            skipped += k + 1
+                            break
+                        skipped += len(nxt)
+                    if skipped < 0:
+                        break
+                    consumed += skipped
+                    fh.seek(offset + consumed)
+                    continue
+                for line in chunk[: cut + 1].split(b"\n"):
+                    if not line or not _may_end(line):
+                        continue
+                    try:
+                        row = json.loads(line.decode("utf-8", "replace"))
+                    except ValueError:
+                        continue
+                    ts = parse_ts(row.get("timestamp")) if isinstance(row, dict) else None
+                    for aid, status in end_signals(row):
+                        ends[aid] = {"status": status, "at": ts}
+                consumed += cut + 1
+                fh.seek(offset + consumed)
+    except OSError:
+        return cached["ends"] if cached else {}
+
+    with _LOCK:
+        _parent_cache[key] = {
+            "size": st.st_size,
+            "mtime": st.st_mtime_ns,
+            "offset": offset + consumed,
+            "ends": ends,
+        }
+    return ends
+
+
+# 合図の時刻と子の最後の行の時刻の比較に使う猶予（秒）。合図は子の最後の行より
+# あとに書かれるが、両者は別のプロセスが別の時計で刻むので、わずかな逆転を許す。
+END_SKEW_SEC = 2.0
+
+
+def ending_of(acc: dict, signal) -> dict | None:
+    """その機体が終わっているなら {"status", "at"}、動いている（再開した）なら None。
+
+    1. 起動した側のログにある合図。合図のあとに子のログが進んでいたら、SendMessage で
+       再開されたということなので終わっていない。completed の合図は、さらに
+       「結果待ちのツールが無く、子の最後の行が assistant」のときだけ信じる——
+       再開したあとに古い通知が遅れて書かれることがあり、そのとき子はツールの結果を
+       待っているか、結果を受けて次の一手を考えている最中だから。
+       killed / stopped / failed は途中で止められたものなので、この条件を課さない。
+       Workflow の journal も課さない（子は StructuredOutput の tool_use で終わり、
+       結果の行が付かないことがある。班の子は再開されない）。
+    2. 合図が見つからなくても、子の最後の assistant 行が「ツールを呼ばずに end_turn」で、
+       結果待ちのツールも無いなら終わっている。起動した側のログが読めないとき
+       （別のファイルへ続いた・消された）の受け皿。
+    """
+    if not acc or acc.get("firstTs") is None:
+        return None
+    last = acc.get("lastTs") or acc["firstTs"]
+    if isinstance(signal, dict):
+        at = signal.get("at")
+        status = signal.get("status") or "completed"
+        fresh = at is None or last <= at + END_SKEW_SEC
+        settled = (signal.get("journal") or status != "completed"
+                   or (not acc.get("openTools") and acc.get("lastKind") == "assistant"))
+        if fresh and settled:
+            return {"status": status, "at": at if at is not None else last}
+    if acc.get("endTurnAt") is not None and not acc.get("openTools"):
+        return {"status": "completed", "at": acc["endTurnAt"]}
+    return None
+
+
+def _iso(ts) -> str | None:
+    if ts is None:
+        return None
+    try:
+        return datetime.fromtimestamp(ts, timezone.utc).astimezone().isoformat(timespec="seconds")
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
 def _new_acc() -> dict:
     return {
         "firstTs": None,
@@ -230,6 +465,16 @@ def _new_acc() -> dict:
         "spawns": {},      # tool_use_id -> True（この機体が起動した子の呼び出し）
         "tokens": None,
         "lines": 0,
+        # 最後の assistant 行が「ツールを呼ばずに end_turn で締めた」か。その時刻。
+        # サブエージェントはツールを呼ばなくなった時点で終わるので、これ自体が実測の終端。
+        "endTurnAt": None,
+        # 最後の assistant / user 行がどちらだったか（attachment などは数えない）。
+        # 本当に終わった機体は assistant で終わる。user（ツールの結果）で終わっているのは
+        # 次の一手を考えている最中で、そこに古い合図が届いても終わりではない。
+        "lastKind": None,
+        # このログの中に書かれた、子の「終わった」の合図（agentId -> {"status", "at"}）。
+        # 下請けが起動した孫の完了通知は、主セッションではなく下請けのログに届く。
+        "ends": {},
     }
 
 
@@ -241,9 +486,24 @@ def _feed(acc: dict, row: dict) -> None:
         acc["lastTs"] = ts
     acc["lines"] += 1
 
+    for aid, status in end_signals(row):
+        acc["ends"][aid] = {"status": status, "at": ts}
+
+    kind_of_row = row.get("type")
     msg = row.get("message")
     if not isinstance(msg, dict):
         return
+
+    # 終端の印は「最後の assistant 行」だけで決める。後ろに assistant か、人が送った
+    # user 行（SendMessage で再開された）が来たら、終わっていなかったことになる。
+    # tool_result の user 行と attachment 行は締めのあとにも付くので見ない。
+    if kind_of_row == "assistant":
+        acc["endTurnAt"] = None
+        acc["lastKind"] = "assistant"
+    elif kind_of_row == "user":
+        acc["lastKind"] = "user"
+        if not _is_tool_result(msg):
+            acc["endTurnAt"] = None
 
     usage = msg.get("usage")
     if msg.get("role") == "assistant" and isinstance(usage, dict):
@@ -257,6 +517,9 @@ def _feed(acc: dict, row: dict) -> None:
     content = msg.get("content")
     if not isinstance(content, list):
         return
+    if (kind_of_row == "assistant" and msg.get("stop_reason") == "end_turn"
+            and not any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)):
+        acc["endTurnAt"] = ts
     for block in content:
         if not isinstance(block, dict):
             continue
@@ -318,6 +581,7 @@ def read_agent_file(path: Path):
         acc = dict(cached["acc"])
         acc["openTools"] = dict(acc["openTools"])   # _feed が中身を直接いじるので浅い複製では足りない
         acc["spawns"] = dict(acc["spawns"])         # 同上
+        acc["ends"] = dict(acc["ends"])             # 同上
     else:
         offset = 0
         acc = _new_acc()
@@ -486,6 +750,9 @@ def enumerate_agents(now=None) -> list:
             "mtime": mtime,
             "slug": slug,
             "sessionId": session_id,
+            # 起動した側（主セッション）のログ。子の「終わった」の合図はここに書かれる。
+            "parentLog": (p.parents[len(parts) - si] / (session_id + ".jsonl")
+                          if session_id else None),
             "workflow": "workflows" in parts,
         })
 
@@ -498,6 +765,9 @@ def enumerate_agents(now=None) -> list:
         for cache in (_file_cache, _describe_cache):
             for k in [k for k in cache if k not in alive]:
                 cache.pop(k, None)
+        parents = {str(e["parentLog"]) for e in found if e["parentLog"]}
+        for k in [k for k in _parent_cache if k not in parents]:
+            _parent_cache.pop(k, None)
     return found
 
 
@@ -571,7 +841,116 @@ def measure(cand: dict, now: float) -> dict:
         "agentType": cand["agentType"],
         "description": cand["description"],
         "workflow": bool(cand["workflow"]),
+        # 終わったかどうか。決めるのは settle()（合図は起動した側のログにあるので、
+        # 1体のログだけでは決められない）。ここでは「まだ分からない」にしておく。
+        "ended": False,
+        "endStatus": None,
+        "endedAt": None,
     }
+
+
+def settle(m: dict, acc: dict, signal) -> dict:
+    """measure() の結果に「終わったか」を書き込む。
+
+    終わっていたら state を "ended" にする。画面の再描画の判定（sig）は state を
+    見ているので、別のキーだけ立てると、終わっても描き直されない。
+    """
+    end = ending_of(acc, signal)
+    if end:
+        m["ended"] = True
+        m["endStatus"] = end["status"]
+        m["endedAt"] = _iso(end["at"])
+        m["state"] = "ended"
+        m["busy"] = False
+    return m
+
+
+def collect_ends(entries) -> dict:
+    """起動した側のログと、機体どうしのログにある「終わった」の合図を1つの表にする。
+
+    entries は parentLog と acc を持つ候補の列。同じ agentId に合図が何度も来たら
+    （SendMessage で再開して、また終わった）いちばん新しいものを使う。
+    """
+    ends = {}
+
+    def put(aid, sig):
+        old = ends.get(aid)
+        if old is None or (sig.get("at") or 0) >= (old.get("at") or 0):
+            ends[aid] = sig
+
+    seen = set()
+    for e in entries:
+        log = e.get("parentLog")
+        if not log or str(log) in seen:
+            continue
+        seen.add(str(log))
+        for aid, sig in read_parent_ends(Path(log)).items():
+            put(aid, sig)
+    for e in entries:
+        for aid, sig in ((e.get("acc") or {}).get("ends") or {}).items():
+            put(aid, sig)
+    # Workflow の子は StructuredOutput の tool_use で終わるので end_turn が無く、
+    # 主セッションにも1体ずつの合図は来ない。その班の journal.jsonl が唯一の終端。
+    for e in entries:
+        if not e.get("workflow") or not e.get("path"):
+            continue
+        journal = Path(e["path"]).parent / "journal.jsonl"
+        if str(journal) in seen:
+            continue
+        seen.add(str(journal))
+        for aid, status in read_journal_ends(journal).items():
+            if aid not in ends:
+                ends[aid] = {"status": status, "at": None, "journal": True}
+    return ends
+
+
+# Workflow の journal.jsonl。path -> {"size", "mtime", "ends"}
+_journal_cache = {}
+
+
+def read_journal_ends(path: Path) -> dict:
+    """Workflow の journal.jsonl から、終わった子を {agentId: status} で返す。
+
+    実測（2026-09-23、12本）: 行は {type, key, agentId, ...} で、type は
+    started / launched / result / failed。**時刻のキーが無い**ので、終わった時刻は
+    子のログの最後の行で代える（ending_of が at=None をそう扱う）。
+    小さいファイル（数十行）なので、変わったら丸ごと読み直す。
+    """
+    key = str(path)
+    try:
+        st = path.stat()
+    except OSError:
+        with _LOCK:
+            _journal_cache.pop(key, None)
+        return {}
+    with _LOCK:
+        cached = _journal_cache.get(key)
+    if cached and cached["size"] == st.st_size and cached["mtime"] == st.st_mtime_ns:
+        return cached["ends"]
+    ends = {}
+    try:
+        with path.open("rb") as fh:
+            raw = fh.read(MAX_READ_BYTES)
+    except OSError:
+        return cached["ends"] if cached else {}
+    for line in raw.split(b"\n"):
+        if b'"result"' not in line and b'"failed"' not in line:
+            continue
+        try:
+            row = json.loads(line.decode("utf-8", "replace"))
+        except ValueError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        kind, aid = row.get("type"), dashlib.as_str(row.get("agentId"))
+        if aid and kind in ("result", "failed"):
+            ends[aid] = "completed" if kind == "result" else "failed"
+    with _LOCK:
+        _journal_cache[key] = {"size": st.st_size, "mtime": st.st_mtime_ns, "ends": ends}
+        if len(_journal_cache) > 256:      # 終わった班のぶんを溜め込まない
+            for k in list(_journal_cache)[:-128]:
+                _journal_cache.pop(k, None)
+    return ends
 
 
 # ---------------------------------------------------------------- 記録と実機の対応づけ
@@ -740,9 +1119,22 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         m["_spawnDepth"] = c.get("spawnDepth")
         m["_sessionId"] = c.get("sessionId") or ""
         m["_spawns"] = list(acc["spawns"])
+        m["_acc"] = acc
+        m["_parentLog"] = c.get("parentLog")
+        m["_path"] = c["path"]
         cands.append(m)
     if not cands:
         return []
+
+    # 終わったかどうか。合図は起動した側のログ（主セッション・下請け・Workflow の
+    # journal）にあるので、1体ずつではなく全員を読んでから決める。
+    # これが無いと、記録に done を打たれなかった機体は永久に「稼働中」のまま
+    # 静か→無風と色が変わるだけで、完了には一度もならない（2026-09-23 実測。
+    # 9月の記録で、締めたミッションに稼働中のまま残った機体が 63 体あった）。
+    ends = collect_ends([{"parentLog": m["_parentLog"], "acc": m["_acc"],
+                          "path": m["_path"], "workflow": m["workflow"]} for m in cands])
+    for m in cands:
+        settle(m, m["_acc"], ends.get(m["agentId"]))
 
     window = pair_window_sec()
 
@@ -767,6 +1159,8 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
     # 次のミッションが、前のミッションの無関係な機体の実測値を引き継いでしまう。
     sticky_key = slug + "|" + dashlib.as_str(mission.get("startedAt"))
     prev = _sticky.get(sticky_key, {})
+    prev_how = _sticky_how.get(sticky_key, {})
+    how = {}   # record_id -> 結んだ規則
 
     # 0. 起動呼び出しのIDが一致するもの。**推測がいっさい入らない唯一の規則**で、
     #    ほかのどれよりも強い。記録側の toolUseId は hook が自動で登録したときに入り
@@ -784,6 +1178,7 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
                 if c["agentId"] not in used and c["_toolUseId"] == tuid]
         if len(hits) == 1:
             pairs[rec["id"]] = hits[0]["agentId"]
+            how[rec["id"]] = "toolUseId"
             used.add(hits[0]["agentId"])
 
     # 1. 名前が Agent ツールの description と完全に一致するもの。運用でこの2つを
@@ -800,6 +1195,7 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
                 and compatible(rec, c)]
         if len(hits) == 1:
             pairs[rec["id"]] = hits[0]["agentId"]
+            how[rec["id"]] = "name"
             used.add(hits[0]["agentId"])
 
     # 2. 記録の名前か任務が、その機体へ渡した指示文にそのまま現れているか。
@@ -832,6 +1228,7 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         if rivals:
             continue
         pairs[rec["id"]] = hits[0]["agentId"]
+        how[rec["id"]] = "prompt"
         used.add(hits[0]["agentId"])
 
     # 3. 前回の対応を引き継ぐ。毎ティック解き直すと、僅差のときに2枚のカードの数字が
@@ -842,6 +1239,8 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         aid = prev.get(rec["id"])
         if aid and aid in by_id and aid not in used and compatible(rec, by_id[aid]):
             pairs[rec["id"]] = aid
+            # 引き継いだ対応は、最初に結んだときの規則を名乗る（引き継ぎ自体は裏付けではない）
+            how[rec["id"]] = prev_how.get(rec["id"], "only")
             used.add(aid)
 
     # 4. 双方向に一意なときだけ結ぶ。1体の記録に候補が1つしかなく、その候補を
@@ -865,6 +1264,7 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         if rivals:
             continue
         pairs[rec["id"]] = only["agentId"]
+        how[rec["id"]] = "only"
         used.add(only["agentId"])
 
     def public(c: dict) -> dict:
@@ -876,17 +1276,22 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         if not aid:
             continue
         rec["live"] = public(by_id[aid])
+        # どの規則で結んだか。身元の裏付けがあるのは toolUseId / name / prompt の3つで、
+        # 記録へ永久に書き込む（finish の焼き付け）のはそれだけにする。
+        rec["live"]["pairedBy"] = how.get(rec["id"], "only")
         taken[aid] = slug
 
     with _LOCK:
         _sticky[sticky_key] = dict(pairs)
+        _sticky_how[sticky_key] = {rid: how.get(rid, "only") for rid in pairs}
         if len(_sticky) > 64:      # 終わったミッションのぶんを溜め込まない
             for k in list(_sticky)[:-32]:
                 _sticky.pop(k, None)
+                _sticky_how.pop(k, None)
 
     # 終わった記録が抱えている実機。**これは「記録に無い機体」ではない。**
     # 完了の合図を受け取るとカードから live を外すが、実機のログはそのまま残る
-    # （ログに終端の印は無い。終了直後の最後の行はただの assistant/text）。
+    # （終わったこと自体は settle() が読めるが、記録と結ぶのはここ）。
     # 拾わないと、系統樹に完了として並んでいる機体が、そのまま下の区画に
     # もう一度出る（実測 2026-09-03: 調査を終えた3体が木と区画の両方に出た）。
     #
