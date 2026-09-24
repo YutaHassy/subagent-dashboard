@@ -1445,6 +1445,8 @@ def main() -> int:
               (dag["R39"]["status"], dag["R39"].get("detected"), dag["R39"]["result"]["toolCalls"]),
               ("done", "completed", 2))
         check("終わった時刻は合図の時刻", dag["R39"]["finishedAt"], livefeed._iso(t35 + 40))
+        check("どの実機だったかも残す（締めたあとに二重に描かないため）",
+              dag["R39"].get("agentId"), "n39")
         check("動いていた機体は running のまま（終わっていないものを完了にしない）",
               dag["R39B"]["status"], "running")
         check("未完了の警告には、終わっていた機体を含めない",
@@ -1515,6 +1517,174 @@ def main() -> int:
         got = agents_of(slug41)[rid41]
         check("同期起動の完了はこれまでどおり done",
               (got["status"], got["result"]["toolCalls"]), ("done", 3))
+
+        def run_cmd(fn, **kw):
+            """update_state のコマンドを1回呼び、標準出力と標準エラーを分けて返す。"""
+            out, err = io.StringIO(), io.StringIO()
+            keep = sys.stdout, sys.stderr
+            sys.stdout, sys.stderr = out, err
+            try:
+                fn(argparse.Namespace(**kw))
+            finally:
+                sys.stdout, sys.stderr = keep
+            return out.getvalue(), err.getvalue()
+
+        def add_args(slug: str, rid: str, name: str) -> dict:
+            return dict(project=slug, id=rid, name=name, parent="COMMAND",
+                        model="claude-opus-5", mission="反証する", tool_use_id="",
+                        status=None, force=True)
+
+        def done_args(slug: str, rid: str) -> dict:
+            return dict(project=slug, id=rid, sec=None, tokens=None, tools=None,
+                        headline="検査", force=True)
+
+        print()
+        print("[43] 指示文の一致で結ばれていた機体は、done のあとも二重に描かない")
+        # 運用ルールが勧める「指示文に出てくる語句を --name に」の形。稼働中は規則2で
+        # 結ばれるが、完了した記録を結ぶ規則には指示文が無かったので、done の瞬間に
+        # 同じ機体が指令塔の下にもう1枚出ていた（2026-09-24 に確認）。
+        work43 = tmp / "work43"
+        work43.mkdir(parents=True, exist_ok=True)
+        path43 = str(work43.resolve())
+        slug43 = dashlib.slug_for_path(work43.resolve())
+        session43 = "43434343-2222-3333-4444-555555555555"
+        sub43 = live_root / slug43 / session43 / "subagents"
+        t43 = now - 200
+        write_agent(sub43, "p43", start=t43 + 10, cwd=path43, session=session43,
+                    model="sonnet", description="読み取り層の調査",
+                    prompt="# 観点: 読み取り層\n調べてください",
+                    tools=[("Read", {"file_path": "/a"}, 1), ("Grep", {"pattern": "b"}, 5)],
+                    tokens=(1, 20, 300))
+        append_rows(sub43 / "agent-p43.jsonl",
+                    [assistant_text("p43", session43, path43, t43 + 30, tokens=(1, 20, 300))])
+        write_mission(data_home / "missions", slug43, project_path=path43, started=t43,
+                      session=session43,
+                      agents=[command("claude-opus-5", t43),
+                              rec("R43", "観点: 読み取り層", "claude-sonnet-5", t43 + 10)])
+        reset(livefeed)
+        st = dashlib.build_state(slug43)
+        check("稼働中は指示文の一致で結ばれる",
+              ({a["id"]: a for a in st["agents"]}["R43"].get("live") or {}).get("pairedBy"),
+              "prompt")
+        reset(livefeed)
+        run_cmd(update_state.cmd_done, **done_args(slug43, "R43"))
+        dag = agents_of(slug43)
+        check("done が実機の agentId を記録に残す", dag["R43"].get("agentId"), "p43")
+        check("数値は実測値",
+              (dag["R43"]["result"]["elapsedSec"], dag["R43"]["result"]["tokens"],
+               dag["R43"]["result"]["toolCalls"]), (20, 321, 2))
+        reset(livefeed)
+        st = dashlib.build_state(slug43)
+        check("done のあとも、同じ機体を記録に無い機体として出さない",
+              [o["agentId"] for o in st["sources"]["liveOrphans"]], [])
+        reset(livefeed)
+        _out, err = run_cmd(update_state.cmd_add, **add_args(slug43, "R43B", "読み取り層"))
+        check("名前が指示文に入っているなら、部分一致でも add は警告しない",
+              "--name" in err, False)
+
+        print()
+        print("[44] 終わってから add した記録でも、名前が一字一句同じなら実測値を拾い、二重に描かない")
+        # 2026-09-24 の実例の形。Workflow の子はミッションの途中で生まれて終わり、
+        # 親は全員が終わってから add と done を続けて打つ。記録の起動時刻は add の時刻
+        # なので、実機はずっと前に生まれていて、今までの時間窓からは必ず外れていた。
+        work44 = tmp / "work44"
+        work44.mkdir(parents=True, exist_ok=True)
+        path44 = str(work44.resolve())
+        slug44 = dashlib.slug_for_path(work44.resolve())
+        session44 = "44444444-2222-3333-4444-555555555555"
+        sub44 = live_root / slug44 / session44 / "subagents"
+        t44 = now - 900
+        for aid, label in (("wf44", "verify:x#1.1"), ("wf44b", "verify:x#1.2")):
+            # Workflow の子の meta.json には model が無い（実データで確認）
+            write_agent(sub44, aid, start=t44 + 20, cwd=path44, session=session44,
+                        model="", description=label, workflow_run="run44",
+                        tools=[("Read", {"file_path": "/a"}, 1),
+                               ("StructuredOutput", {"result": "x"}, 30)],
+                        tokens=(2, 30, 400))
+            f = sub44 / "workflows" / "run44" / f"agent-{aid}.jsonl"
+            os.utime(f, (t44 + 51, t44 + 51))   # 書き終わったのはずっと前
+        write_mission(data_home / "missions", slug44, project_path=path44, started=t44,
+                      session=session44, agents=[command("claude-opus-5", t44)])
+        reset(livefeed)
+        _out, err = run_cmd(update_state.cmd_add, **add_args(slug44, "V44", "verify:x#1.1"))
+        check("名前が一字一句同じなら、add は警告しない", "--name" in err, False)
+        reset(livefeed)
+        _out, err = run_cmd(update_state.cmd_done, **done_args(slug44, "V44"))
+        dag = agents_of(slug44)
+        check("done は遡って実測値を拾う（所要・トークン・ツール回数）",
+              (dag["V44"]["result"]["elapsedSec"], dag["V44"]["result"]["tokens"],
+               dag["V44"]["result"]["toolCalls"]), (31, 432, 2))
+        check("実機の agentId も残す", dag["V44"].get("agentId"), "wf44")
+        check("所要時間を空欄にする警告は出ない", "V44" in err, False)
+        reset(livefeed)
+        st = dashlib.build_state(slug44)
+        check("登録した機体は記録に無い機体として出さない（登録していない方だけが残る）",
+              sorted(o["agentId"] for o in st["sources"]["liveOrphans"]), ["wf44b"])
+        reset(livefeed)
+        run_cmd(update_state.cmd_add, **add_args(slug44, "V44X", "verify:x#1.1"))
+        reset(livefeed)
+        run_cmd(update_state.cmd_done, **done_args(slug44, "V44X"))
+        check("同じ名前の記録がほかにもあれば、遡っては拾わない（どちらの機体か決まらない）",
+              agents_of(slug44)["V44X"]["result"]["tokens"], None)
+
+        print()
+        print("[45] 名前を飾って後から add すると、add が警告し、done は所要時間を空欄にする")
+        reset(livefeed)
+        _out, err = run_cmd(update_state.cmd_add,
+                            **add_args(slug44, "V45", "verify:x#1.2(再現の観点で反証)"))
+        check("add が近い名前を挙げて警告する（標準エラー）",
+              ('"verify:x#1.2"' in err, "--name" in err), (True, True))
+        check("Workflow の機体なら、add が要らないことも添える", "Workflow" in err, True)
+        reset(livefeed)
+        _out, err = run_cmd(update_state.cmd_done, **done_args(slug44, "V45"))
+        got = agents_of(slug44)["V45"]["result"]
+        check("add の直後で実測値も無いなら、所要時間は空欄（add と done の間隔を書かない）",
+              (got["elapsedSec"], got["tokens"]), (None, None))
+        check("そのことを標準エラーで知らせる", ("V45" in err, "--name" in err), (True, True))
+
+        print()
+        print("[46] 実測値が無くても、add から十分たっていれば所要時間は今までどおり書く")
+        work46 = tmp / "work46"
+        work46.mkdir(parents=True, exist_ok=True)
+        path46 = str(work46.resolve())
+        slug46 = dashlib.slug_for_path(work46.resolve())
+        write_mission(data_home / "missions", slug46, project_path=path46, started=now - 120,
+                      agents=[command("claude-opus-5", now - 120),
+                              rec("R46", "実機の無い記録", "claude-sonnet-5", now - 60)])
+        reset(livefeed)
+        _out, err = run_cmd(update_state.cmd_done, **done_args(slug46, "R46"))
+        sec46 = agents_of(slug46)["R46"]["result"]["elapsedSec"]
+        check("add からの経過を所要時間として書く", sec46 is not None and 55 <= sec46 <= 120, True)
+        check("警告は出ない", "R46" in err, False)
+
+        print()
+        print("[47] done が指示文の一致で拾うのは、1体に決まるときだけ")
+        # 班全体への共通の前置きに、ほかの機体の観点名が入っていることがある。
+        # 名前がどちらの指示文にも出てくるなら、どちらが本人か言えないので拾わない。
+        work47 = tmp / "work47"
+        work47.mkdir(parents=True, exist_ok=True)
+        path47 = str(work47.resolve())
+        slug47 = dashlib.slug_for_path(work47.resolve())
+        session47 = "47474747-2222-3333-4444-555555555555"
+        sub47 = live_root / slug47 / session47 / "subagents"
+        t47 = now - 200
+        write_agent(sub47, "q47a", start=t47 + 10, cwd=path47, session=session47,
+                    model="sonnet", description="読み取り層の調査",
+                    prompt="# 観点: 読み取り層\n調べてください",
+                    tools=[("Read", {"file_path": "/a"}, 1)])
+        write_agent(sub47, "q47b", start=t47 + 10, cwd=path47, session=session47,
+                    model="sonnet", description="書き込み層の調査",
+                    prompt="# 観点: 書き込み層\n（共通: 観点: 読み取り層 の結果も参照）",
+                    tools=[("Read", {"file_path": "/b"}, 1)])
+        write_mission(data_home / "missions", slug47, project_path=path47, started=t47,
+                      session=session47,
+                      agents=[command("claude-opus-5", t47),
+                              rec("R47", "観点: 読み取り層", "claude-sonnet-5", t47 + 10)])
+        reset(livefeed)
+        run_cmd(update_state.cmd_done, **done_args(slug47, "R47"))
+        got = agents_of(slug47)["R47"]
+        check("2体の指示文に名前が出てくるなら、実測値も agentId も書かない",
+              (got["result"]["tokens"], got.get("agentId")), (None, None))
 
     finally:
         os.environ.pop("AGENT_DASHBOARD_DATA_HOME", None)

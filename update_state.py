@@ -584,6 +584,12 @@ def cmd_add(args) -> None:
                   gen=agent["generation"]))
     print(t("  Target project: {name}").format(name=project_label(project)))
 
+    # 標準エラーに出す。add はまとめて打たれるとき `>/dev/null` で標準出力を捨てられる
+    # ことが多く（2026-09-24 の42体もそうだった）、標準出力に出すと誰にも届かない。
+    miss = near_miss_notice(project, state, agent)
+    if miss:
+        print(miss, file=sys.stderr)
+
     # 設定された言語で書かれていないように見えたら知らせる。**書き込みは止めない。**
     checks = []
     if args.name and args.name != args.id and dashlib.free_text_lang_mismatch(args.name):
@@ -619,9 +625,55 @@ def measure_from_records(project: dict, agent: dict, state: dict):
             dashlib.as_str(agent.get("startedAt")),
             dashlib.as_str(agent.get("mission")),
             others,
+            # 終わってから add された記録のために、ミッションの開始まで遡らせる。
+            dashlib.as_str((state.get("mission") or {}).get("startedAt")),
         )
     except Exception:
         return None
+
+
+#: add から done までがこれより短く、しかも実測値が見つからなかったら、所要時間を
+#: 書かない。その差は機体が働いた時間ではなく、add と done を続けて打った間隔で
+#: しかない（実測 2026-09-24: 終わった Workflow の検証役42体を最後にまとめて
+#: add＋done した記録が、全員「所要1秒」で残った）。本物の機体は、起動直後の add から
+#: 完了の通知を受けて done を打つまでに、親が1ターン回る時間が必ずかかる。
+LATE_DONE_SEC = 10
+
+
+def near_miss_notice(project: dict, state: dict, agent: dict) -> str | None:
+    """add の名前が実機の名前と一字一句は合わず、一部だけ重なっていたら知らせる文面。
+
+    そのまま登録すると、画面はその記録と実機を同じ機体だと分からず、2枚のカードで
+    描く。**書き込みは止めない**（知らせるだけ）。読み取りに失敗しても黙って None。
+    """
+    try:
+        import livefeed
+        claimed = [dashlib.as_str(a.get("name")) for a in (state.get("agents") or [])
+                   if isinstance(a, dict) and a.get("id") != agent.get("id")]
+        near = livefeed.near_misses(
+            dashlib.as_str(project.get("path")),
+            dashlib.as_str(agent.get("name")),
+            dashlib.as_str((state.get("mission") or {}).get("startedAt")),
+            claimed,
+            dashlib.as_str(agent.get("mission")),
+        )
+    except Exception:
+        return None
+    if not near:
+        return None
+    shown = ", ".join('"%s"' % o["description"] for o in near[:3])
+    if len(near) > 3:
+        shown += t(" and {n} more").format(n=len(near) - 3)
+    lines = [
+        t('Warning: no unit in Claude Code\'s records is named exactly "{name}", '
+          'but this is close: {list}').format(name=agent.get("name"), list=shown),
+        t("         The screen cannot tell they are the same unit, so it will draw "
+          "two cards. Use that exact text for --name."),
+    ]
+    if any(o["workflow"] for o in near):
+        lines.append(t("         Units launched by the Workflow tool show up on the screen "
+                       "by themselves (under Command). You do not need to add them."))
+    return "\n".join(lines)
 
 
 def cmd_done(args) -> None:
@@ -645,16 +697,32 @@ def cmd_done(args) -> None:
     # （完了通知として受け取った値のほうが一次情報なので）。
     tokens, tools = args.tokens, args.tools
     filled = None
+    measured_sec = False
     if tokens is None or tools is None or args.sec is None:
         got = measure_from_records(project, agent, state)
         if got:
             filled = got.get("agentId")
             if args.sec is None and got.get("elapsedSec") is not None:
                 elapsed = got["elapsedSec"]
+                measured_sec = True
             if tokens is None:
                 tokens = got.get("tokens")
             if tools is None:
                 tools = got.get("toolCalls")
+
+    # 実測値が見つからず、add の直後に done が来たなら、その差は所要時間ではない。
+    # 推し量った数字を書かない約束と同じ理由で、空（画面では「—」）にする。
+    late_done = (args.sec is None and not measured_sec
+                 and elapsed is not None and elapsed < LATE_DONE_SEC)
+    if late_done:
+        late_gap = elapsed
+        elapsed = None
+
+    if filled:
+        # 実測値を取った相手。完了した記録と実機はこれで結ぶ（livefeed.assign_live）。
+        # 残さないと、指示文の一致で結ばれていた機体が done の瞬間に記録から外れ、
+        # 同じ機体が指令塔の下にもう1枚描かれる。
+        agent["agentId"] = filled
 
     agent["status"] = "done"
     agent["finishedAt"] = now_iso()
@@ -686,6 +754,15 @@ def cmd_done(args) -> None:
         print(t('  * No token count was given, so it is null (the screen shows "—").'))
     if tools is None:
         print(t('  * No tool-call count was given, so it is null (the screen shows "—").'))
+    if late_done:
+        # 標準エラーに出す理由は add の名前の警告と同じ（まとめて打つと標準出力は捨てられる）。
+        print(t("Warning: {id} was marked done {sec}s after it was registered, and its "
+                "measured values were not found in Claude Code's records.")
+              .format(id=args.id, sec=late_gap), file=sys.stderr)
+        print(t('         The elapsed time is left blank (the screen shows "—") instead of '
+                "recording {sec}s.").format(sec=late_gap), file=sys.stderr)
+        print(t("         If you registered it after it had finished, use its exact name on "
+                "the screen (for a Workflow unit, its label) as --name."), file=sys.stderr)
 
     if args.headline and dashlib.free_text_lang_mismatch(args.headline):
         notice = dashlib.free_text_lang_notice([("--headline", args.headline)], fixable=True)
@@ -771,6 +848,10 @@ def settle_detected_records(state: dict, detected: dict, at: str) -> list:
             "headline": "",
         }
         a["detected"] = dashlib.as_str(got.get("detected")) or "completed"
+        # done と同じく、どの実機だったかを残す（締めたあとの画面で二重に描かないため）。
+        aid = dashlib.as_str((got.get("live") or {}).get("agentId"))
+        if aid:
+            a["agentId"] = aid
         bits = [t("elapsed {time}").format(time=fmt_sec(r.get("elapsedSec")))]
         if r.get("tokens") is not None:
             bits.append(t("{n} tokens").format(n=fmt_num(r["tokens"])))
