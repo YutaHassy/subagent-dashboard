@@ -1295,7 +1295,8 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
     # 拾わないと、系統樹に完了として並んでいる機体が、そのまま下の区画に
     # もう一度出る（実測 2026-09-03: 調査を終えた3体が木と区画の両方に出た）。
     #
-    # 使うのは確実な2つだけ——起動呼び出しのIDの一致と、名前と description の完全一致。
+    # 使うのは確実な3つだけ——done が書き残した agentId、起動呼び出しのIDの一致、
+    # 名前と description の完全一致。
     # **走っている記録の対応づけが全部終わったあとに回す**ので、ここで横取りは起きない。
     # 名前で結ぶほうに compatible() の門を通さないのは、この規則が拾う相手が
     # 「もう終わっている機体」で、記録が後から足されること（打ち忘れに気づいて
@@ -1316,8 +1317,15 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
         if rid in pairs:
             continue
         hits = []
+        # done / finish が実測値を取った相手の agentId。**実機そのもののID**なので、
+        # 名前や指示文での一致よりも強い。これが無いと、指示文の一致（規則2）で
+        # 結ばれていた機体が done の瞬間に結びつきを失い、指令塔の下にもう1枚出る
+        # （実測 2026-09-24: 運用ルールが勧める「指示文の語句を --name に」がそのまま踏む）。
+        aid = dashlib.as_str(rec.get("agentId")).strip()
+        if aid:
+            hits = [c for c in cands if c["agentId"] not in used and c["agentId"] == aid]
         tuid = dashlib.as_str(rec.get("toolUseId")).strip()
-        if tuid:
+        if len(hits) != 1 and tuid:
             hits = [c for c in cands
                     if c["agentId"] not in used and c["_toolUseId"] == tuid]
         if len(hits) != 1:
@@ -1402,11 +1410,14 @@ def assign_live(agents: list, project_path: str, mission: dict, slug: str = "") 
 
 
 def measure_for(project_path: str, name: str, model: str, started_at: str,
-                mission: str = "", others=()):
+                mission: str = "", others=(), mission_started_at: str = ""):
     """完了した1体の実測値を、記録に焼き付けるために取り直す。
 
     対応が一意に決まらなければ None を返す。ここで曖昧なまま返すと、別の機体の数字を
     記録に永久に書き込むことになる（画面のちらつきと違って、あとから直せない）。
+
+    mission_started_at を渡すと、**終わってから登録された記録**（後から add した）も
+    拾える。そのときの規則は下の late を参照。
     """
     now = time.time()
     want_path = norm_path(project_path)
@@ -1421,9 +1432,32 @@ def measure_for(project_path: str, name: str, model: str, started_at: str,
     window = pair_window_sec()
     rm = model_key(model)
     floor = rs - MISSION_SLACK_SEC
+    # 記録の起動時刻は add を打った時刻なので、終わってから add すると実機はずっと前に
+    # 生まれていて、上の時間窓から必ず外れる（実測 2026-09-24: Workflow の検証役42体を
+    # 最後にまとめて add＋done した記録が、全員「所要1秒・トークン —」で残った）。
+    # そこで**名前が description と完全に一致する**実機に限り、ミッションの開始まで遡る。
+    ms = parse_ts(dashlib.as_str(mission_started_at))
+    late_floor = (ms - MISSION_SLACK_SEC) if ms is not None and ms < rs else None
+    scan_floor = min(floor, late_floor) if late_floor is not None else floor
+    nm = dashlib.as_str(name).strip()
+    other_names = {dashlib.as_str(o.get("name")).strip() for o in others or ()}
+
+    # **身元の裏付けは、候補が1体のときも必須。** ここを省くと、
+    # 「たまたま1体しか残らなかった」だけで別の機体の数字を記録へ永久に焼き付ける。
+    # Workflow 経由の実機は description が空なので、名前の門番は素通りしてしまう。
+    keys = [s for s in (nm, dashlib.as_str(mission).strip()) if len(s) >= MIN_NEEDLE]
+
+    def worded(prompt: str) -> bool:
+        return bool(keys) and any(k in prompt for k in keys)
+
+    def backed(h) -> bool:
+        return bool(h["_named"]) or worded(h["_prompt"])
+
     hits = []
+    late = []      # 時間窓の外（終わってから add された記録の相手）。名前の完全一致だけ
+    aside = []     # description が名前と違うが、名前か任務が指示文にそのまま入っている
     for entry in enumerate_agents(now):
-        if entry["mtime"] < floor:
+        if entry["mtime"] < scan_floor:
             continue
         c = describe(entry)
         if not _belongs(c, want_path, want_slug):
@@ -1432,29 +1466,41 @@ def measure_for(project_path: str, name: str, model: str, started_at: str,
         if rm and cm and rm != cm:
             continue
         desc = c["description"].strip()
-        if name and desc and desc != name.strip():
+        prompt = c.get("prompt") or ""
+        other_desc = bool(nm and desc and desc != nm)
+        # description が名前と違う機体は、指示文に名前か任務が入っているときだけ残す。
+        # その description がほかの記録の名前そのものなら、それはそちらの機体。
+        if other_desc and (not worded(prompt) or desc in other_names):
             continue
         m = measure(c, now)
         if not m:
             continue
         acc = read_agent_file(c["path"])
-        if abs(acc["firstTs"] - rs) > window:
-            continue
-        m["_prompt"] = c.get("prompt") or ""
+        m["_prompt"] = prompt
         # description が名前と一致していれば、それ自体が身元の裏付けになる。
-        m["_named"] = bool(name) and desc == name.strip()
-        hits.append(m)
-
-    # **身元の裏付けは、候補が1体のときも必須。** ここを省くと、
-    # 「たまたま1体しか残らなかった」だけで別の機体の数字を記録へ永久に焼き付ける。
-    # Workflow 経由の実機は description が空なので、名前の門番は素通りしてしまう。
-    keys = [s for s in (dashlib.as_str(name).strip(), dashlib.as_str(mission).strip())
-            if len(s) >= MIN_NEEDLE]
-
-    def backed(h) -> bool:
-        return bool(h["_named"]) or (bool(keys) and any(k in h["_prompt"] for k in keys))
+        m["_named"] = bool(nm) and desc == nm
+        in_window = entry["mtime"] >= floor and abs(acc["firstTs"] - rs) <= window
+        if other_desc:
+            if in_window:
+                aside.append(m)
+        elif in_window:
+            hits.append(m)
+        elif m["_named"] and late_floor is not None and late_floor <= acc["firstTs"] < rs:
+            late.append(m)
 
     hits = [h for h in hits if backed(h)]
+    # ここから下の2つは、今までの規則で1体も見つからなかったときだけ使う。
+    # 見つかった候補が2体で決まらないときに、別の規則で3体目を足して「決まった」
+    # ことにはしない。足すものどうしも合わせて1体のときだけ結ぶ。
+    if not hits:
+        # 画面が指示文の一致（assign_live の規則2）で結んだ機体。description が名前と
+        # 違うというだけで外していたので、画面では結ばれている機体の実測値を done が
+        # 取れず、agentId も残らず、完了した瞬間に同じ機体が2枚描かれていた。
+        hits = list(aside)
+        # 遡って見つけたもの。同じ名前の記録がほかにもあるなら、どちらの機体か
+        # 決められないので使わない。
+        if len(late) == 1 and nm not in other_names:
+            hits += late
     if len(hits) != 1:
         return None
 
@@ -1470,3 +1516,56 @@ def measure_for(project_path: str, name: str, model: str, started_at: str,
                     return None
 
     return {k: v for k, v in hits[0].items() if not k.startswith("_")}
+
+
+def near_misses(project_path: str, name: str, mission_started_at: str,
+                claimed=(), mission: str = "") -> list:
+    """add の名前が、実機のどれとも**一字一句は**一致せず、一部だけ重なっている相手。
+
+    画面が記録と実機を同じ機体だと分かるのは、名前と description の完全一致か、
+    名前・任務が指示文にそのまま入っているときだけ。そのどちらも満たさず、しかも
+    片方がもう片方を含んでいるなら、打った人は「その機体のつもり」で名前を飾った
+    （例: 実機 `verify:weather#1.1` に対して `verify:weather#1.1(再現の観点で反証)`）
+    とみてよい。そのまま登録すると、同じ機体がカード2枚で描かれる（実測 2026-09-24:
+    Workflow の検証役42体がこれで二重になった）。
+
+    知らせるためだけに使う。**ここで結びはしない**——部分一致で結ぶのは推測になる。
+    完全に一致する実機が1体でもいれば、打った人の意図はそちらなので空を返す。
+    claimed は同じミッションのほかの記録の名前（その実機はもう別の記録の持ち物）。
+    返すのは [{"description", "workflow"}]。
+    """
+    nm = dashlib.as_str(name).strip()
+    ms = parse_ts(dashlib.as_str(mission_started_at))
+    if len(nm) < MIN_NEEDLE or ms is None:
+        return []
+    want_path = norm_path(project_path)
+    want_slug = dashlib.slug_for_path(Path(project_path)) if project_path else ""
+    if not want_path and not want_slug:
+        return []
+    needles = [s for s in (nm, dashlib.as_str(mission).strip()) if len(s) >= MIN_NEEDLE]
+    taken = {dashlib.as_str(s).strip() for s in claimed or ()}
+    floor = ms - MISSION_SLACK_SEC
+    out = []
+    for entry in enumerate_agents():
+        if entry["mtime"] < floor:
+            continue
+        c = describe(entry)
+        if not _belongs(c, want_path, want_slug):
+            continue
+        desc = c["description"].strip()
+        if not desc:
+            continue
+        if desc == nm:
+            return []
+        if desc in taken or len(desc) < MIN_NEEDLE:
+            continue
+        if not (desc in nm or nm in desc):
+            continue
+        # 名前か任務が指示文にそのまま入っていれば、起動直後に登録した記録は指示文の
+        # 一致で結ばれ、done もその機体の agentId を書き残すので二重にはならない。
+        prompt = c.get("prompt") or ""
+        if any(n in prompt for n in needles):
+            continue
+        out.append({"description": desc, "workflow": bool(c["workflow"])})
+    out.sort(key=lambda o: o["description"])
+    return out

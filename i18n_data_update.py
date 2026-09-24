@@ -132,6 +132,14 @@ CATALOG["ja"] = {
     "no mission recorded": "任務未記載",
     "Registered: {id} ({name} / {status} / column {gen})":
         "登録しました: {id}（{name} / {status} / {gen}列目）",
+    "Warning: no unit in Claude Code's records is named exactly \"{name}\", but this is close: {list}":
+        "警告: Claude Code の記録に「{name}」と一字一句同じ名前の機体はありませんが、近い名前があります: {list}",
+    " and {n} more":
+        "、ほか {n} 件",
+    "         The screen cannot tell they are the same unit, so it will draw two cards. Use that exact text for --name.":
+        "         画面はこの2つを同じ機体だと判別できず、カードを2枚描きます。--name にはその名前をそのまま使ってください。",
+    "         Units launched by the Workflow tool show up on the screen by themselves (under Command). You do not need to add them.":
+        "         Workflow ツールが起動した機体は、登録しなくても画面に出ます（指令塔の直下）。add は要りません。",
 
     # ---- done
     "elapsed {time}": "所要 {time}",
@@ -146,6 +154,12 @@ CATALOG["ja"] = {
         "  ※ トークン数は未指定のため null（画面では「—」表示）",
     '  * No tool-call count was given, so it is null (the screen shows "—").':
         "  ※ ツール使用回数は未指定のため null（画面では「—」表示）",
+    "Warning: {id} was marked done {sec}s after it was registered, and its measured values were not found in Claude Code's records.":
+        "警告: {id} は登録から {sec} 秒で完了にされ、Claude Code の記録にも実測値が見つかりませんでした。",
+    '         The elapsed time is left blank (the screen shows "—") instead of recording {sec}s.':
+        "         所要時間は {sec} 秒と記録せず、空欄にしました（画面では「—」表示）。",
+    "         If you registered it after it had finished, use its exact name on the screen (for a Workflow unit, its label) as --name.":
+        "         終わってから登録した場合は、画面に出ている名前（Workflow の機体ならラベル）をそのまま --name に使ってください。",
     "  ★ That is all {n} units back home. The mission has not been closed yet.":
         "  ★ これで {n} 体すべてが帰還しました。ミッションはまだ締められていません。",
     '     python update_state.py finish '
@@ -483,6 +497,14 @@ CATALOG["zh"] = {
     "no mission recorded": "任务内容未记载",
     "Registered: {id} ({name} / {status} / column {gen})":
         "已登记: {id}（{name} / {status} / 第 {gen} 列）",
+    "Warning: no unit in Claude Code's records is named exactly \"{name}\", but this is close: {list}":
+        "警告: Claude Code 的记录中没有与「{name}」一字不差的机体，但有相近的名字: {list}",
+    " and {n} more":
+        "，另有 {n} 个",
+    "         The screen cannot tell they are the same unit, so it will draw two cards. Use that exact text for --name.":
+        "         画面无法判断两者是同一机体，会画出两张卡片。请把那个名字原样用作 --name。",
+    "         Units launched by the Workflow tool show up on the screen by themselves (under Command). You do not need to add them.":
+        "         由 Workflow 工具启动的机体，不登记也会出现在画面上（指挥部正下方）。不需要 add。",
 
     # ---- done
     "elapsed {time}": "耗时 {time}",
@@ -497,6 +519,12 @@ CATALOG["zh"] = {
         "  ※ 未指定 Token 数，因此为 null（画面显示「—」）",
     '  * No tool-call count was given, so it is null (the screen shows "—").':
         "  ※ 未指定工具使用次数，因此为 null（画面显示「—」）",
+    "Warning: {id} was marked done {sec}s after it was registered, and its measured values were not found in Claude Code's records.":
+        "警告: {id} 在登记后 {sec} 秒就被置为完成，而且在 Claude Code 的记录中也没有找到实测值。",
+    '         The elapsed time is left blank (the screen shows "—") instead of recording {sec}s.':
+        "         耗时没有记为 {sec} 秒，而是留空（画面显示「—」）。",
+    "         If you registered it after it had finished, use its exact name on the screen (for a Workflow unit, its label) as --name.":
+        "         如果是在它结束之后才登记的，请把画面上显示的名字（Workflow 的机体就是标签）原样用作 --name。",
     "  ★ That is all {n} units back home. The mission has not been closed yet.":
         "  ★ 至此 {n} 个单元已全部归队。任务还没有收尾。",
     '     python update_state.py finish '
@@ -834,6 +862,14 @@ CATALOG["ko"] = {
     "no mission recorded": "임무 미기재",
     "Registered: {id} ({name} / {status} / column {gen})":
         "등록했습니다: {id}({name} / {status} / {gen}열째)",
+    "Warning: no unit in Claude Code's records is named exactly \"{name}\", but this is close: {list}":
+        "경고: Claude Code 의 기록에 「{name}」과(와) 한 글자도 다르지 않은 이름의 기체는 없지만, 비슷한 이름이 있습니다: {list}",
+    " and {n} more":
+        ", 외 {n} 건",
+    "         The screen cannot tell they are the same unit, so it will draw two cards. Use that exact text for --name.":
+        "         화면은 이 둘을 같은 기체로 판별하지 못해 카드를 두 장 그립니다. --name 에는 그 이름을 그대로 쓰세요.",
+    "         Units launched by the Workflow tool show up on the screen by themselves (under Command). You do not need to add them.":
+        "         Workflow 도구가 띄운 기체는 등록하지 않아도 화면에 나옵니다(지령탑 바로 아래). add 는 필요 없습니다.",
 
     # ---- done
     "elapsed {time}": "소요 {time}",
@@ -848,6 +884,12 @@ CATALOG["ko"] = {
         "  ※ 토큰 수가 지정되지 않아 null 입니다 (화면에는 「—」로 표시)",
     '  * No tool-call count was given, so it is null (the screen shows "—").':
         "  ※ 도구 사용 횟수가 지정되지 않아 null 입니다 (화면에는 「—」로 표시)",
+    "Warning: {id} was marked done {sec}s after it was registered, and its measured values were not found in Claude Code's records.":
+        "경고: {id} 은(는) 등록한 지 {sec} 초 만에 완료로 만들어졌고, Claude Code 의 기록에서도 실측값을 찾지 못했습니다.",
+    '         The elapsed time is left blank (the screen shows "—") instead of recording {sec}s.':
+        "         소요 시간은 {sec} 초로 기록하지 않고 비워 두었습니다(화면에는 「—」로 표시).",
+    "         If you registered it after it had finished, use its exact name on the screen (for a Workflow unit, its label) as --name.":
+        "         끝난 뒤에 등록했다면, 화면에 나온 이름(Workflow 의 기체라면 라벨)을 그대로 --name 에 쓰세요.",
     "  ★ That is all {n} units back home. The mission has not been closed yet.":
         "  ★ 이로써 {n} 대 전원이 귀환했습니다. 미션은 아직 마무리되지 않았습니다.",
     '     python update_state.py finish '

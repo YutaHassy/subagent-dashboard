@@ -2120,6 +2120,10 @@ def normalize_agent(a, source: str):
         # 実機の meta.json の toolUseId と突き合わせれば、名前も時刻も見ずに
         # 対応づけが決まる（livefeed.assign_live の規則0）。
         "toolUseId": as_str(a.get("toolUseId")) or None,
+        # done / finish が実測値を取った実機の agentId。完了した記録と実機はこれで結ぶ
+        # （livefeed.assign_live）。落とすと、指示文の一致で結ばれていた機体が完了した
+        # 瞬間に記録から外れ、同じ機体が指令塔の下にもう1枚描かれる。
+        "agentId": as_str(a.get("agentId")) or None,
         # done が打たれず、Claude Code の記録から実測で終わりを読んだ機体（finish が焼き付ける）。
         # 落とすと、締めたあとの画面と履歴で「報告なし・実測で検知」の注記が消え、
         # 普通の完了と見分けが付かなくなる。
