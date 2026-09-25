@@ -520,6 +520,15 @@ body {
 .rb-eye-r  { transform-origin: 74px 71px; }
 .rb-spark1 { transform-origin: 14px 48px; }
 .rb-spark2 { transform-origin: 106px 48px; }
+.rb-kb-hand-l { transform-origin: 46px 142px; }
+.rb-kb-hand-r { transform-origin: 74px 142px; }
+
+/* 稼働中に手元へ出すキーボード。モデル色には寄せず、どの体色の上でも鍵盤と読める紺の小物にする。
+   台を背景（#080c12）よりはっきり明るくして縁に薄い線を入れないと、47px の区画では
+   台が背景に沈み、卵の下に白い豆が2つ転がっているように見える。 */
+.rb-kb-deck             { fill: #2b3f58; stroke: rgba(140,170,200,.45); stroke-width: 1; }
+.rb-kb-key              { fill: #5d7390; }
+.rb-kb-key.rb-kb-enter  { fill: #3ee0ff; }
 
 /* 口と胸ライトは白面の上に乗るので、彩度ではなく明度差でコントラストを稼ぐ */
 .rb-mouth-standby { fill: #ff7fae; }
@@ -552,12 +561,27 @@ body {
 .agent.standby:nth-child(3n+3) .rb-blink,
 .agent.running:nth-child(3n+3) .rb-blink { animation-delay: -3.4s; }
 
-/* --- 稼働中＝ゆらゆら揺れて、左右の手を交互に動かし、バイザーを走査線が流れる */
-.agent.running .rb-figure { animation: rbSway 1.7s ease-in-out infinite; }
-.agent.running .rb-arm-l  { animation: rbWorkL 1.7s ease-in-out infinite; }
-.agent.running .rb-arm-r  { animation: rbWorkR 1.7s ease-in-out -.85s infinite; }
-.agent.running .rb-aura   { animation: rbAura 1.7s ease-in-out infinite; }
-.agent.running .rb-scan   { animation: rbScan 1.9s linear infinite; }
+/* --- 稼働中＝ゆらゆら揺れながらバイザーを走査線が流れ、手元のキーボードを打つ。
+   2.6 秒で「タタタッ（3連打）→ ため → Enter を強く『ターン』」を1周期にし、ターンの瞬間に
+   オーラを強め、体にも小さな反動を入れる。報告待ちは下のブロックで別に定義するので
+   :not(.waiting) に絞る。絞らないと、下の時差の規則（nth-child のぶん詳細度が1つ高い）が
+   報告待ちの呼吸の位相まで書き換えてしまう。 */
+.agent.running:not(.waiting) .rb-figure    { animation: rbSwayType 2.6s ease-in-out infinite; }
+.agent.running:not(.waiting) .rb-aura      { animation: rbAuraType 2.6s ease-in-out infinite; }
+.agent.running:not(.waiting) .rb-scan      { animation: rbScan 1.9s linear infinite; }
+.agent.running:not(.waiting) .rb-kb-hand-l { animation: rbTypeL 2.6s cubic-bezier(.34,.04,.4,1) infinite; }
+.agent.running:not(.waiting) .rb-kb-hand-r { animation: rbTypeR 2.6s cubic-bezier(.34,.04,.4,1) infinite; }
+/* 全員が同じ拍で打たないよう時差をつける（瞬きと同じく、後ろに置いて delay だけ上書きする）。 */
+.agent.running:not(.waiting):nth-child(4n+2) :is(.rb-figure, .rb-aura, .rb-scan, .rb-kb-hand-l, .rb-kb-hand-r) { animation-delay: -.65s; }
+.agent.running:not(.waiting):nth-child(4n+3) :is(.rb-figure, .rb-aura, .rb-scan, .rb-kb-hand-l, .rb-kb-hand-r) { animation-delay: -1.3s; }
+.agent.running:not(.waiting):nth-child(4n+4) :is(.rb-figure, .rb-aura, .rb-scan, .rb-kb-hand-l, .rb-kb-hand-r) { animation-delay: -1.95s; }
+/* 脇の丸い手は、稼働中（報告待ちを含む）はキーボードの上の手に役目を譲って隠す。
+   見えない手を動かし続けないよう animation も止める。transition は状態を問わず掛ける：
+   稼働中の規則にだけ書くと、稼働中から抜けるとき（完了・待機へ移るとき）だけ
+   手がクロスフェードせずに一瞬で現れる。 */
+.robot .rb-arm-l, .robot .rb-arm-r { transition: opacity .22s ease; }
+.agent.running .rb-arm-l,
+.agent.running .rb-arm-r  { opacity: 0; animation: none; }
 /* グローは .robot 全体ではなく静止している卵のパスに掛ける。
    全体に掛けると、内側で動いている要素のせいで毎フレーム 94x130 を再ラスタライズし直すことになる。 */
 .agent.running .rb-egg    { filter: drop-shadow(0 0 7px rgba(62,224,255,.28)); }
@@ -566,15 +590,20 @@ body {
    揺れを呼吸に落とし、走査線とオーラを止める。「この機体を見ていても進まない、
    見るべきは右の子の方」と一目で分かるようにするため。目と瞬きは running のまま
    （寝ているわけではない）。走査線は animation を切るだけで消える：静止位置は
-   x21-30 で、バイザーのクリップ（x33-87）の外に出るため描かれない。 */
-.agent.waiting .rb-figure { animation: rbBreathe 3.6s ease-in-out infinite; }
-.agent.waiting .rb-arm-l  { animation: rbHandL 3.6s ease-in-out infinite; }
-.agent.waiting .rb-arm-r  { animation: rbHandR 3.6s ease-in-out infinite; }
+   x21-30 で、バイザーのクリップ（x33-87）の外に出るため描かれない。
+   キーボードは手元に置いたまま打つのをやめ、左手の指で2回トントンとつついて待つ。
+   Enter から遠い左手にしているのは「送信した」ように見せないため。周期は呼吸と揃える。 */
+.agent.waiting .rb-figure    { animation: rbBreathe 3.6s ease-in-out infinite; }
+.agent.waiting .rb-kb-hand-l { animation: rbTapWait 3.6s ease-in-out infinite; }
 .agent.waiting .rb-scan   { animation: none; }
 .agent.waiting .rb-aura   { animation: none; opacity: 0; }
 .agent.waiting .rb-egg    { filter: drop-shadow(0 0 7px rgba(255,190,85,.26)); }
 .agent.waiting .rb-chest-running { fill: var(--amber); filter: drop-shadow(0 0 5px rgba(255,190,85,.9)); }
 .agent.waiting .rb-mouth-running { fill: #b06a00; }
+.agent.waiting .rb-kb-enter      { fill: var(--amber); }
+/* 報告待ちの機体が並んでも一斉につつかないよう時差をつける */
+.agent.waiting:nth-child(3n+2) .rb-kb-hand-l { animation-delay: -1.2s; }
+.agent.waiting:nth-child(3n+3) .rb-kb-hand-l { animation-delay: -2.4s; }
 
 /* --- 完了＝両手を大きく上げて喜ぶ。跳ねは控えめにして、勢いは手に持たせる */
 .agent.done .rb-figure { animation: rbHop 1.25s ease-in-out infinite; }
@@ -593,12 +622,26 @@ body {
   93.5%       { transform: scaleY(.08); }
   96%         { transform: scaleY(1); }
 }
-@keyframes rbSway {
-  0%,100% { transform: rotate(0deg) translateY(0); }
-  25%     { transform: rotate(2.2deg) translateY(-1.6px); }
-  75%     { transform: rotate(-2.2deg) translateY(-1.6px); }
+/* 稼働中の揺れ。前半のタタタッは小さく左右に揺れ、50% の Enter で逆向きに 2.4° 反らせて
+   わずかに沈み、すぐ戻して後半は静かに構える。 */
+@keyframes rbSwayType {
+  0%       { transform: rotate(0deg) translateY(0); }
+  15%      { transform: rotate(1.6deg) translateY(-1.2px); }
+  30%      { transform: rotate(-1.6deg) translateY(-1.2px); }
+  44%      { transform: rotate(0deg) translateY(0); }
+  50%      { transform: rotate(-2.4deg) translateY(1.3px); }
+  57%      { transform: rotate(1.1deg) translateY(-0.8px); }
+  75%,100% { transform: rotate(0deg) translateY(0); }
 }
-@keyframes rbAura { 0%,100% { opacity: .18; } 50% { opacity: .6; } }
+/* オーラは Enter の瞬間（50%）だけ強く光らせる */
+@keyframes rbAuraType {
+  0%,100% { opacity: .18; }
+  25%     { opacity: .3; }
+  44%     { opacity: .22; }
+  48%     { opacity: .28; }
+  50%     { opacity: .75; }
+  58%     { opacity: .35; }
+}
 @keyframes rbScan { 0% { transform: translateX(0); } 100% { transform: translateX(66px); } }
 
 /* 跳ね。基準点が足元なので、縦に伸ばすと 143 離れたアンテナ球が大きく持ち上がって
@@ -623,8 +666,27 @@ body {
    付け根が離れる。そのため外向きの移動は小さく、上向きを大きく取っている。 */
 @keyframes rbHandL { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-1px,-3px); } }
 @keyframes rbHandR { 0%,100% { transform: translate(0,0); } 50% { transform: translate(1px,-3px); } }
-@keyframes rbWorkL { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-1.5px,-6px); } }
-@keyframes rbWorkR { 0%,100% { transform: translate(0,0); } 50% { transform: translate(1.5px,-6px); } }
+/* 打鍵。左手がタタタッの1・3打目、右手が2打目と 50% の Enter（「ターン」）。
+   Enter で手を横へ広げると鍵盤の右端（x82）と卵の輪郭を越えて空振りに見えるので、
+   横はほとんど伸ばさず、Enter キーの中心（x75）へ心持ち寄せて縦に潰す。 */
+@keyframes rbTypeL {
+  0%,6%,12%,24%,30%,100% { transform: translate(0,0); }
+  9%,27% { transform: translate(-1px,3.5px) scale(1.05,.9); }
+}
+@keyframes rbTypeR {
+  0%,15%,21%,44%,58%,100% { transform: translate(0,0); }
+  18% { transform: translate(0,3.5px) scale(1.02,.92); }
+  46% { transform: translate(-.5px,-3.5px) scale(1,1.06); }
+  50% { transform: translate(-1px,6px) scale(1.06,.78); }
+  54% { transform: translate(0,-1px) scale(1,1.04); }
+}
+/* 報告待ちの指トントン。2回つついて、残りは待つ。下がる量 2.2 と縦の潰れ .93 で
+   手の下端は 149.8 になり、鍵盤（y138〜154）の内側に収まる。 */
+@keyframes rbTapWait {
+  0%,26%,100% { transform: translate(0,0); }
+  6%,19%      { transform: translate(0,2.2px) scale(1.03,.93); }
+  12%         { transform: translate(0,0); }
+}
 @keyframes rbCheerL {
   0%,100% { transform: translate(0,0); }
   45%     { transform: translate(-2.5px,-16px); }
@@ -3027,6 +3089,10 @@ function robotSvg() {
   // 動きが見えないため、CSS では平行移動で動かす（動く範囲は卵から離れない値に検算済み）。
   // 完了時の跳ねは viewBox の内側に収まる範囲に抑えてある。祖先の .tree-scroll が
   // overflow:auto なので、枠から出た分はスクロール領域の端で切られるため。
+  // 稼働中（報告待ちを含む）だけ手元にキーボードを出し、脇の手の代わりにその上の手で打つ。
+  // キーボードは胸ライト（状態の記号。ソケット下端 y132.4）を隠さないよう y138 から下に置く。
+  // 下端は卵の輪郭からわずかにはみ出すが、手前に持った道具として許している（viewBox の内側）。
+  // 打つ手は rb-arm を持たせてモデル色を効かせ、卵とキーボードより後に描いて手前に出す。
   // 塗り定義は #rb-defs（ページに1つ）を参照する。
   return `<svg class="robot" viewBox="0 0 120 166" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <g class="rb-figure">
@@ -3044,6 +3110,16 @@ function robotSvg() {
     <circle class="rb-chest-standby rb-s rb-s-standby" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-running rb-s rb-s-running" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-done rb-s rb-s-done" cx="60" cy="126" r="4.4"/>
+    <g class="rb-kb rb-s rb-s-running">
+      <rect class="rb-kb-deck" x="36" y="138" width="46" height="16" rx="4"/>
+      <rect class="rb-kb-key" x="40" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="48" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="56" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="64" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key rb-kb-enter" x="72" y="143" width="6" height="6" rx="1.4"/>
+    </g>
+    <ellipse class="rb-arm rb-kb-hand-l rb-s rb-s-running" cx="46" cy="142" rx="7.5" ry="6"/>
+    <ellipse class="rb-arm rb-kb-hand-r rb-s rb-s-running" cx="74" cy="142" rx="7.5" ry="6"/>
     <rect class="rb-bezel" x="30" y="53" width="60" height="36" rx="18"/>
     <rect class="rb-visor" x="33" y="56" width="54" height="30" rx="15"/>
     <g clip-path="url(#rbVisorClip)">
