@@ -198,6 +198,13 @@ td code { white-space: nowrap; }
 .rb-eye-r  { transform-origin: 74px 71px; }
 .rb-spark1 { transform-origin: 14px 48px; }
 .rb-spark2 { transform-origin: 106px 48px; }
+.rb-kb-hand-l { transform-origin: 46px 142px; }
+.rb-kb-hand-r { transform-origin: 74px 142px; }
+
+/* 稼働中に手元へ出すキーボード（本体と同じ配色） */
+.rb-kb-deck             { fill: #2b3f58; stroke: rgba(140,170,200,.45); stroke-width: 1; }
+.rb-kb-key              { fill: #5d7390; }
+.rb-kb-key.rb-kb-enter  { fill: #3ee0ff; }
 
 .rb-mouth-standby { fill: #ff7fae; }
 .rb-mouth-running { fill: #e89000; }
@@ -220,25 +227,28 @@ td code { white-space: nowrap; }
 .robot-demo.standby .rb-arm-r  { animation: rbHandR 3.6s ease-in-out infinite; }
 .robot-demo.standby .rb-s-standby .rb-blink { animation: rbBlink 5.4s ease-in-out infinite; }
 
-/* 稼働中：ゆらゆら揺れて */
-.robot-demo.running .rb-figure { animation: rbSway 1.7s ease-in-out infinite; }
-.robot-demo.running .rb-arm-l  { animation: rbWorkL 1.7s ease-in-out infinite; }
-.robot-demo.running .rb-arm-r  { animation: rbWorkR 1.7s ease-in-out -.85s infinite; }
-.robot-demo.running .rb-aura   { animation: rbAura 1.7s ease-in-out infinite; }
-.robot-demo.running .rb-scan   { animation: rbScan 1.9s linear infinite; }
+/* 稼働中：ゆらゆら揺れながら、手元のキーボードをタタタッ・ターンと打つ（本体の .agent.running と同じ内容） */
+.robot-demo.running:not(.waiting) .rb-figure    { animation: rbSwayType 2.6s ease-in-out infinite; }
+.robot-demo.running:not(.waiting) .rb-aura      { animation: rbAuraType 2.6s ease-in-out infinite; }
+.robot-demo.running:not(.waiting) .rb-scan      { animation: rbScan 1.9s linear infinite; }
+.robot-demo.running:not(.waiting) .rb-kb-hand-l { animation: rbTypeL 2.6s cubic-bezier(.34,.04,.4,1) infinite; }
+.robot-demo.running:not(.waiting) .rb-kb-hand-r { animation: rbTypeR 2.6s cubic-bezier(.34,.04,.4,1) infinite; }
+.robot .rb-arm-l, .robot .rb-arm-r { transition: opacity .22s ease; }
+.robot-demo.running .rb-arm-l,
+.robot-demo.running .rb-arm-r  { opacity: 0; animation: none; }
 .robot-demo.running .rb-egg    { filter: drop-shadow(0 0 7px rgba(62,224,255,.28)); }
 .robot-demo.running .rb-s-running .rb-blink { animation: rbBlink 5.4s ease-in-out infinite; }
 
 /* 完了：両手を上げて喜ぶ */
-/* 報告待ち＝running の上に重ねる（本体の .agent.waiting と同じ内容） */
-.robot-demo.waiting .rb-figure { animation: rbBreathe 3.6s ease-in-out infinite; }
-.robot-demo.waiting .rb-arm-l  { animation: rbHandL 3.6s ease-in-out infinite; }
-.robot-demo.waiting .rb-arm-r  { animation: rbHandR 3.6s ease-in-out infinite; }
+/* 報告待ち＝running の上に重ねる（本体の .agent.waiting と同じ内容）。キーボードは手元に置いたまま指でトントン */
+.robot-demo.waiting .rb-figure    { animation: rbBreathe 3.6s ease-in-out infinite; }
+.robot-demo.waiting .rb-kb-hand-l { animation: rbTapWait 3.6s ease-in-out infinite; }
 .robot-demo.waiting .rb-scan   { animation: none; }
 .robot-demo.waiting .rb-aura   { animation: none; opacity: 0; }
 .robot-demo.waiting .rb-egg    { filter: drop-shadow(0 0 7px rgba(255,190,85,.26)); }
 .robot-demo.waiting .rb-chest-running { fill: var(--amber); filter: drop-shadow(0 0 5px rgba(255,190,85,.9)); }
 .robot-demo.waiting .rb-mouth-running { fill: #b06a00; }
+.robot-demo.waiting .rb-kb-enter      { fill: var(--amber); }
 
 .robot-demo.done .rb-figure { animation: rbHop 1.25s ease-in-out infinite; }
 .robot-demo.done .rb-arm-l  { animation: rbCheerL 1.25s cubic-bezier(.3,1.5,.5,1) infinite; }
@@ -256,12 +266,23 @@ td code { white-space: nowrap; }
   93.5%       { transform: scaleY(.08); }
   96%         { transform: scaleY(1); }
 }
-@keyframes rbSway {
-  0%,100% { transform: rotate(0deg) translateY(0); }
-  25%     { transform: rotate(2.2deg) translateY(-1.6px); }
-  75%     { transform: rotate(-2.2deg) translateY(-1.6px); }
+@keyframes rbSwayType {
+  0%       { transform: rotate(0deg) translateY(0); }
+  15%      { transform: rotate(1.6deg) translateY(-1.2px); }
+  30%      { transform: rotate(-1.6deg) translateY(-1.2px); }
+  44%      { transform: rotate(0deg) translateY(0); }
+  50%      { transform: rotate(-2.4deg) translateY(1.3px); }
+  57%      { transform: rotate(1.1deg) translateY(-0.8px); }
+  75%,100% { transform: rotate(0deg) translateY(0); }
 }
-@keyframes rbAura { 0%,100% { opacity: .18; } 50% { opacity: .6; } }
+@keyframes rbAuraType {
+  0%,100% { opacity: .18; }
+  25%     { opacity: .3; }
+  44%     { opacity: .22; }
+  48%     { opacity: .28; }
+  50%     { opacity: .75; }
+  58%     { opacity: .35; }
+}
 @keyframes rbScan { 0% { transform: translateX(0); } 100% { transform: translateX(66px); } }
 
 @keyframes rbHop {
@@ -281,8 +302,22 @@ td code { white-space: nowrap; }
 
 @keyframes rbHandL { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-1px,-3px); } }
 @keyframes rbHandR { 0%,100% { transform: translate(0,0); } 50% { transform: translate(1px,-3px); } }
-@keyframes rbWorkL { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-1.5px,-6px); } }
-@keyframes rbWorkR { 0%,100% { transform: translate(0,0); } 50% { transform: translate(1.5px,-6px); } }
+@keyframes rbTypeL {
+  0%,6%,12%,24%,30%,100% { transform: translate(0,0); }
+  9%,27% { transform: translate(-1px,3.5px) scale(1.05,.9); }
+}
+@keyframes rbTypeR {
+  0%,15%,21%,44%,58%,100% { transform: translate(0,0); }
+  18% { transform: translate(0,3.5px) scale(1.02,.92); }
+  46% { transform: translate(-.5px,-3.5px) scale(1,1.06); }
+  50% { transform: translate(-1px,6px) scale(1.06,.78); }
+  54% { transform: translate(0,-1px) scale(1,1.04); }
+}
+@keyframes rbTapWait {
+  0%,26%,100% { transform: translate(0,0); }
+  6%,19%      { transform: translate(0,2.2px) scale(1.03,.93); }
+  12%         { transform: translate(0,0); }
+}
 @keyframes rbCheerL {
   0%,100% { transform: translate(0,0); }
   45%     { transform: translate(-2.5px,-16px); }
@@ -549,6 +584,16 @@ footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--dim)
     <circle class="rb-chest-standby rb-s rb-s-standby" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-running rb-s rb-s-running" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-done rb-s rb-s-done" cx="60" cy="126" r="4.4"/>
+    <g class="rb-kb rb-s rb-s-running">
+      <rect class="rb-kb-deck" x="36" y="138" width="46" height="16" rx="4"/>
+      <rect class="rb-kb-key" x="40" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="48" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="56" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="64" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key rb-kb-enter" x="72" y="143" width="6" height="6" rx="1.4"/>
+    </g>
+    <ellipse class="rb-arm rb-kb-hand-l rb-s rb-s-running" cx="46" cy="142" rx="7.5" ry="6"/>
+    <ellipse class="rb-arm rb-kb-hand-r rb-s rb-s-running" cx="74" cy="142" rx="7.5" ry="6"/>
     <rect class="rb-bezel" x="30" y="53" width="60" height="36" rx="18"/>
     <rect class="rb-visor" x="33" y="56" width="54" height="30" rx="15"/>
     <g clip-path="url(#rbVisorClip)">
@@ -601,6 +646,16 @@ footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--dim)
     <circle class="rb-chest-standby rb-s rb-s-standby" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-running rb-s rb-s-running" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-done rb-s rb-s-done" cx="60" cy="126" r="4.4"/>
+    <g class="rb-kb rb-s rb-s-running">
+      <rect class="rb-kb-deck" x="36" y="138" width="46" height="16" rx="4"/>
+      <rect class="rb-kb-key" x="40" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="48" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="56" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="64" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key rb-kb-enter" x="72" y="143" width="6" height="6" rx="1.4"/>
+    </g>
+    <ellipse class="rb-arm rb-kb-hand-l rb-s rb-s-running" cx="46" cy="142" rx="7.5" ry="6"/>
+    <ellipse class="rb-arm rb-kb-hand-r rb-s rb-s-running" cx="74" cy="142" rx="7.5" ry="6"/>
     <rect class="rb-bezel" x="30" y="53" width="60" height="36" rx="18"/>
     <rect class="rb-visor" x="33" y="56" width="54" height="30" rx="15"/>
     <g clip-path="url(#rbVisorClip)">
@@ -653,6 +708,16 @@ footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--dim)
     <circle class="rb-chest-standby rb-s rb-s-standby" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-running rb-s rb-s-running" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-done rb-s rb-s-done" cx="60" cy="126" r="4.4"/>
+    <g class="rb-kb rb-s rb-s-running">
+      <rect class="rb-kb-deck" x="36" y="138" width="46" height="16" rx="4"/>
+      <rect class="rb-kb-key" x="40" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="48" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="56" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="64" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key rb-kb-enter" x="72" y="143" width="6" height="6" rx="1.4"/>
+    </g>
+    <ellipse class="rb-arm rb-kb-hand-l rb-s rb-s-running" cx="46" cy="142" rx="7.5" ry="6"/>
+    <ellipse class="rb-arm rb-kb-hand-r rb-s rb-s-running" cx="74" cy="142" rx="7.5" ry="6"/>
     <rect class="rb-bezel" x="30" y="53" width="60" height="36" rx="18"/>
     <rect class="rb-visor" x="33" y="56" width="54" height="30" rx="15"/>
     <g clip-path="url(#rbVisorClip)">
@@ -705,6 +770,16 @@ footer { border-top: 1px solid var(--line); padding-top: 22px; color: var(--dim)
     <circle class="rb-chest-standby rb-s rb-s-standby" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-running rb-s rb-s-running" cx="60" cy="126" r="4.4"/>
     <circle class="rb-chest-done rb-s rb-s-done" cx="60" cy="126" r="4.4"/>
+    <g class="rb-kb rb-s rb-s-running">
+      <rect class="rb-kb-deck" x="36" y="138" width="46" height="16" rx="4"/>
+      <rect class="rb-kb-key" x="40" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="48" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="56" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key" x="64" y="143" width="6" height="6" rx="1.4"/>
+      <rect class="rb-kb-key rb-kb-enter" x="72" y="143" width="6" height="6" rx="1.4"/>
+    </g>
+    <ellipse class="rb-arm rb-kb-hand-l rb-s rb-s-running" cx="46" cy="142" rx="7.5" ry="6"/>
+    <ellipse class="rb-arm rb-kb-hand-r rb-s rb-s-running" cx="74" cy="142" rx="7.5" ry="6"/>
     <rect class="rb-bezel" x="30" y="53" width="60" height="36" rx="18"/>
     <rect class="rb-visor" x="33" y="56" width="54" height="30" rx="15"/>
     <g clip-path="url(#rbVisorClip)">
